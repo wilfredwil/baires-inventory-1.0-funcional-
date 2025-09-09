@@ -1,15 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Route, Routes, Link } from 'react-router-dom';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, query, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, query, orderBy, limit, where } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db, auth } from './firebase';
 import { downloadCSV } from './utils/downloadCSV';
+import { exportInventoryToPDF, exportLowStockToPDF } from './utils/pdfExport';
+import { useUserRole } from './hooks/useUserRole';
+import InventoryItemForm from './components/InventoryItemForm';
+import ProviderManagement from './components/ProviderManagement';
+import UserManagement from './components/UserManagement';
 import 'bootstrap/dist/css/bootstrap.min.css';
-import { Navbar, Nav, Button, Row, Col, Card, Form, Modal, Collapse } from 'react-bootstrap'; // Añadí Collapse
+import { Navbar, Nav, Button, Row, Col, Card, Form, Modal, Collapse, Alert, Dropdown, Badge } from 'react-bootstrap';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement } from 'chart.js';
 import { Pie, Line } from 'react-chartjs-2';
-import logo from './logo.png'; // Asegúrate de tener logo.png en src/
+import { FaPlus, FaDownload, FaFilePdf, FaUsers, FaBuilding, FaFilter, FaEdit } from 'react-icons/fa';
+import logo from './logo.png';
 
 ChartJS.register(ArcElement, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement);
 
@@ -57,6 +63,10 @@ const SplashScreen = () => (
       .low-stock {
         border: 2px solid #FF6B6B;
       }
+      .critical-stock {
+        border: 2px solid #DC3545;
+        animation: pulse 2s infinite;
+      }
       .navbar-toggler {
         border-color: #87CEEB !important;
         background-color: rgba(255, 255, 255, 0.3) !important;
@@ -67,6 +77,16 @@ const SplashScreen = () => (
       .chat-button {
         z-index: 1000 !important;
       }
+      .admin-badge {
+        background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
+        color: white;
+        font-weight: bold;
+      }
+      .manager-badge {
+        background: linear-gradient(45deg, #45B7D1, #96CEB4);
+        color: white;
+        font-weight: bold;
+      }
     `}</style>
   </div>
 );
@@ -74,15 +94,17 @@ const SplashScreen = () => (
 function App() {
   const [user, setUser] = useState(null);
   const [inventory, setInventory] = useState([]);
+  const [providers, setProviders] = useState([]);
   const [historial, setHistorial] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newItem, setNewItem] = useState({ nombre: '', marca: '', tipo: 'licor', subTipo: '', origen: '', stock: 1, umbral_low: 5 });
+  const [showProviderModal, setShowProviderModal] = useState(false);
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
-  const [editingStockId, setEditingStockId] = useState(null);
-  const [editingStockValue, setEditingStockValue] = useState(0);
+  const [success, setSuccess] = useState('');
   const [licorFilter, setLicorFilter] = useState('');
   const [showLowStockOnly, setShowLowStockOnly] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
@@ -91,7 +113,10 @@ function App() {
   const [showChat, setShowChat] = useState(false);
   const [unreadNotes, setUnreadNotes] = useState(new Set());
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [openCard, setOpenCard] = useState(null); // Estado para controlar las tarjetas colapsables
+  const [openCard, setOpenCard] = useState(null);
+
+  // Custom hook para roles
+  const { userRole, userProfile, loading: roleLoading, isAdmin, canEditAllFields, canManageUsers, canManageProviders } = useUserRole(user);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -100,6 +125,7 @@ function App() {
         const splashTimer = setTimeout(() => {
           setShowSplash(false);
           fetchInventory();
+          fetchProviders();
           fetchHistorial();
           fetchNotes();
         }, 3000);
@@ -127,18 +153,32 @@ function App() {
         const data = doc.data();
         const stock = Number(data.stock) || 0;
         const umbral_low = Number(data.umbral_low) || 0;
-        console.log(`Ítem ${doc.id}: stock=${stock}, umbral_low=${umbral_low}`);
         return { id: doc.id, ...data, stock, umbral_low };
       });
       setInventory(items);
     } catch (err) {
       console.error('Error fetching inventory:', err);
+      setError('Error al cargar el inventario');
+    }
+  };
+
+  const fetchProviders = async () => {
+    try {
+      const querySnapshot = await getDocs(collection(db, 'providers'));
+      const providersData = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setProviders(providersData);
+    } catch (err) {
+      console.error('Error fetching providers:', err);
     }
   };
 
   const fetchHistorial = async () => {
     try {
-      const querySnapshot = await getDocs(collection(db, 'historial'));
+      const q = query(collection(db, 'historial'), orderBy('fecha', 'desc'), limit(100));
+      const querySnapshot = await getDocs(q);
       const logs = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setHistorial(logs);
     } catch (err) {
@@ -159,15 +199,14 @@ function App() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setError(null);
     try {
       await signInWithEmailAndPassword(auth, email, password);
       setEmail('');
       setPassword('');
-      setError(null);
-      fetchInventory();
-      fetchHistorial();
-      fetchNotes();
       setShowLoginModal(false);
+      setSuccess('Sesión iniciada correctamente');
+      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
       setError('Error en login: ' + err.message);
     }
@@ -176,83 +215,71 @@ function App() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      setSuccess('Sesión cerrada correctamente');
+      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
       console.error('Error en logout:', err);
     }
   };
 
-  const handleAddItem = async (e) => {
-    e.preventDefault();
-    try {
-      const dataToSave = {
-        nombre: newItem.nombre,
-        tipo: newItem.tipo,
-        stock: newItem.stock,
-        umbral_low: newItem.umbral_low,
-        ultima_actualizacion: new Date()
-      };
-      if (newItem.tipo === 'licor') {
-        dataToSave.subTipo = newItem.subTipo;
-      }
-      if (newItem.tipo === 'vino' || newItem.tipo === 'cerveza') {
-        dataToSave.marca = newItem.marca;
-      }
-      if (newItem.tipo === 'vino') {
-        dataToSave.origen = newItem.origen;
-      }
-      const docRef = await addDoc(collection(db, 'inventario'), dataToSave);
-      await addDoc(collection(db, 'historial'), {
-        item_id: docRef.id,
-        accion: 'agregado',
-        cantidad: newItem.stock,
-        fecha: new Date(),
-        usuario: user.email
-      });
-      setShowAddForm(false);
-      setNewItem({ nombre: '', marca: '', tipo: 'licor', subTipo: '', origen: '', stock: 1, umbral_low: 5 });
-      fetchInventory();
-      fetchHistorial();
-    } catch (err) {
-      console.error('Error agregando item:', err);
-    }
-  };
-
-  const handleUpdateStock = async (itemId, newStock) => {
-    try {
-      const itemRef = doc(db, 'inventario', itemId);
-      const item = inventory.find(i => i.id === itemId);
-      const oldStock = item.stock;
-      const change = newStock - oldStock;
-      await updateDoc(itemRef, { stock: newStock, ultima_actualizacion: new Date() });
-      await addDoc(collection(db, 'historial'), {
-        item_id: itemId,
-        accion: change > 0 ? 'agregado' : 'vendido',
-        cantidad: Math.abs(change),
-        fecha: new Date(),
-        usuario: user.email
-      });
-      fetchInventory();
-      fetchHistorial();
-      setEditingStockId(null);
-    } catch (err) {
-      console.error('Error actualizando stock:', err);
-    }
-  };
-
-  const handleDownload = () => {
-    downloadCSV(inventory.map(item => ({
+  const handleDownloadCSV = () => {
+    const dataToExport = filteredInventory.map(item => ({
       Nombre: item.nombre,
       Marca: item.marca || 'N/A',
       Tipo: item.tipo,
+      SubTipo: item.subTipo || 'N/A',
+      Origen: item.origen || 'N/A',
       Stock: item.stock,
-      Umbral: item.umbral_low
-    })));
+      Umbral: item.umbral_low,
+      Precio: item.precio || 0,
+      Proveedor: getProviderName(item.proveedor_id),
+      Estado: Number(item.stock) <= Number(item.umbral_low) ? 'STOCK BAJO' : 'OK'
+    }));
+    downloadCSV(dataToExport);
+    setSuccess('CSV descargado correctamente');
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
+  const handleDownloadPDF = () => {
+    const filters = {
+      search: searchTerm,
+      lowStock: showLowStockOnly,
+      tipo: licorFilter
+    };
+    exportInventoryToPDF(filteredInventory, filters);
+    setSuccess('PDF generado correctamente');
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
+  const handleLowStockPDF = () => {
+    const lowStockItems = inventory.filter(item => 
+      Number(item.stock) <= Number(item.umbral_low)
+    ).map(item => ({
+      ...item,
+      proveedor_nombre: getProviderName(item.proveedor_id)
+    }));
+    
+    if (lowStockItems.length === 0) {
+      setError('No hay productos con stock bajo para exportar');
+      setTimeout(() => setError(''), 3000);
+      return;
+    }
+    
+    exportLowStockToPDF(lowStockItems);
+    setSuccess('Reporte de stock bajo generado');
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
+  const getProviderName = (providerId) => {
+    const provider = providers.find(p => p.id === providerId);
+    return provider ? provider.nombre : 'Sin proveedor';
   };
 
   const sendLowStockEmail = async () => {
     const recipientEmail = prompt('Por favor, ingrese el correo del destinatario:', '');
     if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
-      alert('Por favor, ingrese un correo válido.');
+      setError('Por favor, ingrese un correo válido.');
+      setTimeout(() => setError(''), 3000);
       return;
     }
 
@@ -260,22 +287,32 @@ function App() {
       const functions = getFunctions();
       const sendEmail = httpsCallable(functions, 'sendLowStockEmail');
       const lowStockItems = inventory.filter(item => Number(item.stock) <= Number(item.umbral_low));
+      
+      if (lowStockItems.length === 0) {
+        setError('No hay productos con stock bajo para notificar');
+        setTimeout(() => setError(''), 3000);
+        return;
+      }
+
       await sendEmail({
         inventory: lowStockItems,
         recipientEmail: recipientEmail,
         fromEmail: user.email
       });
-      alert('Email enviado con éxito a ' + recipientEmail);
+      setSuccess('Email enviado con éxito a ' + recipientEmail);
+      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
       console.error('Error enviando email:', err);
       setError('Error enviando email: ' + err.message);
+      setTimeout(() => setError(''), 3000);
     }
   };
 
   const addNote = async (e) => {
     e.preventDefault();
     if (!newNote.trim()) {
-      alert('Por favor, ingrese un mensaje.');
+      setError('Por favor, ingrese un mensaje.');
+      setTimeout(() => setError(''), 3000);
       return;
     }
     try {
@@ -286,8 +323,12 @@ function App() {
       });
       setNewNote('');
       fetchNotes();
+      setSuccess('Mensaje enviado');
+      setTimeout(() => setSuccess(''), 2000);
     } catch (err) {
       console.error('Error adding note:', err);
+      setError('Error al enviar el mensaje');
+      setTimeout(() => setError(''), 3000);
     }
   };
 
@@ -303,113 +344,155 @@ function App() {
     setShowChat(!showChat);
   };
 
-  const setFilteredInventory = (filteredItems) => {
-    setInventory(prev => filteredItems); // Actualiza el estado para filtrar
+  const handleEditItem = (item) => {
+    setEditingItem(item);
+    setShowAddForm(true);
   };
 
+  const handleFormSuccess = () => {
+    fetchInventory();
+    fetchHistorial();
+    setEditingItem(null);
+    setShowAddForm(false);
+    setSuccess('Operación completada exitosamente');
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
+  // Filtros aplicados
   const filteredInventory = inventory.filter(item => {
     const searchLower = searchTerm.toLowerCase();
-    return (
+    const matchesSearch = !searchTerm || 
       item.nombre.toLowerCase().includes(searchLower) ||
-      (item.marca && item.marca.toLowerCase().includes(searchLower))
-    );
+      (item.marca && item.marca.toLowerCase().includes(searchLower)) ||
+      (item.tipo && item.tipo.toLowerCase().includes(searchLower));
+    
+    const matchesLowStock = !showLowStockOnly || 
+      (Number(item.stock) <= Number(item.umbral_low));
+    
+    const matchesTypeFilter = !licorFilter || item.tipo === licorFilter;
+    
+    return matchesSearch && matchesLowStock && matchesTypeFilter;
   });
 
-  // Datos para el gráfico de stock bajo
+  // Estadísticas del inventario
+  const inventoryStats = {
+    total: inventory.length,
+    lowStock: inventory.filter(item => Number(item.stock) <= Number(item.umbral_low)).length,
+    criticalStock: inventory.filter(item => Number(item.stock) === 0).length,
+    totalValue: inventory.reduce((sum, item) => sum + (Number(item.stock) * Number(item.precio || 0)), 0)
+  };
+
+  // Datos para gráficos
   const lowStockData = {
     labels: ['Stock Bajo', 'Stock Saludable'],
     datasets: [
       {
-        data: [
-          inventory.length > 0 ? inventory.filter(item => Number(item.stock) <= Number(item.umbral_low)).length : 0,
-          inventory.length > 0 ? inventory.filter(item => Number(item.stock) > Number(item.umbral_low)).length : 0
-        ],
-        backgroundColor: ['rgba(211, 211, 211, 0.5)', '#87CEEB'],
-        borderColor: '#87CEEB',
+        data: [inventoryStats.lowStock, inventoryStats.total - inventoryStats.lowStock],
+        backgroundColor: ['rgba(255, 107, 107, 0.8)', '#87CEEB'],
+        borderColor: ['#FF6B6B', '#87CEEB'],
         borderWidth: 2,
         hoverOffset: 4,
       },
     ],
   };
 
-  // Análisis de tendencias (consumo mensual basado en historial)
-  const trendData = {
-    labels: historial.length > 0 ? [...new Set(historial.map(log => {
-      const date = log.fecha.toDate();
-      return `${date.toLocaleString('default', { month: 'short' })} ${date.getFullYear()}`;
-    }))].sort((a, b) => {
-      const [aMonth, aYear] = a.split(' ');
-      const [bMonth, bYear] = b.split(' ');
-      return new Date(bYear, getMonthNumber(bMonth)) - new Date(aYear, getMonthNumber(aMonth));
-    }).slice(0, 6) : [],
-    datasets: [
-      {
-        label: 'Consumo Mensual (Unidades Vendidas)',
-        data: historial.length > 0 ? Object.entries(historial.reduce((acc, log) => {
-          if (log.accion === 'vendido') {
-            const month = log.fecha.toDate().toLocaleString('default', { month: 'short', year: 'numeric' });
-            acc[month] = (acc[month] || 0) + Number(log.cantidad || 0);
-          }
-          return acc;
-        }, {})).sort(([a], [b]) => {
-          const [aMonth, aYear] = a.split(' ');
-          const [bMonth, bYear] = b.split(' ');
-          return new Date(bYear, getMonthNumber(bMonth)) - new Date(aYear, getMonthNumber(aMonth));
-        }).slice(0, 6).map(([, value]) => value) : [],
-        fill: false,
-        borderColor: '#87CEEB',
-        pointBackgroundColor: '#87CEEB', // Consistente con el tema
-        pointRadius: 6,
-        pointHoverRadius: 8,
-        tension: 0.4,
-      },
-    ],
-  };
-
-  // Función auxiliar para convertir nombre de mes a número
-  const getMonthNumber = (monthName) => {
-    const months = {
-      'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5,
-      'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11
+  const getRoleDisplay = () => {
+    if (!userRole) return null;
+    
+    const roleNames = {
+      admin: 'Administrador',
+      manager: 'Gerente',
+      bartender: 'Bartender',
+      waiter: 'Mesero'
     };
-    return months[monthName];
-  };
 
-  // Agrupar historial por fecha
-  const groupedHistorial = historial.reduce((acc, log) => {
-    const date = log.fecha.toDate().toLocaleDateString();
-    if (!acc[date]) acc[date] = [];
-    acc[date].push(log);
-    return acc;
-  }, {});
+    const badgeClass = userRole === 'admin' ? 'admin-badge' : 
+                      userRole === 'manager' ? 'manager-badge' : 
+                      'bg-secondary';
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setNewItem(prev => ({ ...prev, [name]: value }));
+    return (
+      <Badge className={badgeClass} style={{ fontSize: '0.75em' }}>
+        {roleNames[userRole] || userRole}
+      </Badge>
+    );
   };
 
   if (showSplash) {
     return <SplashScreen />;
   }
 
+  if (roleLoading) {
+    return (
+      <div className="d-flex justify-content-center align-items-center" style={{ height: '100vh' }}>
+        <div className="spinner-border text-primary" role="status">
+          <span className="visually-hidden">Cargando...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Router>
       <div className="container" style={{ background: '#F5F5F5', color: '#333333', minHeight: '100vh', padding: '20px', position: 'relative', overflow: 'hidden' }}>
-        <Navbar bg="transparent" variant="dark" expand="lg" className="mb-4 rounded" style={{ border: 'none', backdropFilter: 'blur(5px)', background: 'rgba(255, 255, 255, 0.2)' }}>
+        {/* Alertas globales */}
+        {error && (
+          <Alert variant="danger" className="position-fixed" style={{ top: '20px', right: '20px', zIndex: 9999 }}>
+            {error}
+          </Alert>
+        )}
+        {success && (
+          <Alert variant="success" className="position-fixed" style={{ top: '20px', right: '20px', zIndex: 9999 }}>
+            {success}
+          </Alert>
+        )}
+
+        <Navbar bg="transparent" variant="dark" expand="lg" className="mb-4 rounded glass">
           <Navbar.Brand as={Link} to="/" style={{ fontFamily: 'Raleway, sans-serif', fontSize: '28px', color: '#333333', textShadow: '0 0 2px #87CEEB' }}>
             Baires Inventory
           </Navbar.Brand>
-          <Navbar.Toggle aria-controls="basic-navbar-nav" style={{ borderColor: '#87CEEB', backgroundColor: 'rgba(255, 255, 255, 0.5)' }} />
+          <Navbar.Toggle aria-controls="basic-navbar-nav" />
           <Navbar.Collapse id="basic-navbar-nav">
-            <Nav className="ml-auto">
-              <Nav.Link as={Link} to="/" style={{ color: '#333333', fontSize: '16px', transition: 'color 0.3s' }}>Dashboard</Nav.Link>
-              <Nav.Link as={Link} to="/historial" style={{ color: '#333333', fontSize: '16px', transition: 'color 0.3s' }}>Historial</Nav.Link>
-              {user ? (
-                <Button variant="outline-primary" onClick={handleLogout} className="ml-2 hover-3d" style={{ borderColor: '#87CEEB', color: '#87CEEB' }}>
-                  Logout
-                </Button>
-              ) : (
-                <Button variant="outline-primary" onClick={() => setShowLoginModal(true)} className="ml-2 hover-3d" style={{ borderColor: '#87CEEB', color: '#87CEEB' }}>
+            <Nav className="me-auto">
+              <Nav.Link as={Link} to="/" style={{ color: '#333333', fontSize: '16px' }}>
+                Dashboard
+              </Nav.Link>
+              <Nav.Link as={Link} to="/historial" style={{ color: '#333333', fontSize: '16px' }}>
+                Historial
+              </Nav.Link>
+            </Nav>
+            <Nav>
+              {user && (
+                <>
+                  <Navbar.Text className="me-3" style={{ color: '#333333' }}>
+                    {user.email} {getRoleDisplay()}
+                  </Navbar.Text>
+                  {canManageUsers && (
+                    <Button 
+                      variant="outline-info" 
+                      size="sm" 
+                      onClick={() => setShowUserModal(true)}
+                      className="me-2"
+                    >
+                      <FaUsers /> Usuarios
+                    </Button>
+                  )}
+                  {canManageProviders && (
+                    <Button 
+                      variant="outline-info" 
+                      size="sm" 
+                      onClick={() => setShowProviderModal(true)}
+                      className="me-2"
+                    >
+                      <FaBuilding /> Proveedores
+                    </Button>
+                  )}
+                  <Button variant="outline-primary" onClick={handleLogout} className="hover-3d">
+                    Logout
+                  </Button>
+                </>
+              )}
+              {!user && (
+                <Button variant="outline-primary" onClick={() => setShowLoginModal(true)} className="hover-3d">
                   Login
                 </Button>
               )}
@@ -423,309 +506,657 @@ function App() {
               <h3 className="text-center mb-4" style={{ color: '#333333', fontFamily: 'Raleway, sans-serif', textTransform: 'uppercase', letterSpacing: '2px', fontSize: '24px', textShadow: '0 0 5px #87CEEB' }}>
                 Gestión de Inventario
               </h3>
+
+              {/* Estadísticas rápidas */}
               <Row className="mb-4">
                 <Col md={3}>
-                  <Card className="glass hover-3d" style={{ borderRadius: '15px', padding: '5px', cursor: 'pointer' }} onClick={() => setShowAddForm(true)}>
-                    <Card.Body style={{ color: '#333333', textAlign: 'center', transition: 'transform 0.3s' }}>
-                      <i className="bi bi-plus-circle" style={{ fontSize: '18px', color: '#87CEEB' }}></i>
-                      <Card.Text style={{ fontFamily: 'Raleway, sans-serif', fontSize: '14px' }}>Agregar Item</Card.Text>
+                  <Card className="glass hover-3d text-center">
+                    <Card.Body>
+                      <h5 style={{ color: '#87CEEB' }}>{inventoryStats.total}</h5>
+                      <small>Total Productos</small>
                     </Card.Body>
                   </Card>
                 </Col>
                 <Col md={3}>
-                  <Card className="glass hover-3d" style={{ borderRadius: '15px', padding: '5px', cursor: 'pointer' }} onClick={sendLowStockEmail}>
-                    <Card.Body style={{ color: '#333333', textAlign: 'center', transition: 'transform 0.3s' }}>
-                      <i className="bi bi-envelope" style={{ fontSize: '18px', color: '#87CEEB' }}></i>
-                      <Card.Text style={{ fontFamily: 'Raleway, sans-serif', fontSize: '14px' }}>Enviar Pedido</Card.Text>
+                  <Card className="glass hover-3d text-center">
+                    <Card.Body>
+                      <h5 style={{ color: inventoryStats.lowStock > 0 ? '#FF6B6B' : '#28a745' }}>
+                        {inventoryStats.lowStock}
+                      </h5>
+                      <small>Stock Bajo</small>
                     </Card.Body>
                   </Card>
                 </Col>
                 <Col md={3}>
-                  <Card className="glass hover-3d" style={{ borderRadius: '15px', padding: '5px', cursor: 'pointer' }} onClick={handleDownload}>
-                    <Card.Body style={{ color: '#333333', textAlign: 'center', transition: 'transform 0.3s' }}>
-                      <i className="bi bi-download" style={{ fontSize: '18px', color: '#87CEEB' }}></i>
-                      <Card.Text style={{ fontFamily: 'Raleway, sans-serif', fontSize: '14px' }}>Descargar CSV</Card.Text>
+                  <Card className="glass hover-3d text-center">
+                    <Card.Body>
+                      <h5 style={{ color: inventoryStats.criticalStock > 0 ? '#DC3545' : '#28a745' }}>
+                        {inventoryStats.criticalStock}
+                      </h5>
+                      <small>Sin Stock</small>
                     </Card.Body>
                   </Card>
                 </Col>
                 <Col md={3}>
-                  <Card className="glass hover-3d" style={{ borderRadius: '15px', padding: '5px', cursor: 'pointer' }} onClick={() => setShowLowStockOnly(!showLowStockOnly)}>
-                    <Card.Body style={{ color: '#333333', textAlign: 'center', transition: 'transform 0.3s' }}>
-                      <i className="bi bi-filter" style={{ fontSize: '18px', color: '#87CEEB' }}></i>
-                      <Card.Text style={{ fontFamily: 'Raleway, sans-serif', fontSize: '14px' }}>{showLowStockOnly ? 'Ver Todo' : 'Umbral Bajo'}</Card.Text>
+                  <Card className="glass hover-3d text-center">
+                    <Card.Body>
+                      <h5 style={{ color: '#87CEEB' }}>
+                        ${inventoryStats.totalValue.toLocaleString('es-AR')}
+                      </h5>
+                      <small>Valor Total</small>
                     </Card.Body>
                   </Card>
                 </Col>
               </Row>
-              <input
-                type="text"
-                className="form-control mb-3 shadow-sm glass"
-                placeholder="Buscar por nombre o marca"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={{ borderRadius: '20px', padding: '12px', border: '1px solid #87CEEB', color: '#333333', boxShadow: 'inset 0 0 10px rgba(0, 0, 0, 0.1)' }}
-              />
-              {showAddForm && (
-                <div className="card p-4 mb-4 shadow-sm glass" style={{ borderRadius: '15px', color: '#333333' }}>
-                  <h3 className="text-center mb-3" style={{ color: '#333333' }}>Agregar Nuevo Item</h3>
-                  <form onSubmit={handleAddItem} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    <div>
-                      <label style={{ fontSize: '16px' }}>Nombre</label>
-                      <input type="text" name="nombre" value={newItem.nombre} onChange={handleInputChange} placeholder="Ej: Maker's Mark" className="form-control" style={{ background: 'rgba(255, 255, 255, 0.2)', border: '1px solid #87CEEB', color: '#333333' }} required />
-                    </div>
-                    {(newItem.tipo === 'vino' || newItem.tipo === 'cerveza') && (
-                      <div>
-                        <label style={{ fontSize: '16px' }}>Marca</label>
-                        <input type="text" name="marca" value={newItem.marca} onChange={handleInputChange} placeholder="Ej: Bodega Catena" className="form-control" style={{ background: 'rgba(255, 255, 255, 0.2)', border: '1px solid #87CEEB', color: '#333333' }} />
-                      </div>
+
+              {/* Controles principales */}
+              <Row className="mb-4">
+                <Col md={2}>
+                  <Card className="glass hover-3d text-center" style={{ cursor: 'pointer' }} onClick={() => setShowAddForm(true)}>
+                    <Card.Body>
+                      <FaPlus style={{ fontSize: '24px', color: '#87CEEB' }} />
+                      <Card.Text style={{ fontSize: '12px' }}>
+                        {canEditAllFields ? 'Agregar Ítem' : 'Ver Ítem'}
+                      </Card.Text>
+                    </Card.Body>
+                  </Card>
+                </Col>
+                <Col md={2}>
+                  <Dropdown>
+                    <Dropdown.Toggle as={Card} className="glass hover-3d text-center" style={{ cursor: 'pointer', border: 'none' }}>
+                      <Card.Body>
+                        <FaDownload style={{ fontSize: '24px', color: '#87CEEB' }} />
+                        <Card.Text style={{ fontSize: '12px' }}>Exportar</Card.Text>
+                      </Card.Body>
+                    </Dropdown.Toggle>
+                    <Dropdown.Menu>
+                      <Dropdown.Item onClick={handleDownloadCSV}>
+                        <i className="bi bi-filetype-csv me-2"></i>Exportar CSV
+                      </Dropdown.Item>
+                      <Dropdown.Item onClick={handleDownloadPDF}>
+                        <FaFilePdf className="me-2" />Exportar PDF
+                      </Dropdown.Item>
+                      <Dropdown.Divider />
+                      <Dropdown.Item onClick={handleLowStockPDF}>
+                        <i className="bi bi-exclamation-triangle me-2"></i>Reporte Stock Bajo
+                      </Dropdown.Item>
+                    </Dropdown.Menu>
+                  </Dropdown>
+                </Col>
+                <Col md={2}>
+                  <Card className="glass hover-3d text-center" style={{ cursor: 'pointer' }} onClick={sendLowStockEmail}>
+                    <Card.Body>
+                      <i className="bi bi-envelope" style={{ fontSize: '24px', color: '#87CEEB' }}></i>
+                      <Card.Text style={{ fontSize: '12px' }}>Enviar Pedido</Card.Text>
+                    </Card.Body>
+                  </Card>
+                </Col>
+                <Col md={2}>
+                  <Card className="glass hover-3d text-center" style={{ cursor: 'pointer' }} onClick={() => setShowLowStockOnly(!showLowStockOnly)}>
+                    <Card.Body>
+                      <FaFilter style={{ fontSize: '24px', color: showLowStockOnly ? '#FF6B6B' : '#87CEEB' }} />
+                      <Card.Text style={{ fontSize: '12px' }}>
+                        {showLowStockOnly ? 'Ver Todo' : 'Stock Bajo'}
+                      </Card.Text>
+                    </Card.Body>
+                  </Card>
+                </Col>
+                <Col md={2}>
+                  <Dropdown>
+                    <Dropdown.Toggle as={Card} className="glass hover-3d text-center" style={{ cursor: 'pointer', border: 'none' }}>
+                      <Card.Body>
+                        <i className="bi bi-funnel" style={{ fontSize: '24px', color: '#87CEEB' }}></i>
+                        <Card.Text style={{ fontSize: '12px' }}>Filtrar Tipo</Card.Text>
+                      </Card.Body>
+                    </Dropdown.Toggle>
+                    <Dropdown.Menu>
+                      <Dropdown.Item onClick={() => setLicorFilter('')}>
+                        Todos los tipos
+                      </Dropdown.Item>
+                      <Dropdown.Divider />
+                      <Dropdown.Item onClick={() => setLicorFilter('licor')}>
+                        <i className="bi bi-cup-fill me-2"></i>Licores
+                      </Dropdown.Item>
+                      <Dropdown.Item onClick={() => setLicorFilter('vino')}>
+                        <i className="bi bi-wine-glass-fill me-2"></i>Vinos
+                      </Dropdown.Item>
+                      <Dropdown.Item onClick={() => setLicorFilter('cerveza')}>
+                        <i className="bi bi-bucket me-2"></i>Cervezas
+                      </Dropdown.Item>
+                      <Dropdown.Item onClick={() => setLicorFilter('otros')}>
+                        <i className="bi bi-three-dots me-2"></i>Otros
+                      </Dropdown.Item>
+                    </Dropdown.Menu>
+                  </Dropdown>
+                </Col>
+              </Row>
+
+              {/* Barra de búsqueda mejorada */}
+              <Row className="mb-4">
+                <Col md={8}>
+                  <Form.Control
+                    type="text"
+                    className="glass"
+                    placeholder="Buscar por nombre, marca o tipo..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    style={{ borderRadius: '20px', padding: '12px 20px', border: '1px solid #87CEEB' }}
+                  />
+                </Col>
+                <Col md={4}>
+                  <div className="d-flex gap-2">
+                    {searchTerm && (
+                      <Button 
+                        variant="outline-secondary" 
+                        onClick={() => setSearchTerm('')}
+                        size="sm"
+                      >
+                        Limpiar
+                      </Button>
                     )}
-                    <div>
-                      <label style={{ fontSize: '16px' }}>Tipo</label>
-                      <select name="tipo" value={newItem.tipo} onChange={handleInputChange} className="form-control" style={{ background: 'rgba(255, 255, 255, 0.2)', border: '1px solid #87CEEB', color: '#333333' }}>
-                        <option value="licor">Licor</option>
-                        <option value="vino">Vino</option>
-                        <option value="cerveza">Cerveza</option>
-                      </select>
-                    </div>
-                    {newItem.tipo === 'licor' && (
-                      <div>
-                        <label style={{ fontSize: '16px' }}>Sub-tipo</label>
-                        <select name="subTipo" value={newItem.subTipo} onChange={handleInputChange} className="form-control" style={{ background: 'rgba(255, 255, 255, 0.2)', border: '1px solid #87CEEB', color: '#333333' }} required>
-                          <option value="">Seleccione</option>
-                          <option value="whiskey">Whiskey</option>
-                          <option value="vodka">Vodka</option>
-                          <option value="gin">Gin</option>
-                          <option value="ron">Ron</option>
-                          <option value="tequila">Tequila</option>
-                          <option value="otro">Otro</option>
-                        </select>
-                      </div>
-                    )}
-                    {newItem.tipo === 'vino' && (
-                      <div>
-                        <label style={{ fontSize: '16px' }}>Origen</label>
-                        <input type="text" name="origen" value={newItem.origen} onChange={handleInputChange} placeholder="Ej: Argentina" className="form-control" style={{ background: 'rgba(255, 255, 255, 0.2)', border: '1px solid #87CEEB', color: '#333333' }} required />
-                      </div>
-                    )}
-                    <div>
-                      <label style={{ fontSize: '16px' }}>Stock</label>
-                      <input type="number" name="stock" value={newItem.stock} onChange={handleInputChange} min="0" step="0.25" placeholder="Ej: 0.75" className="form-control" style={{ background: 'rgba(255, 255, 255, 0.2)', border: '1px solid #87CEEB', color: '#333333' }} required />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '16px' }}>Umbral Low</label>
-                      <input type="number" name="umbral_low" value={newItem.umbral_low} onChange={handleInputChange} min="0" step="0.25" placeholder="Ej: 2.5" className="form-control" style={{ background: 'rgba(255, 255, 255, 0.2)', border: '1px solid #87CEEB', color: '#333333' }} required />
-                    </div>
-                    <Button variant="primary" type="submit" className="mt-3 hover-3d" style={{ background: '#87CEEB', borderColor: '#98FF98', color: '#333333' }}>
-                      Agregar
-                    </Button>
-                    <Button variant="secondary" onClick={() => setShowAddForm(false)} className="mt-2 hover-3d" style={{ background: 'rgba(255, 255, 255, 0.2)', borderColor: '#87CEEB', color: '#87CEEB' }}>
-                      Cancelar
-                    </Button>
-                  </form>
-                </div>
+                    <small className="text-muted align-self-center">
+                      {filteredInventory.length} de {inventory.length} productos
+                    </small>
+                  </div>
+                </Col>
+              </Row>
+
+              {/* Alertas de stock crítico */}
+              {inventoryStats.criticalStock > 0 && (
+                <Alert variant="danger" className="mb-4">
+                  <i className="bi bi-exclamation-triangle-fill me-2"></i>
+                  <strong>¡Atención!</strong> {inventoryStats.criticalStock} productos sin stock requieren reposición inmediata.
+                </Alert>
               )}
-              <Row className="mb-4">
-                <Col md={3}>
-                  <Card className="glass hover-3d" style={{ borderRadius: '15px', padding: '15px', cursor: 'pointer' }} onClick={() => { setFilteredInventory(inventory.filter(i => i.tipo === 'licor')); }}>
-                    <Card.Body style={{ color: '#333333', textAlign: 'center', transition: 'transform 0.3s' }}>
-                      <i className="bi bi-cup-fill" style={{ fontSize: '30px', color: '#87CEEB' }}></i>
-                      <Card.Text style={{ fontFamily: 'Raleway, sans-serif', fontSize: '18px' }}>Licores</Card.Text>
-                    </Card.Body>
-                  </Card>
-                </Col>
-                <Col md={3}>
-                  <Card className="glass hover-3d" style={{ borderRadius: '15px', padding: '15px', cursor: 'pointer' }} onClick={() => { setFilteredInventory(inventory.filter(i => i.tipo === 'vino')); }}>
-                    <Card.Body style={{ color: '#333333', textAlign: 'center', transition: 'transform 0.3s' }}>
-                      <i className="bi bi-wine-glass-fill" style={{ fontSize: '30px', color: '#87CEEB' }}></i>
-                      <Card.Text style={{ fontFamily: 'Raleway, sans-serif', fontSize: '18px' }}>Vinos</Card.Text>
-                    </Card.Body>
-                  </Card>
-                </Col>
-                <Col md={3}>
-                  <Card className="glass hover-3d" style={{ borderRadius: '15px', padding: '15px', cursor: 'pointer' }} onClick={() => { setFilteredInventory(inventory.filter(i => i.tipo === 'cerveza')); }}>
-                    <Card.Body style={{ color: '#333333', textAlign: 'center', transition: 'transform 0.3s' }}>
-                      <i className="bi bi-bucket" style={{ fontSize: '30px', color: '#87CEEB' }}></i>
-                      <Card.Text style={{ fontFamily: 'Raleway, sans-serif', fontSize: '18px' }}>Cervezas</Card.Text>
-                    </Card.Body>
-                  </Card>
-                </Col>
-                <Col md={3}>
-                  <Card className="glass hover-3d" style={{ borderRadius: '15px', padding: '15px', cursor: 'pointer' }} onClick={() => { /* Lógica para Tendencias */ }}>
-                    <Card.Body style={{ color: '#333333', textAlign: 'center', transition: 'transform 0.3s' }}>
-                      <i className="bi bi-graph-up" style={{ fontSize: '30px', color: '#87CEEB' }}></i>
-                      <Card.Text style={{ fontFamily: 'Raleway, sans-serif', fontSize: '18px' }}>Tendencias</Card.Text>
-                    </Card.Body>
-                  </Card>
-                </Col>
-              </Row>
-              <div className="row">
-                {filteredInventory
-                  .filter(item => !showLowStockOnly || (Number(item.stock) || 0) <= (Number(item.umbral_low) || 0))
-                  .map(item => (
-                    <div key={item.id} className="col-md-4 mb-3">
-                      <Card className={`shadow-sm glass hover-3d ${Number(item.stock) <= Number(item.umbral_low) ? 'low-stock' : ''}`} style={{ borderRadius: '15px', border: 'none', padding: '15px', backdropFilter: 'blur(5px)', position: 'relative' }}>
-                        {Number(item.stock) <= Number(item.umbral_low) && (
-                          <i className="bi bi-exclamation-circle" style={{ position: 'absolute', top: '10px', right: '10px', color: '#FF6B6B', fontSize: '20px' }}></i>
-                        )}
-                        <Card.Body style={{ color: '#333333' }}>
-                          <Card.Title style={{ fontSize: '1.8rem', fontFamily: 'Raleway, sans-serif' }}>{item.nombre}</Card.Title>
-                          {item.tipo === 'licor' && <Card.Text>Sub-tipo: {item.subTipo || 'N/A'}</Card.Text>}
-                          {(item.tipo === 'vino' || item.tipo === 'cerveza') && <Card.Text>Marca: {item.marca || 'N/A'}</Card.Text>}
-                          {item.tipo === 'vino' && <Card.Text>Origen: {item.origen || 'N/A'}</Card.Text>}
-                          <div style={{ width: '100%', background: 'rgba(211, 211, 211, 0.5)', height: '20px', borderRadius: '10px', overflow: 'hidden' }}>
-                            <div style={{ width: `${(item.stock / (item.umbral_low * 2)) * 100}%`, height: '100%', background: Number(item.stock) <= Number(item.umbral_low) ? 'rgba(211, 211, 211, 0.5)' : '#87CEEB', transition: 'width 0.5s ease', boxShadow: 'inset 0 0 5px #87CEEB' }}></div>
-                          </div>
-                          <Card.Text style={{ color: Number(item.stock) <= Number(item.umbral_low) ? '#FF6B6B' : '#333333' }}>Stock: {item.stock}</Card.Text>
-                          <Card.Text>Umbral Low: {item.umbral_low}</Card.Text>
-                          <div>
-                            {editingStockId === item.id ? (
-                              <div>
-                                <input
-                                  type="number"
-                                  value={editingStockValue}
-                                  onChange={(e) => setEditingStockValue(e.target.value)}
-                                  min="0"
-                                  step="0.25"
-                                  className="form-control glass"
-                                  style={{ border: '1px solid #87CEEB', color: '#333333', width: '80px', display: 'inline-block' }}
-                                />
-                                <Button variant="primary" size="sm" onClick={() => handleUpdateStock(item.id, editingStockValue)} className="mr-2 hover-3d" style={{ background: '#87CEEB', borderColor: '#98FF98', color: '#333333' }}>
-                                  <i className="bi bi-check"></i> Guardar
-                                </Button>
+
+              {inventoryStats.lowStock > inventoryStats.criticalStock && (
+                <Alert variant="warning" className="mb-4">
+                  <i className="bi bi-exclamation-circle-fill me-2"></i>
+                  <strong>Aviso:</strong> {inventoryStats.lowStock - inventoryStats.criticalStock} productos con stock bajo.
+                </Alert>
+              )}
+
+              {/* Grid de productos */}
+              <Row>
+                {filteredInventory.length === 0 ? (
+                  <Col>
+                    <Card className="glass text-center p-4">
+                      <Card.Body>
+                        <i className="bi bi-search" style={{ fontSize: '48px', color: '#87CEEB' }}></i>
+                        <h5 className="mt-3">No se encontraron productos</h5>
+                        <p className="text-muted">
+                          {searchTerm ? 'Intenta con otros términos de búsqueda' : 'No hay productos que coincidan con los filtros aplicados'}
+                        </p>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                ) : (
+                  filteredInventory.map(item => {
+                    const isLowStock = Number(item.stock) <= Number(item.umbral_low);
+                    const isCriticalStock = Number(item.stock) === 0;
+                    const stockPercentage = Math.min((item.stock / (item.umbral_low * 2)) * 100, 100);
+
+                    return (
+                      <Col key={item.id} md={4} lg={3} className="mb-3">
+                        <Card 
+                          className={`glass hover-3d ${isCriticalStock ? 'critical-stock' : isLowStock ? 'low-stock' : ''}`}
+                          style={{ 
+                            borderRadius: '15px', 
+                            border: 'none', 
+                            padding: '10px',
+                            position: 'relative',
+                            minHeight: '320px'
+                          }}
+                        >
+                          {/* Indicadores de estado */}
+                          {isCriticalStock && (
+                            <Badge bg="danger" className="position-absolute" style={{ top: '10px', right: '10px' }}>
+                              SIN STOCK
+                            </Badge>
+                          )}
+                          {isLowStock && !isCriticalStock && (
+                            <Badge bg="warning" className="position-absolute" style={{ top: '10px', right: '10px' }}>
+                              STOCK BAJO
+                            </Badge>
+                          )}
+
+                          <Card.Body style={{ color: '#333333' }}>
+                            <Card.Title style={{ fontSize: '1.1rem', fontFamily: 'Raleway, sans-serif', marginBottom: '10px' }}>
+                              {item.nombre}
+                            </Card.Title>
+
+                            {/* Información del producto */}
+                            <div style={{ fontSize: '0.85rem', marginBottom: '15px' }}>
+                              <div><strong>Tipo:</strong> {item.tipo}</div>
+                              {item.tipo === 'licor' && item.subTipo && (
+                                <div><strong>Sub-tipo:</strong> {item.subTipo}</div>
+                              )}
+                              {(item.tipo === 'vino' || item.tipo === 'cerveza') && item.marca && (
+                                <div><strong>Marca:</strong> {item.marca}</div>
+                              )}
+                              {item.tipo === 'vino' && item.origen && (
+                                <div><strong>Origen:</strong> {item.origen}</div>
+                              )}
+                              {item.precio && (
+                                <div><strong>Precio:</strong> ${Number(item.precio).toFixed(2)}</div>
+                              )}
+                            </div>
+
+                            {/* Barra de progreso del stock */}
+                            <div className="mb-2">
+                              <div className="d-flex justify-content-between mb-1">
+                                <small>Stock: {Number(item.stock).toFixed(2)}</small>
+                                <small>Umbral: {Number(item.umbral_low).toFixed(2)}</small>
                               </div>
-                            ) : (
-                              <Button variant="outline-primary" size="sm" onClick={() => { setEditingStockId(item.id); setEditingStockValue(item.stock); }} className="hover-3d" style={{ borderColor: '#87CEEB', color: '#87CEEB' }}>
-                                <i className="bi bi-pencil"></i> Editar
+                              <div style={{ 
+                                width: '100%', 
+                                background: 'rgba(211, 211, 211, 0.3)', 
+                                height: '8px', 
+                                borderRadius: '4px', 
+                                overflow: 'hidden' 
+                              }}>
+                                <div style={{ 
+                                  width: `${stockPercentage}%`, 
+                                  height: '100%', 
+                                  background: isCriticalStock ? '#DC3545' : 
+                                             isLowStock ? '#FFC107' : '#28A745',
+                                  transition: 'width 0.5s ease',
+                                  borderRadius: '4px'
+                                }}></div>
+                              </div>
+                            </div>
+
+                            {/* Información del proveedor */}
+                            {item.proveedor_id && (
+                              <div style={{ fontSize: '0.75rem', color: '#6c757d', marginBottom: '10px' }}>
+                                <i className="bi bi-building me-1"></i>
+                                {getProviderName(item.proveedor_id)}
+                              </div>
+                            )}
+
+                            {/* Botón de edición */}
+                            <div className="d-grid gap-2">
+                              <Button
+                                variant={canEditAllFields ? 'primary' : 'outline-primary'}
+                                size="sm"
+                                onClick={() => handleEditItem(item)}
+                                className="hover-3d"
+                              >
+                                <FaEdit className="me-1" />
+                                {canEditAllFields ? 'Editar' : 'Ver/Actualizar Stock'}
+                              </Button>
+                            </div>
+                          </Card.Body>
+                        </Card>
+                      </Col>
+                    );
+                  })
+                )}
+              </Row>
+
+              {/* Gráfico de estadísticas */}
+              {inventory.length > 0 && (
+                <Row className="mt-4">
+                  <Col md={6}>
+                    <Card className="glass">
+                      <Card.Header>
+                        <h6>Estado del Inventario</h6>
+                      </Card.Header>
+                      <Card.Body>
+                        <div style={{ maxWidth: '300px', margin: '0 auto' }}>
+                          <Pie 
+                            data={lowStockData} 
+                            options={{ 
+                              responsive: true,
+                              plugins: {
+                                legend: {
+                                  position: 'bottom'
+                                }
+                              }
+                            }} 
+                          />
+                        </div>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                  <Col md={6}>
+                    <Card className="glass">
+                      <Card.Header>
+                        <h6>Resumen por Categoría</h6>
+                      </Card.Header>
+                      <Card.Body>
+                        {['licor', 'vino', 'cerveza', 'otros'].map(tipo => {
+                          const count = inventory.filter(item => item.tipo === tipo).length;
+                          const lowCount = inventory.filter(item => 
+                            item.tipo === tipo && Number(item.stock) <= Number(item.umbral_low)
+                          ).length;
+                          
+                          if (count === 0) return null;
+                          
+                          return (
+                            <div key={tipo} className="d-flex justify-content-between align-items-center mb-2">
+                              <span className="text-capitalize">
+                                <i className={`bi ${
+                                  tipo === 'licor' ? 'bi-cup-fill' :
+                                  tipo === 'vino' ? 'bi-wine-glass-fill' :
+                                  tipo === 'cerveza' ? 'bi-bucket' : 'bi-three-dots'
+                                } me-2`}></i>
+                                {tipo}
+                              </span>
+                              <div>
+                                <Badge bg="primary" className="me-1">{count}</Badge>
+                                {lowCount > 0 && <Badge bg="warning">{lowCount} bajo</Badge>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                </Row>
+              )}
+            </div>
+          } />
+
+          <Route path="/historial" element={
+            <div>
+              <h2 className="mb-4" style={{ color: '#333333', fontFamily: 'Raleway, sans-serif' }}>
+                Historial de Movimientos
+              </h2>
+              
+              {historial.length === 0 ? (
+                <Card className="glass text-center p-4">
+                  <Card.Body>
+                    <i className="bi bi-clock-history" style={{ fontSize: '48px', color: '#87CEEB' }}></i>
+                    <h5 className="mt-3">No hay movimientos registrados</h5>
+                    <p className="text-muted">Los movimientos del inventario aparecerán aquí</p>
+                  </Card.Body>
+                </Card>
+              ) : (
+                Object.entries(
+                  historial.reduce((acc, log) => {
+                    const date = log.fecha.toDate().toLocaleDateString();
+                    if (!acc[date]) acc[date] = [];
+                    acc[date].push(log);
+                    return acc;
+                  }, {})
+                ).map(([date, logs]) => {
+                  const totalMovimientos = logs.length;
+                  const totalUnidades = logs.reduce((sum, log) => sum + Number(log.cantidad || 0), 0);
+                  const ventas = logs.filter(log => log.accion === 'vendido').length;
+                  const agregados = logs.filter(log => log.accion === 'agregado').length;
+
+                  return (
+                    <Card key={date} className="glass mb-3 hover-3d">
+                      <Card.Header 
+                        style={{ cursor: 'pointer' }} 
+                        onClick={() => setOpenCard(openCard === date ? null : date)}
+                      >
+                        <div className="d-flex justify-content-between align-items-center">
+                          <div>
+                            <h6 className="mb-0">{new Date(date).toLocaleDateString('es-AR', { 
+                              weekday: 'long', 
+                              year: 'numeric', 
+                              month: 'long', 
+                              day: 'numeric' 
+                            })}</h6>
+                            <small className="text-muted">
+                              {totalMovimientos} movimiento{totalMovimientos !== 1 ? 's' : ''} • 
+                              {totalUnidades} unidad{totalUnidades !== 1 ? 'es' : ''}
+                            </small>
+                          </div>
+                          <div className="d-flex gap-2">
+                            {agregados > 0 && <Badge bg="success">{agregados} agregado{agregados !== 1 ? 's' : ''}</Badge>}
+                            {ventas > 0 && <Badge bg="danger">{ventas} venta{ventas !== 1 ? 's' : ''}</Badge>}
+                            <i className={`bi bi-chevron-${openCard === date ? 'up' : 'down'}`}></i>
+                          </div>
+                        </div>
+                      </Card.Header>
+                      <Collapse in={openCard === date}>
+                        <Card.Body>
+                          <div className="timeline">
+                            {logs
+                              .sort((a, b) => new Date(b.fecha.toDate()) - new Date(a.fecha.toDate()))
+                              .map(log => (
+                                <div key={log.id} className="d-flex align-items-center mb-2 p-2 rounded" style={{ background: 'rgba(255, 255, 255, 0.3)' }}>
+                                  <div className="me-3">
+                                    <i className={`bi ${
+                                      log.accion === 'agregado' ? 'bi-arrow-up-circle text-success' :
+                                      log.accion === 'vendido' ? 'bi-arrow-down-circle text-danger' :
+                                      'bi-gear text-info'
+                                    }`} style={{ fontSize: '1.5rem' }}></i>
+                                  </div>
+                                  <div className="flex-grow-1">
+                                    <div className="fw-bold">
+                                      {log.accion === 'agregado' ? 'Agregado' :
+                                       log.accion === 'vendido' ? 'Vendido' :
+                                       log.accion === 'creado' ? 'Creado' : 'Modificado'} - 
+                                      {Number(log.cantidad || 0).toFixed(2)} unidades
+                                    </div>
+                                    <div className="text-muted small">
+                                      <strong>Producto:</strong> {log.item_nombre || log.item_id} • 
+                                      <strong> Usuario:</strong> {log.usuario} • 
+                                      <strong> Hora:</strong> {log.fecha.toDate().toLocaleTimeString('es-AR')}
+                                      {log.motivo && (
+                                        <><br/><strong>Motivo:</strong> {log.motivo}</>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        </Card.Body>
+                      </Collapse>
+                    </Card>
+                  );
+                })
+              )}
+            </div>
+          } />
+        </Routes>
+
+        {/* Chat button y modal */}
+        {user && (
+          <>
+            <Button
+              variant="primary"
+              className="position-fixed chat-button"
+              style={{ 
+                bottom: '20px', 
+                right: '20px', 
+                zIndex: 1000, 
+                borderRadius: '50%', 
+                width: '60px', 
+                height: '60px', 
+                padding: '0', 
+                background: '#87CEEB', 
+                border: '2px solid #87CEEB', 
+                boxShadow: '0 0 10px #87CEEB' 
+              }}
+              onClick={toggleChat}
+            >
+              <i className="bi bi-chat-fill" style={{ fontSize: '28px', color: '#333333' }}></i>
+              {unreadNotes.size > 0 && (
+                <Badge 
+                  bg="danger" 
+                  className="position-absolute" 
+                  style={{ top: '-5px', right: '-5px' }}
+                >
+                  {unreadNotes.size}
+                </Badge>
+              )}
+            </Button>
+
+            {/* Chat Modal */}
+            <Modal show={showChat} onHide={() => setShowChat(false)} className="chat-modal">
+              <Modal.Header closeButton className="glass">
+                <Modal.Title style={{ fontFamily: 'Raleway, sans-serif' }}>
+                  <i className="bi bi-chat-dots me-2"></i>Chat Interno
+                </Modal.Title>
+              </Modal.Header>
+              <Modal.Body className="glass" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                {notes.length === 0 ? (
+                  <div className="text-center text-muted">
+                    <i className="bi bi-chat" style={{ fontSize: '48px' }}></i>
+                    <p className="mt-2">No hay mensajes aún</p>
+                  </div>
+                ) : (
+                  <div>
+                    {notes.map(note => (
+                      <div key={note.id} className={`mb-3 p-3 rounded ${unreadNotes.has(note.id) ? 'bg-info bg-opacity-25' : 'bg-light bg-opacity-50'}`}>
+                        <div className="d-flex align-items-start">
+                          <div className="me-3">
+                            <div 
+                              className="rounded-circle d-flex align-items-center justify-content-center"
+                              style={{ 
+                                width: '40px', 
+                                height: '40px', 
+                                background: '#87CEEB', 
+                                color: 'white',
+                                fontWeight: 'bold'
+                              }}
+                            >
+                              {note.usuario.charAt(0).toUpperCase()}
+                            </div>
+                          </div>
+                          <div className="flex-grow-1">
+                            <div className="d-flex justify-content-between align-items-center mb-1">
+                              <strong>{note.usuario.split('@')[0]}</strong>
+                              <small className="text-muted">
+                                {note.fecha?.toDate().toLocaleString('es-AR')}
+                              </small>
+                            </div>
+                            <p className="mb-1">{note.texto}</p>
+                            {unreadNotes.has(note.id) && note.usuario !== user.email && (
+                              <Button 
+                                variant="link" 
+                                size="sm" 
+                                onClick={() => handleMarkAsRead(note.id)}
+                                className="p-0"
+                                style={{ color: '#87CEEB', fontSize: '0.8rem' }}
+                              >
+                                Marcar como leído
                               </Button>
                             )}
                           </div>
-                        </Card.Body>
-                      </Card>
-                    </div>
-                  ))}
-              </div>
-              <div className="mt-3" style={{ maxWidth: '250px', margin: '0 auto' }}>
-                <Pie data={lowStockData} options={{ animation: { duration: 1000, easing: 'easeOutQuad', animateRotate: true }, plugins: { tooltip: { backgroundColor: '#87CEEB', titleColor: '#333333', bodyColor: '#333333', borderColor: '#98FF98', caretSize: 0 } } }} />
-              </div>
-              <Button
-                variant="primary"
-                className="position-fixed chat-button"
-                style={{ bottom: '20px', right: '20px', zIndex: 1000, borderRadius: '50%', width: '60px', height: '60px', padding: '0', background: '#87CEEB', border: '2px solid #87CEEB', boxShadow: '0 0 10px #87CEEB', animation: 'pulse 1.5s infinite' }}
-                onClick={toggleChat}
-              >
-                <i className="bi bi-chat-fill" style={{ fontSize: '28px', color: '#333333' }}></i>
-                {unreadNotes.size > 0 && <span className="badge" style={{ background: '#87CEEB', position: 'absolute', top: '-5px', right: '-5px', padding: '2px 6px', color: '#FFFFFF' }}>{unreadNotes.size}</span>}
-              </Button>
-              <Modal show={showChat} onHide={() => setShowChat(false)} className="chat-modal" style={{ position: 'fixed', top: '10%', right: '10px', width: '320px', height: '80%', background: 'rgba(255, 255, 255, 0.1)', backdropFilter: 'blur(5px)', borderRadius: '15px', border: '1px solid #87CEEB', transition: 'transform 0.3s ease' }}>
-                <Modal.Header closeButton style={{ background: 'rgba(255, 255, 255, 0.1)', color: '#333333', borderBottom: '1px solid #87CEEB' }}>
-                  <Modal.Title style={{ fontFamily: 'Raleway, sans-serif' }}>Chat Interno</Modal.Title>
-                </Modal.Header>
-                <Modal.Body style={{ overflowY: 'auto', maxHeight: 'calc(80vh - 150px)', background: 'rgba(255, 255, 255, 0.1)', color: '#333333' }}>
-                  <ul style={{ listStyle: 'none', padding: 0 }}>
-                    {notes.map(note => (
-                      <li key={note.id} style={{ marginBottom: '10px', background: unreadNotes.has(note.id) ? 'rgba(135, 206, 235, 0.3)' : 'rgba(255, 255, 255, 0.2)', padding: '12px', borderRadius: '10px', display: 'flex', alignItems: 'center', animation: 'fadeIn 0.5s' }}>
-                        <span style={{ fontSize: '20px', color: '#87CEEB', marginRight: '10px', textShadow: '0 0 2px #87CEEB' }}>{note.usuario.charAt(0)}</span>
-                        <div>
-                          <strong>{note.usuario}</strong>: {note.texto} <br />
-                          <small style={{ color: '#666666' }}>{note.fecha?.toDate().toLocaleString()}</small>
-                          {unreadNotes.has(note.id) && (
-                            <Button variant="link" size="sm" onClick={() => handleMarkAsRead(note.id)} style={{ color: '#87CEEB', padding: 0, fontSize: '12px', textShadow: '0 0 2px #87CEEB' }}>
-                              Marcar como leído
-                            </Button>
-                          )}
                         </div>
-                      </li>
+                      </div>
                     ))}
-                  </ul>
-                </Modal.Body>
-                <Modal.Footer style={{ background: 'rgba(255, 255, 255, 0.1)', borderTop: '1px solid #87CEEB' }}>
-                  <Form onSubmit={addNote} style={{ width: '100%', display: 'flex', gap: '10px' }}>
+                  </div>
+                )}
+              </Modal.Body>
+              <Modal.Footer className="glass">
+                <Form onSubmit={addNote} className="w-100">
+                  <div className="d-flex gap-2">
                     <Form.Control
                       as="textarea"
                       rows={2}
                       value={newNote}
                       onChange={(e) => setNewNote(e.target.value)}
                       placeholder="Escribe un mensaje..."
-                      style={{ flex: 1, background: 'rgba(255, 255, 255, 0.2)', border: '1px solid #87CEEB', color: '#333333', boxShadow: 'inset 0 0 5px rgba(0, 0, 0, 0.1)' }}
+                      className="glass"
+                      style={{ border: '1px solid #87CEEB', resize: 'none' }}
                     />
-                    <Button variant="primary" type="submit" style={{ background: '#87CEEB', borderColor: '#87CEEB', color: '#333333', animation: 'pulse 1.5s infinite' }}>
+                    <Button 
+                      variant="primary" 
+                      type="submit"
+                      disabled={!newNote.trim()}
+                      style={{ background: '#87CEEB', borderColor: '#87CEEB' }}
+                    >
                       <i className="bi bi-send"></i>
                     </Button>
-                  </Form>
-                </Modal.Footer>
-              </Modal>
-              <Modal show={showLoginModal} onHide={() => setShowLoginModal(false)} centered style={{ background: 'rgba(0, 0, 0, 0.2)' }}>
-                <Modal.Header closeButton style={{ background: 'rgba(255, 255, 255, 0.1)', color: '#333333', borderBottom: '1px solid #87CEEB' }}>
-                  <Modal.Title style={{ fontFamily: 'Raleway, sans-serif' }}>Iniciar Sesión</Modal.Title>
-                </Modal.Header>
-                <Modal.Body style={{ background: 'rgba(255, 255, 255, 0.1)', color: '#333333' }}>
-                  <Form onSubmit={handleLogin}>
-                    <Form.Group className="mb-3">
-                      <Form.Label>Email</Form.Label>
-                      <Form.Control
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="Ingresa tu email"
-                        style={{ background: 'rgba(255, 255, 255, 0.2)', border: '1px solid #87CEEB', color: '#333333', boxShadow: 'inset 0 0 5px rgba(0, 0, 0, 0.1)'}}
-                        required
-                      />
-                    </Form.Group>
-                    <Form.Group className="mb-3">
-                      <Form.Label>Contraseña</Form.Label>
-                      <Form.Control
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="Ingresa tu contraseña"
-                        style={{ background: 'rgba(255, 255, 255, 0.2)', border: '1px solid #87CEEB', color: '#333333', boxShadow: 'inset 0 0 5px rgba(0, 0, 0, 0.1)'}}
-                        required
-                      />
-                    </Form.Group>
-                    {error && <p className="text-danger">{error}</p>}
-                    <Button variant="primary" type="submit" style={{ background: '#87CEEB', borderColor: '#87CEEB', color: '#333333', width: '100%', animation: 'pulse 1.5s infinite' }}>
-                      Iniciar Sesión
-                    </Button>
-                  </Form>
-                </Modal.Body>
-              </Modal>
-            </div>
-          } />
-          <Route path="/historial" element={
-            <div>
-              <h2 style={{ color: '#333333', fontFamily: 'Raleway, sans-serif', fontSize: '24px', textShadow: '0 0 5px #87CEEB' }}>Historial - Baires Inventory</h2>
-              {Object.entries(groupedHistorial).map(([date, logs]) => {
-                const totalMovimientos = logs.length;
-                const totalUnidades = logs.reduce((sum, log) => sum + Number(log.cantidad || 0), 0);
-                return (
-                  <Card key={date} className="glass mb-3 hover-3d" style={{ borderRadius: '15px', padding: '10px' }}>
-                    <Card.Body style={{ color: '#333333', cursor: 'pointer' }} onClick={() => setOpenCard(openCard === date ? null : date)}>
-                      <Card.Title style={{ fontFamily: 'Raleway, sans-serif' }}>
-                        {new Date(date).toLocaleDateString()} - {totalMovimientos} movimiento(s), {totalUnidades} unidad(es) totales
-                      </Card.Title>
-                    </Card.Body>
-                    <Collapse in={openCard === date}>
-                      <div>
-                        <ul className="list-group list-group-flush">
-                          {logs.map(log => (
-                            <li key={log.id} className="list-group-item" style={{ background: 'rgba(255, 255, 255, 0.2)', color: '#333333', borderBottom: '1px solid #87CEEB', display: 'flex', alignItems: 'center' }}>
-                              <span style={{ marginRight: '10px' }}>
-                                <i className={`bi ${log.accion === 'agregado' ? 'bi-arrow-up' : 'bi-arrow-down'}`} style={{ fontSize: '16px', color: log.accion === 'agregado' ? '#98FF98' : '#FF6B6B' }}></i>
-                              </span>
-                              <span>{log.accion} {log.cantidad} de {log.item_id || log.item_codigo} por {log.usuario} el {new Date(log.fecha.toDate()).toLocaleTimeString()}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </Collapse>
-                  </Card>
-                );
-              })}
-            </div>
-          } />
-        </Routes>
-        <footer className="text-center mt-4 py-3" style={{ background: '#F5F5F5', color: '#666666', borderTop: '1px solid #87CEEB' }}>
-          &copy; 2025 Wilfred Del Pozo Diaz. Todos los derechos reservados.
+                  </div>
+                </Form>
+              </Modal.Footer>
+            </Modal>
+          </>
+        )}
+
+        {/* Modales */}
+        <Modal show={showLoginModal} onHide={() => setShowLoginModal(false)} centered>
+          <Modal.Header closeButton className="glass">
+            <Modal.Title style={{ fontFamily: 'Raleway, sans-serif' }}>Iniciar Sesión</Modal.Title>
+          </Modal.Header>
+          <Form onSubmit={handleLogin}>
+            <Modal.Body className="glass">
+              <Form.Group className="mb-3">
+                <Form.Label>Email</Form.Label>
+                <Form.Control
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Ingresa tu email"
+                  className="glass"
+                  style={{ border: '1px solid #87CEEB' }}
+                  required
+                />
+              </Form.Group>
+              <Form.Group className="mb-3">
+                <Form.Label>Contraseña</Form.Label>
+                <Form.Control
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Ingresa tu contraseña"
+                  className="glass"
+                  style={{ border: '1px solid #87CEEB' }}
+                  required
+                />
+              </Form.Group>
+            </Modal.Body>
+            <Modal.Footer className="glass">
+              <Button variant="secondary" onClick={() => setShowLoginModal(false)}>
+                Cancelar
+              </Button>
+              <Button 
+                variant="primary" 
+                type="submit"
+                style={{ background: '#87CEEB', borderColor: '#87CEEB' }}
+              >
+                Iniciar Sesión
+              </Button>
+            </Modal.Footer>
+          </Form>
+        </Modal>
+
+        {/* Formulario de inventario */}
+        <InventoryItemForm
+          show={showAddForm}
+          onHide={() => {
+            setShowAddForm(false);
+            setEditingItem(null);
+          }}
+          item={editingItem}
+          userRole={userRole}
+          user={user}
+          onSuccess={handleFormSuccess}
+          providers={providers}
+        />
+
+        {/* Gestión de proveedores */}
+        <ProviderManagement
+          show={showProviderModal}
+          onHide={() => setShowProviderModal(false)}
+          user={user}
+          userRole={userRole}
+        />
+
+        {/* Gestión de usuarios */}
+        <UserManagement
+          show={showUserModal}
+          onHide={() => setShowUserModal(false)}
+          user={user}
+          userRole={userRole}
+        />
+
+        {/* Footer */}
+        <footer className="text-center mt-5 py-3 glass" style={{ borderTop: '1px solid #87CEEB' }}>
+          <div className="d-flex justify-content-between align-items-center">
+            <small>&copy; 2025 Wilfred Del Pozo Diaz. Todos los derechos reservados.</small>
+            <small>
+              <Badge bg="info">v2.0</Badge> - Sistema mejorado con roles y validaciones
+            </small>
+          </div>
         </footer>
       </div>
     </Router>

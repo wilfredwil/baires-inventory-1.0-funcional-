@@ -1,0 +1,91 @@
+// firestore.rules
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Función auxiliar para obtener el rol del usuario
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role;
+    }
+    
+    // Función para verificar si el usuario está activo
+    function isUserActive() {
+      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.active == true;
+    }
+    
+    // Función para verificar si es admin
+    function isAdmin() {
+      return getUserRole() == 'admin';
+    }
+    
+    // Función para verificar si puede editar todo
+    function canEditAll() {
+      return getUserRole() in ['admin', 'manager'];
+    }
+    
+    // Reglas para la colección de usuarios
+    match /users/{userId} {
+      // Solo admins pueden leer todos los usuarios
+      allow read: if request.auth != null && isAdmin();
+      
+      // Solo admins pueden crear/actualizar/eliminar usuarios
+      allow create, update, delete: if request.auth != null && isAdmin();
+      
+      // Los usuarios pueden leer su propio perfil
+      allow read: if request.auth != null && request.auth.token.email == userId;
+    }
+    
+    // Reglas para inventario
+    match /inventario/{itemId} {
+      // Todos los usuarios autenticados y activos pueden leer
+      allow read: if request.auth != null && isUserActive();
+      
+      // Solo admin y manager pueden crear nuevos items
+      allow create: if request.auth != null && canEditAll();
+      
+      // Admin y manager pueden actualizar cualquier campo
+      allow update: if request.auth != null && canEditAll();
+      
+      // Otros roles solo pueden actualizar stock, ultima_actualizacion y actualizado_por
+      allow update: if request.auth != null && isUserActive() && 
+        request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['stock', 'ultima_actualizacion', 'actualizado_por']);
+      
+      // Solo admins pueden eliminar
+      allow delete: if request.auth != null && isAdmin();
+    }
+    
+    // Reglas para historial
+    match /historial/{logId} {
+      // Todos pueden leer el historial
+      allow read: if request.auth != null && isUserActive();
+      
+      // Todos pueden crear entradas de historial
+      allow create: if request.auth != null && isUserActive();
+      
+      // Nadie puede actualizar o eliminar historial (integridad de datos)
+      allow update, delete: if false;
+    }
+    
+    // Reglas para proveedores
+    match /providers/{providerId} {
+      // Todos pueden leer proveedores
+      allow read: if request.auth != null && isUserActive();
+      
+      // Solo admins pueden gestionar proveedores
+      allow create, update, delete: if request.auth != null && isAdmin();
+    }
+    
+    // Reglas para notas/chat
+    match /notas/{noteId} {
+      // Todos pueden leer y crear notas
+      allow read, create: if request.auth != null && isUserActive();
+      
+      // Los usuarios pueden actualizar sus propias notas
+      allow update: if request.auth != null && 
+        request.auth.token.email == resource.data.usuario;
+      
+      // Solo admins pueden eliminar notas
+      allow delete: if request.auth != null && isAdmin();
+    }
+  }
+}
