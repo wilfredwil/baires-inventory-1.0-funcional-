@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal, Button, Form, Table, Alert, Spinner, Badge } from 'react-bootstrap';
 import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, orderBy } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { db } from '../firebase';
+import { auth, db } from '../firebase';
 import { FaEdit, FaTrash, FaPlus, FaUsers, FaUserShield, FaUser } from 'react-icons/fa';
 
 const UserManagement = ({ user, userRole, show, onHide }) => {

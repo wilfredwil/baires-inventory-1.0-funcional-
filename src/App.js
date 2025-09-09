@@ -14,7 +14,7 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import { Navbar, Nav, Button, Row, Col, Card, Form, Modal, Collapse, Alert, Dropdown, Badge } from 'react-bootstrap';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement } from 'chart.js';
 import { Pie, Line } from 'react-chartjs-2';
-import { FaPlus, FaDownload, FaFilePdf, FaUsers, FaBuilding, FaFilter, FaEdit } from 'react-icons/fa';
+import { FaPlus, FaDownload, FaFilePdf, FaUsers, FaBuilding, FaFilter, FaEdit, FaHome, FaWineGlass, FaUtensils, FaConciergeBell, FaCalendarAlt, FaChartBar } from 'react-icons/fa';
 import logo from './logo.png';
 
 ChartJS.register(ArcElement, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement);
@@ -87,12 +87,162 @@ const SplashScreen = () => (
         color: white;
         font-weight: bold;
       }
+      .module-card {
+        transition: all 0.3s ease;
+        cursor: pointer;
+        background: linear-gradient(135deg, var(--module-color), var(--module-color-dark));
+        border: none;
+        color: white;
+        min-height: 200px;
+      }
+      .module-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+      }
     `}</style>
   </div>
 );
 
+// Componente Dashboard Principal
+const MainDashboard = ({ 
+  inventory, 
+  providers, 
+  historial, 
+  notes, 
+  user, 
+  userRole, 
+  onNavigateToModule 
+}) => {
+  // Módulos del sistema
+  const modules = [
+    {
+      id: 'bar',
+      title: 'Bar / Alcohol',
+      icon: FaWineGlass,
+      description: 'Gestión de bebidas alcohólicas y bar',
+      color: '#F59E0B',
+      colorDark: '#D97706',
+      stats: `${inventory.length} productos`,
+      available: true
+    },
+    {
+      id: 'kitchen',
+      title: 'Cocina / Ingredientes',
+      icon: FaUtensils,
+      description: 'Ingredientes, recetas y stock de cocina',
+      color: '#EF4444',
+      colorDark: '#DC2626',
+      stats: 'Próximamente',
+      available: false
+    },
+    {
+      id: 'salon',
+      title: 'Salón / Menaje',
+      icon: FaConciergeBell,
+      description: 'Platos, cubiertos, cristalería y menaje',
+      color: '#3B82F6',
+      colorDark: '#2563EB',
+      stats: 'Próximamente',
+      available: false
+    },
+    {
+      id: 'users',
+      title: 'Gestión de Usuarios',
+      icon: FaUsers,
+      description: 'Administrar usuarios y permisos del sistema',
+      color: '#8B5CF6',
+      colorDark: '#7C3AED',
+      stats: 'Solo Admin',
+      available: userRole === 'admin',
+      adminOnly: true
+    },
+    {
+      id: 'staff',
+      title: 'Personal / Horarios',
+      icon: FaCalendarAlt,
+      description: 'Gestión de turnos y personal',
+      color: '#10B981',
+      colorDark: '#059669',
+      stats: 'Próximamente',
+      available: false
+    },
+    {
+      id: 'reports',
+      title: 'Reportes / Analytics',
+      icon: FaChartBar,
+      description: 'Análisis y reportes del restaurante',
+      color: '#6B7280',
+      colorDark: '#4B5563',
+      stats: 'Ver estadísticas',
+      available: false
+    }
+  ];
+
+  return (
+    <div>
+      {/* Header del Dashboard */}
+      <div className="text-center mb-5">
+        <h1 style={{ 
+          fontFamily: 'Raleway, sans-serif', 
+          fontSize: '2.5rem', 
+          color: '#333333',
+          textShadow: '0 0 10px rgba(135, 206, 235, 0.3)'
+        }}>
+          Baires Restaurant
+        </h1>
+        <p className="lead text-muted">Panel de Control Principal</p>
+      </div>
+
+      {/* Solo Módulos */}
+      <div className="mb-5">
+        <Row>
+          {modules.map((module) => {
+            const IconComponent = module.icon;
+            return (
+              <Col key={module.id} md={4} className="mb-3">
+                <Card 
+                  className={`module-card h-100 ${module.available ? 'hover-3d' : ''}`}
+                  style={{
+                    '--module-color': module.color,
+                    '--module-color-dark': module.colorDark,
+                    background: `linear-gradient(135deg, ${module.color}, ${module.colorDark})`,
+                    opacity: module.available ? 1 : 0.6,
+                    cursor: module.available ? 'pointer' : 'not-allowed'
+                  }}
+                  onClick={() => module.available && onNavigateToModule(module.id)}
+                >
+                  <Card.Body className="d-flex flex-column justify-content-between">
+                    <div>
+                      <div className="d-flex justify-content-between align-items-start mb-3">
+                        <IconComponent size={40} />
+                        <Badge bg="light" text="dark" className="opacity-75">
+                          {module.stats}
+                        </Badge>
+                      </div>
+                      <h5 className="mb-2">{module.title}</h5>
+                      <p className="small opacity-90 mb-0">{module.description}</p>
+                    </div>
+                    {!module.available && (
+                      <div className="mt-3">
+                        <Badge bg="warning" text="dark">
+                          Próximamente
+                        </Badge>
+                      </div>
+                    )}
+                  </Card.Body>
+                </Card>
+              </Col>
+            );
+          })}
+        </Row>
+      </div>
+    </div>
+  );
+};
+
 function App() {
   const [user, setUser] = useState(null);
+  const [currentView, setCurrentView] = useState('dashboard');
   const [inventory, setInventory] = useState([]);
   const [providers, setProviders] = useState([]);
   const [historial, setHistorial] = useState([]);
@@ -115,7 +265,6 @@ function App() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [openCard, setOpenCard] = useState(null);
 
-  // Custom hook para roles
   const { userRole, userProfile, loading: roleLoading, isAdmin, canEditAllFields, canManageUsers, canManageProviders } = useUserRole(user);
 
   useEffect(() => {
@@ -215,11 +364,30 @@ function App() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      setCurrentView('dashboard');
       setSuccess('Sesión cerrada correctamente');
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
       console.error('Error en logout:', err);
     }
+  };
+
+  const handleNavigateToModule = (moduleId) => {
+    if (moduleId === 'bar') {
+      setCurrentView('bar');
+    } else if (moduleId === 'users' && userRole === 'admin') {
+      setShowUserModal(true);
+    } else {
+      setError(`El módulo ${moduleId} estará disponible próximamente`);
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const handleBackToDashboard = () => {
+    setCurrentView('dashboard');
+    setSearchTerm('');
+    setLicorFilter('');
+    setShowLowStockOnly(false);
   };
 
   const handleDownloadCSV = () => {
@@ -358,7 +526,6 @@ function App() {
     setTimeout(() => setSuccess(''), 3000);
   };
 
-  // Filtros aplicados
   const filteredInventory = inventory.filter(item => {
     const searchLower = searchTerm.toLowerCase();
     const matchesSearch = !searchTerm || 
@@ -374,7 +541,6 @@ function App() {
     return matchesSearch && matchesLowStock && matchesTypeFilter;
   });
 
-  // Estadísticas del inventario
   const inventoryStats = {
     total: inventory.length,
     lowStock: inventory.filter(item => Number(item.stock) <= Number(item.umbral_low)).length,
@@ -382,7 +548,6 @@ function App() {
     totalValue: inventory.reduce((sum, item) => sum + (Number(item.stock) * Number(item.precio || 0)), 0)
   };
 
-  // Datos para gráficos
   const lowStockData = {
     labels: ['Stock Bajo', 'Stock Saludable'],
     datasets: [
@@ -447,18 +612,28 @@ function App() {
         )}
 
         <Navbar bg="transparent" variant="dark" expand="lg" className="mb-4 rounded glass">
-          <Navbar.Brand as={Link} to="/" style={{ fontFamily: 'Raleway, sans-serif', fontSize: '28px', color: '#333333', textShadow: '0 0 2px #87CEEB' }}>
-            Baires Inventory
+          <Navbar.Brand onClick={handleBackToDashboard} style={{ 
+            fontFamily: 'Raleway, sans-serif', 
+            fontSize: '28px', 
+            color: '#333333', 
+            textShadow: '0 0 2px #87CEEB',
+            cursor: 'pointer'
+          }}>
+            <FaHome className="me-2" />
+            Baires Restaurant
           </Navbar.Brand>
           <Navbar.Toggle aria-controls="basic-navbar-nav" />
           <Navbar.Collapse id="basic-navbar-nav">
             <Nav className="me-auto">
-              <Nav.Link as={Link} to="/" style={{ color: '#333333', fontSize: '16px' }}>
+              <Nav.Link onClick={handleBackToDashboard} style={{ color: '#333333', fontSize: '16px' }}>
+                <FaHome className="me-1" />
                 Dashboard
               </Nav.Link>
-              <Nav.Link as={Link} to="/historial" style={{ color: '#333333', fontSize: '16px' }}>
-                Historial
-              </Nav.Link>
+              {currentView === 'bar' && (
+                <Nav.Link as={Link} to="/historial" style={{ color: '#333333', fontSize: '16px' }}>
+                  Historial
+                </Nav.Link>
+              )}
             </Nav>
             <Nav>
               {user && (
@@ -500,594 +675,403 @@ function App() {
           </Navbar.Collapse>
         </Navbar>
 
-        <Routes>
-          <Route path="/" element={
-            <div>
-              <h3 className="text-center mb-4" style={{ color: '#333333', fontFamily: 'Raleway, sans-serif', textTransform: 'uppercase', letterSpacing: '2px', fontSize: '24px', textShadow: '0 0 5px #87CEEB' }}>
-                Gestión de Inventario
-              </h3>
-
-              {/* Estadísticas rápidas */}
-              <Row className="mb-4">
-                <Col md={3}>
-                  <Card className="glass hover-3d text-center">
-                    <Card.Body>
-                      <h5 style={{ color: '#87CEEB' }}>{inventoryStats.total}</h5>
-                      <small>Total Productos</small>
-                    </Card.Body>
-                  </Card>
-                </Col>
-                <Col md={3}>
-                  <Card className="glass hover-3d text-center">
-                    <Card.Body>
-                      <h5 style={{ color: inventoryStats.lowStock > 0 ? '#FF6B6B' : '#28a745' }}>
-                        {inventoryStats.lowStock}
-                      </h5>
-                      <small>Stock Bajo</small>
-                    </Card.Body>
-                  </Card>
-                </Col>
-                <Col md={3}>
-                  <Card className="glass hover-3d text-center">
-                    <Card.Body>
-                      <h5 style={{ color: inventoryStats.criticalStock > 0 ? '#DC3545' : '#28a745' }}>
-                        {inventoryStats.criticalStock}
-                      </h5>
-                      <small>Sin Stock</small>
-                    </Card.Body>
-                  </Card>
-                </Col>
-                <Col md={3}>
-                  <Card className="glass hover-3d text-center">
-                    <Card.Body>
-                      <h5 style={{ color: '#87CEEB' }}>
-                        ${inventoryStats.totalValue.toLocaleString('es-AR')}
-                      </h5>
-                      <small>Valor Total</small>
-                    </Card.Body>
-                  </Card>
-                </Col>
-              </Row>
-
-              {/* Controles principales */}
-              <Row className="mb-4">
-                <Col md={2}>
-                  <Card className="glass hover-3d text-center" style={{ cursor: 'pointer' }} onClick={() => setShowAddForm(true)}>
-                    <Card.Body>
-                      <FaPlus style={{ fontSize: '24px', color: '#87CEEB' }} />
-                      <Card.Text style={{ fontSize: '12px' }}>
-                        {canEditAllFields ? 'Agregar Ítem' : 'Ver Ítem'}
-                      </Card.Text>
-                    </Card.Body>
-                  </Card>
-                </Col>
-                <Col md={2}>
-                  <Dropdown>
-                    <Dropdown.Toggle as={Card} className="glass hover-3d text-center" style={{ cursor: 'pointer', border: 'none' }}>
-                      <Card.Body>
-                        <FaDownload style={{ fontSize: '24px', color: '#87CEEB' }} />
-                        <Card.Text style={{ fontSize: '12px' }}>Exportar</Card.Text>
-                      </Card.Body>
-                    </Dropdown.Toggle>
-                    <Dropdown.Menu>
-                      <Dropdown.Item onClick={handleDownloadCSV}>
-                        <i className="bi bi-filetype-csv me-2"></i>Exportar CSV
-                      </Dropdown.Item>
-                      <Dropdown.Item onClick={handleDownloadPDF}>
-                        <FaFilePdf className="me-2" />Exportar PDF
-                      </Dropdown.Item>
-                      <Dropdown.Divider />
-                      <Dropdown.Item onClick={handleLowStockPDF}>
-                        <i className="bi bi-exclamation-triangle me-2"></i>Reporte Stock Bajo
-                      </Dropdown.Item>
-                    </Dropdown.Menu>
-                  </Dropdown>
-                </Col>
-                <Col md={2}>
-                  <Card className="glass hover-3d text-center" style={{ cursor: 'pointer' }} onClick={sendLowStockEmail}>
-                    <Card.Body>
-                      <i className="bi bi-envelope" style={{ fontSize: '24px', color: '#87CEEB' }}></i>
-                      <Card.Text style={{ fontSize: '12px' }}>Enviar Pedido</Card.Text>
-                    </Card.Body>
-                  </Card>
-                </Col>
-                <Col md={2}>
-                  <Card className="glass hover-3d text-center" style={{ cursor: 'pointer' }} onClick={() => setShowLowStockOnly(!showLowStockOnly)}>
-                    <Card.Body>
-                      <FaFilter style={{ fontSize: '24px', color: showLowStockOnly ? '#FF6B6B' : '#87CEEB' }} />
-                      <Card.Text style={{ fontSize: '12px' }}>
-                        {showLowStockOnly ? 'Ver Todo' : 'Stock Bajo'}
-                      </Card.Text>
-                    </Card.Body>
-                  </Card>
-                </Col>
-                <Col md={2}>
-                  <Dropdown>
-                    <Dropdown.Toggle as={Card} className="glass hover-3d text-center" style={{ cursor: 'pointer', border: 'none' }}>
-                      <Card.Body>
-                        <i className="bi bi-funnel" style={{ fontSize: '24px', color: '#87CEEB' }}></i>
-                        <Card.Text style={{ fontSize: '12px' }}>Filtrar Tipo</Card.Text>
-                      </Card.Body>
-                    </Dropdown.Toggle>
-                    <Dropdown.Menu>
-                      <Dropdown.Item onClick={() => setLicorFilter('')}>
-                        Todos los tipos
-                      </Dropdown.Item>
-                      <Dropdown.Divider />
-                      <Dropdown.Item onClick={() => setLicorFilter('licor')}>
-                        <i className="bi bi-cup-fill me-2"></i>Licores
-                      </Dropdown.Item>
-                      <Dropdown.Item onClick={() => setLicorFilter('vino')}>
-                        <i className="bi bi-wine-glass-fill me-2"></i>Vinos
-                      </Dropdown.Item>
-                      <Dropdown.Item onClick={() => setLicorFilter('cerveza')}>
-                        <i className="bi bi-bucket me-2"></i>Cervezas
-                      </Dropdown.Item>
-                      <Dropdown.Item onClick={() => setLicorFilter('otros')}>
-                        <i className="bi bi-three-dots me-2"></i>Otros
-                      </Dropdown.Item>
-                    </Dropdown.Menu>
-                  </Dropdown>
-                </Col>
-              </Row>
-
-              {/* Barra de búsqueda mejorada */}
-              <Row className="mb-4">
-                <Col md={8}>
-                  <Form.Control
-                    type="text"
-                    className="glass"
-                    placeholder="Buscar por nombre, marca o tipo..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    style={{ borderRadius: '20px', padding: '12px 20px', border: '1px solid #87CEEB' }}
-                  />
-                </Col>
-                <Col md={4}>
-                  <div className="d-flex gap-2">
-                    {searchTerm && (
-                      <Button 
-                        variant="outline-secondary" 
-                        onClick={() => setSearchTerm('')}
-                        size="sm"
-                      >
-                        Limpiar
-                      </Button>
-                    )}
-                    <small className="text-muted align-self-center">
-                      {filteredInventory.length} de {inventory.length} productos
-                    </small>
+        {/* Contenido principal */}
+        {currentView === 'dashboard' ? (
+          <MainDashboard
+            inventory={inventory}
+            providers={providers}
+            historial={historial}
+            notes={notes}
+            user={user}
+            userRole={userRole}
+            onNavigateToModule={handleNavigateToModule}
+          />
+        ) : currentView === 'bar' ? (
+          <Routes>
+            <Route path="/" element={
+              <div>
+                {/* Header del módulo bar */}
+                <div className="d-flex justify-content-between align-items-center mb-4">
+                  <div>
+                    <Button 
+                      variant="link" 
+                      onClick={handleBackToDashboard}
+                      className="p-0 text-decoration-none mb-2"
+                      style={{ color: '#87CEEB' }}
+                    >
+                      <i className="bi bi-arrow-left me-2"></i>
+                      Volver al Dashboard
+                    </Button>
+                    <h2 className="mb-0" style={{ 
+                      color: '#333333', 
+                      fontFamily: 'Raleway, sans-serif',
+                      fontWeight: '600'
+                    }}>
+                      <FaWineGlass className="me-3" style={{ color: '#F59E0B' }} />
+                      Inventario Bar
+                    </h2>
                   </div>
-                </Col>
-              </Row>
+                  <Button 
+                    variant="primary" 
+                    onClick={() => setShowAddForm(true)}
+                    style={{ background: '#F59E0B', borderColor: '#F59E0B' }}
+                  >
+                    <FaPlus className="me-2" />
+                    {canEditAllFields ? 'Agregar Producto' : 'Ver Producto'}
+                  </Button>
+                </div>
 
-              {/* Alertas de stock crítico */}
-              {inventoryStats.criticalStock > 0 && (
-                <Alert variant="danger" className="mb-4">
-                  <i className="bi bi-exclamation-triangle-fill me-2"></i>
-                  <strong>¡Atención!</strong> {inventoryStats.criticalStock} productos sin stock requieren reposición inmediata.
-                </Alert>
-              )}
-
-              {inventoryStats.lowStock > inventoryStats.criticalStock && (
-                <Alert variant="warning" className="mb-4">
-                  <i className="bi bi-exclamation-circle-fill me-2"></i>
-                  <strong>Aviso:</strong> {inventoryStats.lowStock - inventoryStats.criticalStock} productos con stock bajo.
-                </Alert>
-              )}
-
-              {/* Grid de productos */}
-              <Row>
-                {filteredInventory.length === 0 ? (
-                  <Col>
-                    <Card className="glass text-center p-4">
-                      <Card.Body>
-                        <i className="bi bi-search" style={{ fontSize: '48px', color: '#87CEEB' }}></i>
-                        <h5 className="mt-3">No se encontraron productos</h5>
-                        <p className="text-muted">
-                          {searchTerm ? 'Intenta con otros términos de búsqueda' : 'No hay productos que coincidan con los filtros aplicados'}
-                        </p>
+                {/* Estadísticas con gradientes */}
+                <Row className="mb-4">
+                  <Col md={3}>
+                    <Card className="border-0 shadow-sm h-100" style={{ 
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      color: 'white'
+                    }}>
+                      <Card.Body className="text-center">
+                        <i className="bi bi-box-seam" style={{ fontSize: '2.5rem', opacity: 0.8 }}></i>
+                        <h2 className="mb-1 fw-bold">{inventoryStats.total}</h2>
+                        <p className="mb-0 opacity-90">Productos</p>
                       </Card.Body>
                     </Card>
                   </Col>
-                ) : (
-                  filteredInventory.map(item => {
-                    const isLowStock = Number(item.stock) <= Number(item.umbral_low);
-                    const isCriticalStock = Number(item.stock) === 0;
-                    const stockPercentage = Math.min((item.stock / (item.umbral_low * 2)) * 100, 100);
-
-                    return (
-                      <Col key={item.id} md={4} lg={3} className="mb-3">
-                        <Card 
-                          className={`glass hover-3d ${isCriticalStock ? 'critical-stock' : isLowStock ? 'low-stock' : ''}`}
-                          style={{ 
-                            borderRadius: '15px', 
-                            border: 'none', 
-                            padding: '10px',
-                            position: 'relative',
-                            minHeight: '320px'
-                          }}
-                        >
-                          {/* Indicadores de estado */}
-                          {isCriticalStock && (
-                            <Badge bg="danger" className="position-absolute" style={{ top: '10px', right: '10px' }}>
-                              SIN STOCK
-                            </Badge>
-                          )}
-                          {isLowStock && !isCriticalStock && (
-                            <Badge bg="warning" className="position-absolute" style={{ top: '10px', right: '10px' }}>
-                              STOCK BAJO
-                            </Badge>
-                          )}
-
-                          <Card.Body style={{ color: '#333333' }}>
-                            <Card.Title style={{ fontSize: '1.1rem', fontFamily: 'Raleway, sans-serif', marginBottom: '10px' }}>
-                              {item.nombre}
-                            </Card.Title>
-
-                            {/* Información del producto */}
-                            <div style={{ fontSize: '0.85rem', marginBottom: '15px' }}>
-                              <div><strong>Tipo:</strong> {item.tipo}</div>
-                              {item.tipo === 'licor' && item.subTipo && (
-                                <div><strong>Sub-tipo:</strong> {item.subTipo}</div>
-                              )}
-                              {(item.tipo === 'vino' || item.tipo === 'cerveza') && item.marca && (
-                                <div><strong>Marca:</strong> {item.marca}</div>
-                              )}
-                              {item.tipo === 'vino' && item.origen && (
-                                <div><strong>Origen:</strong> {item.origen}</div>
-                              )}
-                              {item.precio && (
-                                <div><strong>Precio:</strong> ${Number(item.precio).toFixed(2)}</div>
-                              )}
-                            </div>
-
-                            {/* Barra de progreso del stock */}
-                            <div className="mb-2">
-                              <div className="d-flex justify-content-between mb-1">
-                                <small>Stock: {Number(item.stock).toFixed(2)}</small>
-                                <small>Umbral: {Number(item.umbral_low).toFixed(2)}</small>
-                              </div>
-                              <div style={{ 
-                                width: '100%', 
-                                background: 'rgba(211, 211, 211, 0.3)', 
-                                height: '8px', 
-                                borderRadius: '4px', 
-                                overflow: 'hidden' 
-                              }}>
-                                <div style={{ 
-                                  width: `${stockPercentage}%`, 
-                                  height: '100%', 
-                                  background: isCriticalStock ? '#DC3545' : 
-                                             isLowStock ? '#FFC107' : '#28A745',
-                                  transition: 'width 0.5s ease',
-                                  borderRadius: '4px'
-                                }}></div>
-                              </div>
-                            </div>
-
-                            {/* Información del proveedor */}
-                            {item.proveedor_id && (
-                              <div style={{ fontSize: '0.75rem', color: '#6c757d', marginBottom: '10px' }}>
-                                <i className="bi bi-building me-1"></i>
-                                {getProviderName(item.proveedor_id)}
-                              </div>
-                            )}
-
-                            {/* Botón de edición */}
-                            <div className="d-grid gap-2">
-                              <Button
-                                variant={canEditAllFields ? 'primary' : 'outline-primary'}
-                                size="sm"
-                                onClick={() => handleEditItem(item)}
-                                className="hover-3d"
-                              >
-                                <FaEdit className="me-1" />
-                                {canEditAllFields ? 'Editar' : 'Ver/Actualizar Stock'}
-                              </Button>
-                            </div>
-                          </Card.Body>
-                        </Card>
-                      </Col>
-                    );
-                  })
-                )}
-              </Row>
-
-              {/* Gráfico de estadísticas */}
-              {inventory.length > 0 && (
-                <Row className="mt-4">
-                  <Col md={6}>
-                    <Card className="glass">
-                      <Card.Header>
-                        <h6>Estado del Inventario</h6>
-                      </Card.Header>
-                      <Card.Body>
-                        <div style={{ maxWidth: '300px', margin: '0 auto' }}>
-                          <Pie 
-                            data={lowStockData} 
-                            options={{ 
-                              responsive: true,
-                              plugins: {
-                                legend: {
-                                  position: 'bottom'
-                                }
-                              }
-                            }} 
-                          />
-                        </div>
+                  <Col md={3}>
+                    <Card className="border-0 shadow-sm h-100" style={{ 
+                      background: inventoryStats.lowStock > 0 
+                        ? 'linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%)'
+                        : 'linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%)',
+                      color: 'white'
+                    }}>
+                      <Card.Body className="text-center">
+                        <h2 className="mb-1 fw-bold">{inventoryStats.lowStock}</h2>
+                        <p className="mb-0 opacity-90">Stock Bajo</p>
                       </Card.Body>
                     </Card>
                   </Col>
-                  <Col md={6}>
-                    <Card className="glass">
-                      <Card.Header>
-                        <h6>Resumen por Categoría</h6>
-                      </Card.Header>
-                      <Card.Body>
-                        {['licor', 'vino', 'cerveza', 'otros'].map(tipo => {
-                          const count = inventory.filter(item => item.tipo === tipo).length;
-                          const lowCount = inventory.filter(item => 
-                            item.tipo === tipo && Number(item.stock) <= Number(item.umbral_low)
-                          ).length;
-                          
-                          if (count === 0) return null;
-                          
-                          return (
-                            <div key={tipo} className="d-flex justify-content-between align-items-center mb-2">
-                              <span className="text-capitalize">
-                                <i className={`bi ${
-                                  tipo === 'licor' ? 'bi-cup-fill' :
-                                  tipo === 'vino' ? 'bi-wine-glass-fill' :
-                                  tipo === 'cerveza' ? 'bi-bucket' : 'bi-three-dots'
-                                } me-2`}></i>
-                                {tipo}
-                              </span>
-                              <div>
-                                <Badge bg="primary" className="me-1">{count}</Badge>
-                                {lowCount > 0 && <Badge bg="warning">{lowCount} bajo</Badge>}
-                              </div>
-                            </div>
-                          );
-                        })}
+                  <Col md={3}>
+                    <Card className="border-0 shadow-sm h-100" style={{ 
+                      background: inventoryStats.criticalStock > 0
+                        ? 'linear-gradient(135deg, #FF6B6B 0%, #DC3545 100%)'
+                        : 'linear-gradient(135deg, #96CEB4 0%, #4ECDC4 100%)',
+                      color: 'white'
+                    }}>
+                      <Card.Body className="text-center">
+                        <i className="bi bi-x-circle" style={{ fontSize: '2.5rem', opacity: 0.8 }}></i>
+                        <h2 className="mb-1 fw-bold">{inventoryStats.criticalStock}</h2>
+                        <p className="mb-0 opacity-90">Sin Stock</p>
+                      </Card.Body>
+                    </Card>
+                  </Col>
+                  <Col md={3}>
+                    <Card className="border-0 shadow-sm h-100" style={{ 
+                      background: 'linear-gradient(135deg, #ffa726 0%, #ff7043 100%)',
+                      color: 'white'
+                    }}>
+                      <Card.Body className="text-center">
+                        <i className="bi bi-currency-dollar" style={{ fontSize: '2.5rem', opacity: 0.8 }}></i>
+                        <h2 className="mb-1 fw-bold" style={{ fontSize: '1.5rem' }}>
+                          ${inventoryStats.totalValue.toLocaleString('es-AR')}
+                        </h2>
+                        <p className="mb-0 opacity-90">Valor Total</p>
                       </Card.Body>
                     </Card>
                   </Col>
                 </Row>
-              )}
-            </div>
-          } />
 
-          <Route path="/historial" element={
-            <div>
-              <h2 className="mb-4" style={{ color: '#333333', fontFamily: 'Raleway, sans-serif' }}>
-                Historial de Movimientos
-              </h2>
-              
-              {historial.length === 0 ? (
-                <Card className="glass text-center p-4">
+                {/* Panel de controles modernizado */}
+                <Card className="border-0 shadow-sm mb-4">
                   <Card.Body>
-                    <i className="bi bi-clock-history" style={{ fontSize: '48px', color: '#87CEEB' }}></i>
-                    <h5 className="mt-3">No hay movimientos registrados</h5>
-                    <p className="text-muted">Los movimientos del inventario aparecerán aquí</p>
+                    <Row className="align-items-center">
+                      <Col md={6}>
+                        <div className="position-relative">
+                          <i className="bi bi-search position-absolute" style={{ 
+                            left: '15px', 
+                            top: '50%', 
+                            transform: 'translateY(-50%)', 
+                            color: '#6c757d'
+                          }}></i>
+                          <Form.Control
+                            type="text"
+                            placeholder="Buscar productos, marcas o tipos..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            style={{ 
+                              paddingLeft: '45px',
+                              borderRadius: '25px',
+                              height: '50px'
+                            }}
+                          />
+                        </div>
+                      </Col>
+                      <Col md={6}>
+                        <div className="d-flex gap-2 justify-content-end">
+                          <Button
+                            variant={showLowStockOnly ? 'warning' : 'outline-warning'}
+                            onClick={() => setShowLowStockOnly(!showLowStockOnly)}
+                          >
+                            <FaFilter className="me-2" />
+                            {showLowStockOnly ? 'Ver Todo' : 'Stock Bajo'}
+                          </Button>
+                          
+                          <Dropdown>
+                            <Dropdown.Toggle variant="outline-secondary">
+                              <i className="bi bi-funnel me-2"></i>
+                              Tipo
+                            </Dropdown.Toggle>
+                            <Dropdown.Menu>
+                              <Dropdown.Item onClick={() => setLicorFilter('')}>
+                                Todos
+                              </Dropdown.Item>
+                              <Dropdown.Divider />
+                              <Dropdown.Item onClick={() => setLicorFilter('licor')}>
+                                Licores
+                              </Dropdown.Item>
+                              <Dropdown.Item onClick={() => setLicorFilter('vino')}>
+                                Vinos
+                              </Dropdown.Item>
+                              <Dropdown.Item onClick={() => setLicorFilter('cerveza')}>
+                                Cervezas
+                              </Dropdown.Item>
+                              <Dropdown.Item onClick={() => setLicorFilter('otros')}>
+                                Otros
+                              </Dropdown.Item>
+                            </Dropdown.Menu>
+                          </Dropdown>
+
+                          <Dropdown>
+                            <Dropdown.Toggle variant="outline-primary">
+                              <FaDownload className="me-2" />
+                              Exportar
+                            </Dropdown.Toggle>
+                            <Dropdown.Menu>
+                              <Dropdown.Item onClick={handleDownloadCSV}>
+                                Exportar CSV
+                              </Dropdown.Item>
+                              <Dropdown.Item onClick={handleDownloadPDF}>
+                                Exportar PDF
+                              </Dropdown.Item>
+                              <Dropdown.Divider />
+                              <Dropdown.Item onClick={handleLowStockPDF}>
+                                Reporte Stock Bajo
+                              </Dropdown.Item>
+                              <Dropdown.Item onClick={sendLowStockEmail}>
+                                Enviar Pedido
+                              </Dropdown.Item>
+                            </Dropdown.Menu>
+                          </Dropdown>
+                        </div>
+                      </Col>
+                    </Row>
                   </Card.Body>
                 </Card>
-              ) : (
-                Object.entries(
-                  historial.reduce((acc, log) => {
-                    const date = log.fecha.toDate().toLocaleDateString();
-                    if (!acc[date]) acc[date] = [];
-                    acc[date].push(log);
-                    return acc;
-                  }, {})
-                ).map(([date, logs]) => {
-                  const totalMovimientos = logs.length;
-                  const totalUnidades = logs.reduce((sum, log) => sum + Number(log.cantidad || 0), 0);
-                  const ventas = logs.filter(log => log.accion === 'vendido').length;
-                  const agregados = logs.filter(log => log.accion === 'agregado').length;
 
-                  return (
-                    <Card key={date} className="glass mb-3 hover-3d">
-                      <Card.Header 
-                        style={{ cursor: 'pointer' }} 
-                        onClick={() => setOpenCard(openCard === date ? null : date)}
-                      >
-                        <div className="d-flex justify-content-between align-items-center">
-                          <div>
-                            <h6 className="mb-0">{new Date(date).toLocaleDateString('es-AR', { 
-                              weekday: 'long', 
-                              year: 'numeric', 
-                              month: 'long', 
-                              day: 'numeric' 
-                            })}</h6>
-                            <small className="text-muted">
-                              {totalMovimientos} movimiento{totalMovimientos !== 1 ? 's' : ''} • 
-                              {totalUnidades} unidad{totalUnidades !== 1 ? 'es' : ''}
-                            </small>
-                          </div>
-                          <div className="d-flex gap-2">
-                            {agregados > 0 && <Badge bg="success">{agregados} agregado{agregados !== 1 ? 's' : ''}</Badge>}
-                            {ventas > 0 && <Badge bg="danger">{ventas} venta{ventas !== 1 ? 's' : ''}</Badge>}
-                            <i className={`bi bi-chevron-${openCard === date ? 'up' : 'down'}`}></i>
-                          </div>
-                        </div>
-                      </Card.Header>
-                      <Collapse in={openCard === date}>
+                {/* Grid de productos rediseñado */}
+                <Row>
+                  {filteredInventory.length === 0 ? (
+                    <Col>
+                      <Card className="border-0 shadow-sm text-center py-5">
                         <Card.Body>
-                          <div className="timeline">
-                            {logs
-                              .sort((a, b) => new Date(b.fecha.toDate()) - new Date(a.fecha.toDate()))
-                              .map(log => (
-                                <div key={log.id} className="d-flex align-items-center mb-2 p-2 rounded" style={{ background: 'rgba(255, 255, 255, 0.3)' }}>
-                                  <div className="me-3">
-                                    <i className={`bi ${
-                                      log.accion === 'agregado' ? 'bi-arrow-up-circle text-success' :
-                                      log.accion === 'vendido' ? 'bi-arrow-down-circle text-danger' :
-                                      'bi-gear text-info'
-                                    }`} style={{ fontSize: '1.5rem' }}></i>
-                                  </div>
-                                  <div className="flex-grow-1">
-                                    <div className="fw-bold">
-                                      {log.accion === 'agregado' ? 'Agregado' :
-                                       log.accion === 'vendido' ? 'Vendido' :
-                                       log.accion === 'creado' ? 'Creado' : 'Modificado'} - 
-                                      {Number(log.cantidad || 0).toFixed(2)} unidades
-                                    </div>
-                                    <div className="text-muted small">
-                                      <strong>Producto:</strong> {log.item_nombre || log.item_id} • 
-                                      <strong> Usuario:</strong> {log.usuario} • 
-                                      <strong> Hora:</strong> {log.fecha.toDate().toLocaleTimeString('es-AR')}
-                                      {log.motivo && (
-                                        <><br/><strong>Motivo:</strong> {log.motivo}</>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                          </div>
+                          <i className="bi bi-search" style={{ fontSize: '4rem', color: '#e9ecef' }}></i>
+                          <h4 className="text-muted mb-3">No se encontraron productos</h4>
+                          <p className="text-muted">
+                            {searchTerm ? 'Intenta con otros términos' : 'No hay productos que coincidan'}
+                          </p>
                         </Card.Body>
-                      </Collapse>
-                    </Card>
-                  );
-                })
-              )}
-            </div>
-          } />
-        </Routes>
+                      </Card>
+                    </Col>
+                  ) : (
+                    filteredInventory.map(item => {
+                      const isLowStock = Number(item.stock) <= Number(item.umbral_low);
+                      const isCriticalStock = Number(item.stock) === 0;
+                      const stockPercentage = Math.min((item.stock / (item.umbral_low * 2)) * 100, 100);
 
-        {/* Chat button y modal */}
-        {user && (
-          <>
-            <Button
-              variant="primary"
-              className="position-fixed chat-button"
-              style={{ 
-                bottom: '20px', 
-                right: '20px', 
-                zIndex: 1000, 
-                borderRadius: '50%', 
-                width: '60px', 
-                height: '60px', 
-                padding: '0', 
-                background: '#87CEEB', 
-                border: '2px solid #87CEEB', 
-                boxShadow: '0 0 10px #87CEEB' 
-              }}
-              onClick={toggleChat}
-            >
-              <i className="bi bi-chat-fill" style={{ fontSize: '28px', color: '#333333' }}></i>
-              {unreadNotes.size > 0 && (
-                <Badge 
-                  bg="danger" 
-                  className="position-absolute" 
-                  style={{ top: '-5px', right: '-5px' }}
-                >
-                  {unreadNotes.size}
-                </Badge>
-              )}
-            </Button>
+                      return (
+                        <Col key={item.id} md={6} lg={4} xl={3} className="mb-4">
+                          <Card className="border-0 shadow-sm h-100">
+                            <Card.Body>
+                              <div className="d-flex justify-content-between align-items-start mb-3">
+                                <h6 className="fw-bold mb-0">{item.nombre}</h6>
+                                {(isCriticalStock || isLowStock) && (
+                                  <Badge bg={isCriticalStock ? 'danger' : 'warning'} className="ms-2">
+                                    {isCriticalStock ? 'SIN STOCK' : 'BAJO'}
+                                  </Badge>
+                                )}
+                              </div>
+                              
+                              <div className="mb-3">
+                                <Badge bg="light" text="dark" className="text-capitalize mb-2">
+                                  {item.tipo}
+                                </Badge>
+                                {item.precio && (
+                                  <div className="text-success fw-bold">
+                                    ${Number(item.precio).toFixed(2)}
+                                  </div>
+                                )}
+                              </div>
 
-            {/* Chat Modal */}
-            <Modal show={showChat} onHide={() => setShowChat(false)} className="chat-modal">
-              <Modal.Header closeButton className="glass">
-                <Modal.Title style={{ fontFamily: 'Raleway, sans-serif' }}>
-                  <i className="bi bi-chat-dots me-2"></i>Chat Interno
-                </Modal.Title>
-              </Modal.Header>
-              <Modal.Body className="glass" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                {notes.length === 0 ? (
-                  <div className="text-center text-muted">
-                    <i className="bi bi-chat" style={{ fontSize: '48px' }}></i>
-                    <p className="mt-2">No hay mensajes aún</p>
-                  </div>
-                ) : (
-                  <div>
-                    {notes.map(note => (
-                      <div key={note.id} className={`mb-3 p-3 rounded ${unreadNotes.has(note.id) ? 'bg-info bg-opacity-25' : 'bg-light bg-opacity-50'}`}>
-                        <div className="d-flex align-items-start">
-                          <div className="me-3">
-                            <div 
-                              className="rounded-circle d-flex align-items-center justify-content-center"
-                              style={{ 
-                                width: '40px', 
-                                height: '40px', 
-                                background: '#87CEEB', 
-                                color: 'white',
-                                fontWeight: 'bold'
-                              }}
-                            >
-                              {note.usuario.charAt(0).toUpperCase()}
-                            </div>
-                          </div>
-                          <div className="flex-grow-1">
-                            <div className="d-flex justify-content-between align-items-center mb-1">
-                              <strong>{note.usuario.split('@')[0]}</strong>
-                              <small className="text-muted">
-                                {note.fecha?.toDate().toLocaleString('es-AR')}
-                              </small>
-                            </div>
-                            <p className="mb-1">{note.texto}</p>
-                            {unreadNotes.has(note.id) && note.usuario !== user.email && (
-                              <Button 
-                                variant="link" 
-                                size="sm" 
-                                onClick={() => handleMarkAsRead(note.id)}
-                                className="p-0"
-                                style={{ color: '#87CEEB', fontSize: '0.8rem' }}
+                              <div className="mb-3">
+                                <div className="d-flex justify-content-between mb-1">
+                                  <small>Stock: {Number(item.stock).toFixed(1)}</small>
+                                  <small>Umbral: {Number(item.umbral_low).toFixed(1)}</small>
+                                </div>
+                                <div style={{ 
+                                  background: '#f8f9fa', 
+                                  height: '6px', 
+                                  borderRadius: '3px',
+                                  overflow: 'hidden'
+                                }}>
+                                  <div style={{ 
+                                    width: `${Math.max(stockPercentage, 5)}%`,
+                                    height: '100%', 
+                                    background: isCriticalStock ? '#dc3545' : isLowStock ? '#ffc107' : '#28a745',
+                                    borderRadius: '3px'
+                                  }}></div>
+                                </div>
+                              </div>
+
+                              <Button
+                                variant="outline-primary"
+                                size="sm"
+                                onClick={() => handleEditItem(item)}
+                                className="w-100"
                               >
-                                Marcar como leído
+                                <FaEdit className="me-1" />
+                                {canEditAllFields ? 'Editar' : 'Ver'}
                               </Button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                            </Card.Body>
+                          </Card>
+                        </Col>
+                      );
+                    })
+                  )}
+                </Row>
+
+                {/* Gráficos */}
+                {inventory.length > 0 && (
+                  <Row className="mt-5">
+                    <Col md={6}>
+                      <Card className="border-0 shadow-sm">
+                        <Card.Header>
+                          <h6>Estado del Inventario</h6>
+                        </Card.Header>
+                        <Card.Body>
+                          <Pie data={lowStockData} />
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                    <Col md={6}>
+                      <Card className="border-0 shadow-sm">
+                        <Card.Header>
+                          <h6>Resumen por Categoría</h6>
+                        </Card.Header>
+                        <Card.Body>
+                          {['licor', 'vino', 'cerveza', 'otros'].map(tipo => {
+                            const count = inventory.filter(item => item.tipo === tipo).length;
+                            if (count === 0) return null;
+                            return (
+                              <div key={tipo} className="d-flex justify-content-between mb-2">
+                                <span className="text-capitalize">{tipo}</span>
+                                <Badge bg="primary">{count}</Badge>
+                              </div>
+                            );
+                          })}
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                  </Row>
                 )}
-              </Modal.Body>
-              <Modal.Footer className="glass">
-                <Form onSubmit={addNote} className="w-100">
-                  <div className="d-flex gap-2">
-                    <Form.Control
-                      as="textarea"
-                      rows={2}
-                      value={newNote}
-                      onChange={(e) => setNewNote(e.target.value)}
-                      placeholder="Escribe un mensaje..."
-                      className="glass"
-                      style={{ border: '1px solid #87CEEB', resize: 'none' }}
-                    />
-                    <Button 
-                      variant="primary" 
-                      type="submit"
-                      disabled={!newNote.trim()}
-                      style={{ background: '#87CEEB', borderColor: '#87CEEB' }}
-                    >
-                      <i className="bi bi-send"></i>
-                    </Button>
-                  </div>
-                </Form>
-              </Modal.Footer>
-            </Modal>
-          </>
+              </div>
+            } />
+
+            <Route path="/historial" element={
+              <div>
+                <Button onClick={handleBackToDashboard} className="mb-3">
+                  Volver al Dashboard
+                </Button>
+                <h2>Historial de Movimientos</h2>
+              </div>
+            } />
+          </Routes>
+        ) : null}
+
+        {/* Chat button */}
+        {user && (
+          <Button
+            className="position-fixed"
+            style={{ 
+              bottom: '20px', 
+              right: '20px', 
+              borderRadius: '50%',
+              width: '60px',
+              height: '60px',
+              background: '#87CEEB'
+            }}
+            onClick={toggleChat}
+          >
+            <i className="bi bi-chat-fill"></i>
+            {unreadNotes.size > 0 && (
+              <Badge bg="danger" className="position-absolute" style={{ top: '-5px', right: '-5px' }}>
+                {unreadNotes.size}
+              </Badge>
+            )}
+          </Button>
         )}
 
-        {/* Modales */}
-        <Modal show={showLoginModal} onHide={() => setShowLoginModal(false)} centered>
-          <Modal.Header closeButton className="glass">
-            <Modal.Title style={{ fontFamily: 'Raleway, sans-serif' }}>Iniciar Sesión</Modal.Title>
+        {/* Chat Modal */}
+        <Modal show={showChat} onHide={() => setShowChat(false)}>
+          <Modal.Header closeButton>
+            <Modal.Title>Chat Interno</Modal.Title>
+          </Modal.Header>
+          <Modal.Body style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            {notes.length === 0 ? (
+              <div className="text-center text-muted">
+                <p>No hay mensajes aún</p>
+              </div>
+            ) : (
+              notes.map(note => (
+                <div key={note.id} className="mb-3 p-3 rounded bg-light">
+                  <div className="d-flex justify-content-between">
+                    <strong>{note.usuario.split('@')[0]}</strong>
+                    <small className="text-muted">
+                      {note.fecha?.toDate().toLocaleString('es-AR')}
+                    </small>
+                  </div>
+                  <p className="mb-0">{note.texto}</p>
+                </div>
+              ))
+            )}
+          </Modal.Body>
+          <Modal.Footer>
+            <Form onSubmit={addNote} className="w-100">
+              <div className="d-flex gap-2">
+                <Form.Control
+                  as="textarea"
+                  rows={2}
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  placeholder="Escribe un mensaje..."
+                />
+                <Button type="submit" disabled={!newNote.trim()}>
+                  Enviar
+                </Button>
+              </div>
+            </Form>
+          </Modal.Footer>
+        </Modal>
+
+        {/* Login Modal */}
+        <Modal show={showLoginModal} onHide={() => setShowLoginModal(false)}>
+          <Modal.Header closeButton>
+            <Modal.Title>Iniciar Sesión</Modal.Title>
           </Modal.Header>
           <Form onSubmit={handleLogin}>
-            <Modal.Body className="glass">
+            <Modal.Body>
               <Form.Group className="mb-3">
                 <Form.Label>Email</Form.Label>
                 <Form.Control
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Ingresa tu email"
-                  className="glass"
-                  style={{ border: '1px solid #87CEEB' }}
                   required
                 />
               </Form.Group>
@@ -1097,29 +1081,22 @@ function App() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Ingresa tu contraseña"
-                  className="glass"
-                  style={{ border: '1px solid #87CEEB' }}
                   required
                 />
               </Form.Group>
             </Modal.Body>
-            <Modal.Footer className="glass">
+            <Modal.Footer>
               <Button variant="secondary" onClick={() => setShowLoginModal(false)}>
                 Cancelar
               </Button>
-              <Button 
-                variant="primary" 
-                type="submit"
-                style={{ background: '#87CEEB', borderColor: '#87CEEB' }}
-              >
+              <Button variant="primary" type="submit">
                 Iniciar Sesión
               </Button>
             </Modal.Footer>
           </Form>
         </Modal>
 
-        {/* Formulario de inventario */}
+        {/* Modales de gestión */}
         <InventoryItemForm
           show={showAddForm}
           onHide={() => {
@@ -1133,7 +1110,6 @@ function App() {
           providers={providers}
         />
 
-        {/* Gestión de proveedores */}
         <ProviderManagement
           show={showProviderModal}
           onHide={() => setShowProviderModal(false)}
@@ -1141,7 +1117,6 @@ function App() {
           userRole={userRole}
         />
 
-        {/* Gestión de usuarios */}
         <UserManagement
           show={showUserModal}
           onHide={() => setShowUserModal(false)}
@@ -1150,13 +1125,8 @@ function App() {
         />
 
         {/* Footer */}
-        <footer className="text-center mt-5 py-3 glass" style={{ borderTop: '1px solid #87CEEB' }}>
-          <div className="d-flex justify-content-between align-items-center">
-            <small>&copy; 2025 Wilfred Del Pozo Diaz. Todos los derechos reservados.</small>
-            <small>
-              <Badge bg="info">v2.0</Badge> - Sistema mejorado con roles y validaciones
-            </small>
-          </div>
+        <footer className="text-center mt-5 py-3">
+          <small>&copy; 2025 Wilfred Del Pozo Diaz. Todos los derechos reservados.</small>
         </footer>
       </div>
     </Router>
