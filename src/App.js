@@ -409,33 +409,59 @@ function App() {
   };
 
   const handleDownloadPDF = () => {
-    const filters = {
-      search: searchTerm,
-      lowStock: showLowStockOnly,
-      tipo: licorFilter
-    };
-    exportInventoryToPDF(filteredInventory, filters);
-    setSuccess('PDF generado correctamente');
-    setTimeout(() => setSuccess(''), 3000);
+    try {
+      console.log('Iniciando exportación PDF...');
+      console.log('Productos filtrados:', filteredInventory.length);
+      
+      if (filteredInventory.length === 0) {
+        setError('No hay productos para exportar en PDF');
+        setTimeout(() => setError(''), 3000);
+        return;
+      }
+
+      const filters = {
+        search: searchTerm,
+        lowStock: showLowStockOnly,
+        tipo: licorFilter
+      };
+      
+      const fileName = exportInventoryToPDF(filteredInventory, filters);
+      setSuccess(`PDF generado correctamente: ${fileName}`);
+      setTimeout(() => setSuccess(''), 5000);
+    } catch (error) {
+      console.error('Error en handleDownloadPDF:', error);
+      setError('Error al generar PDF: ' + error.message);
+      setTimeout(() => setError(''), 5000);
+    }
   };
 
   const handleLowStockPDF = () => {
-    const lowStockItems = inventory.filter(item => 
-      Number(item.stock) <= Number(item.umbral_low)
-    ).map(item => ({
-      ...item,
-      proveedor_nombre: getProviderName(item.proveedor_id)
-    }));
-    
-    if (lowStockItems.length === 0) {
-      setError('No hay productos con stock bajo para exportar');
-      setTimeout(() => setError(''), 3000);
-      return;
+    try {
+      console.log('Iniciando PDF de stock bajo...');
+      
+      const lowStockItems = inventory.filter(item => 
+        Number(item.stock) <= Number(item.umbral_low)
+      ).map(item => ({
+        ...item,
+        proveedor_nombre: getProviderName(item.proveedor_id)
+      }));
+      
+      console.log('Items con stock bajo encontrados:', lowStockItems.length);
+      
+      if (lowStockItems.length === 0) {
+        setError('No hay productos con stock bajo para exportar en PDF');
+        setTimeout(() => setError(''), 3000);
+        return;
+      }
+      
+      const fileName = exportLowStockToPDF(lowStockItems);
+      setSuccess(`Reporte de stock bajo generado: ${fileName}`);
+      setTimeout(() => setSuccess(''), 5000);
+    } catch (error) {
+      console.error('Error en handleLowStockPDF:', error);
+      setError('Error al generar reporte de stock bajo: ' + error.message);
+      setTimeout(() => setError(''), 5000);
     }
-    
-    exportLowStockToPDF(lowStockItems);
-    setSuccess('Reporte de stock bajo generado');
-    setTimeout(() => setSuccess(''), 3000);
   };
 
   const getProviderName = (providerId) => {
@@ -443,7 +469,7 @@ function App() {
     return provider ? provider.nombre : 'Sin proveedor';
   };
 
-  const sendLowStockEmail = async () => {
+const sendLowStockEmail = async () => {
     const recipientEmail = prompt('Por favor, ingrese el correo del destinatario:', '');
     if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
       setError('Por favor, ingrese un correo válido.');
@@ -452,27 +478,77 @@ function App() {
     }
 
     try {
-      const functions = getFunctions();
-      const sendEmail = httpsCallable(functions, 'sendLowStockEmail');
+      // Filtrar productos con stock bajo
       const lowStockItems = inventory.filter(item => Number(item.stock) <= Number(item.umbral_low));
       
+      // Debug: mostrar información detallada
+      console.log('=== DEBUG EMAIL ===');
+      console.log('Total productos en inventario:', inventory.length);
+      console.log('Productos con stock bajo encontrados:', lowStockItems.length);
+      console.log('Productos con stock bajo:', lowStockItems.map(item => ({
+        nombre: item.nombre,
+        stock: item.stock,
+        umbral: item.umbral_low,
+        comparacion: `${item.stock} <= ${item.umbral_low} = ${Number(item.stock) <= Number(item.umbral_low)}`
+      })));
+      
       if (lowStockItems.length === 0) {
-        setError('No hay productos con stock bajo para notificar');
-        setTimeout(() => setError(''), 3000);
+        setError('No hay productos con stock bajo para notificar. Revisa los umbrales configurados.');
+        setTimeout(() => setError(''), 5000);
         return;
       }
 
-      await sendEmail({
-        inventory: lowStockItems,
+      // Preparar datos para envio
+      const emailData = {
+        inventory: lowStockItems.map(item => ({
+          id: item.id,
+          nombre: item.nombre,
+          tipo: item.tipo,
+          stock: Number(item.stock),
+          umbral_low: Number(item.umbral_low),
+          diferencia: Number(item.umbral_low) - Number(item.stock),
+          proveedor: getProviderName(item.proveedor_id)
+        })),
         recipientEmail: recipientEmail,
-        fromEmail: user.email
-      });
-      setSuccess('Email enviado con éxito a ' + recipientEmail);
-      setTimeout(() => setSuccess(''), 3000);
+        fromEmail: user.email,
+        timestamp: new Date().toISOString(),
+        totalItems: lowStockItems.length
+      };
+
+      console.log('Datos a enviar:', emailData);
+
+      // Intentar enviar email
+      const functions = getFunctions();
+      const sendEmail = httpsCallable(functions, 'sendLowStockEmail');
+      
+      setSuccess('Enviando email... Por favor espera.');
+      
+      const result = await sendEmail(emailData);
+      
+      console.log('Resultado del envío:', result);
+      setSuccess(`Email enviado exitosamente a ${recipientEmail}`);
+      setTimeout(() => setSuccess(''), 5000);
+      
     } catch (err) {
-      console.error('Error enviando email:', err);
-      setError('Error enviando email: ' + err.message);
-      setTimeout(() => setError(''), 3000);
+      console.error('Error completo enviando email:', err);
+      console.error('Código de error:', err.code);
+      console.error('Mensaje de error:', err.message);
+      console.error('Detalles adicionales:', err.details);
+      
+      let errorMessage = 'Error enviando email: ';
+      
+      if (err.code === 'functions/not-found') {
+        errorMessage += 'Cloud Function no encontrada. Verifica que esté desplegada.';
+      } else if (err.code === 'functions/permission-denied') {
+        errorMessage += 'Sin permisos para ejecutar la función.';
+      } else if (err.code === 'functions/internal') {
+        errorMessage += 'Error interno del servidor. Revisa los logs de Firebase.';
+      } else {
+        errorMessage += err.message || 'Error desconocido';
+      }
+      
+      setError(errorMessage);
+      setTimeout(() => setError(''), 10000);
     }
   };
 

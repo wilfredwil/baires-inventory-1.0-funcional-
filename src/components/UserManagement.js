@@ -5,6 +5,8 @@ import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, orderBy 
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth, db } from '../firebase';
 import { FaEdit, FaTrash, FaPlus, FaUsers, FaUserShield, FaUser } from 'react-icons/fa';
+import { setDoc } from 'firebase/firestore';
+
 
 const UserManagement = ({ user, userRole, show, onHide }) => {
   const [users, setUsers] = useState([]);
@@ -122,65 +124,54 @@ const UserManagement = ({ user, userRole, show, onHide }) => {
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!validateForm()) {
-      return;
-    }
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  
+  if (!validateForm()) {
+    return;
+  }
 
-    setLoading(true);
-    setError('');
-    setSuccess('');
+  setLoading(true);
+  setError('');
+  setSuccess('');
 
-    try {
-      const userData = {
-        email: formData.email.trim().toLowerCase(),
-        name: formData.name.trim(),
-        role: formData.role,
-        active: formData.active,
-        updatedAt: new Date(),
-        updatedBy: user.email
-      };
+  try {
+    const userData = {
+      email: formData.email.trim().toLowerCase(),
+      name: formData.name.trim(),
+      role: formData.role,
+      active: formData.active,
+      updatedAt: new Date(),
+      updatedBy: user.email
+    };
 
-      if (editingUser) {
-        // Actualizar usuario existente
-        await updateDoc(doc(db, 'users', editingUser.id), userData);
-        setSuccess('Usuario actualizado exitosamente');
-      } else {
-        // Crear nuevo usuario
-        userData.createdAt = new Date();
-        userData.createdBy = user.email;
-        
-        // Crear usuario en Authentication y Firestore
-        try {
-          const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-          // Usar el email como documento ID en Firestore
-          await addDoc(collection(db, 'users'), userData);
-          setSuccess('Usuario creado exitosamente');
-        } catch (authError) {
-          if (authError.code === 'auth/email-already-in-use') {
-            // Si el usuario ya existe en Auth, solo agregar a Firestore
-            await addDoc(collection(db, 'users'), userData);
-            setSuccess('Usuario agregado al sistema');
-          } else {
-            throw authError;
-          }
-        }
-      }
-
-      setShowUserModal(false);
-      resetForm();
-      fetchUsers();
+    if (editingUser) {
+      // Actualizar usuario existente
+      await updateDoc(doc(db, 'users', editingUser.id), userData);
+      setSuccess('Usuario actualizado exitosamente');
+    } else {
+      // Crear nuevo usuario SOLO EN FIRESTORE
+      userData.createdAt = new Date();
+      userData.createdBy = user.email;
       
-      // Limpiar mensaje de éxito después de 3 segundos
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (error) {
-      console.error('Error saving user:', error);
-      setError(error.message || 'Error al guardar el usuario');
+      // Crear documento en Firestore usando email como ID
+      const userDocRef = doc(db, 'users', formData.email.trim().toLowerCase());
+      await setDoc(userDocRef, userData);
+      
+      setSuccess('Usuario creado exitosamente en el sistema');
     }
-    setLoading(false);
-  };
+
+    setShowUserModal(false);
+    resetForm();
+    fetchUsers();
+    
+    setTimeout(() => setSuccess(''), 3000);
+  } catch (error) {
+    console.error('Error saving user:', error);
+    setError(error.message || 'Error al guardar el usuario');
+  }
+  setLoading(false);
+};
 
   const handleEdit = (userData) => {
     setEditingUser(userData);
