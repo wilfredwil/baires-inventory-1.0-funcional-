@@ -89,3 +89,100 @@ service cloud.firestore {
     }
   }
 }
+
+// Agregar estas reglas al archivo firestore.rules existente
+
+// Reglas para gestión de turnos (shifts)
+match /shifts/{shiftId} {
+  // Todos los usuarios autenticados pueden leer turnos
+  allow read: if request.auth != null && isUserActive();
+  
+  // Solo admins y managers pueden crear/editar turnos
+  allow create, update: if request.auth != null && 
+    (isAdmin() || isManager()) &&
+    // Validar que los datos requeridos estén presentes
+    request.resource.data.keys().hasAll(['employee_id', 'date', 'start_time', 'end_time', 'position']) &&
+    // Validar formato de fecha
+    request.resource.data.date is string &&
+    // Validar que el empleado asignado existe
+    request.resource.data.employee_id is string;
+  
+  // Solo admins pueden eliminar turnos
+  allow delete: if request.auth != null && isAdmin();
+}
+
+// Reglas para notas de turno
+match /shift_notes/{noteId} {
+  // Todos pueden leer notas
+  allow read: if request.auth != null && isUserActive();
+  
+  // Todos pueden crear notas
+  allow create: if request.auth != null && isUserActive() &&
+    // Validar campos requeridos
+    request.resource.data.keys().hasAll(['content', 'author', 'priority', 'category']) &&
+    // Validar que el autor sea el usuario actual
+    request.resource.data.author == request.auth.token.email;
+  
+  // Los usuarios pueden editar sus propias notas
+  allow update: if request.auth != null && 
+    request.auth.token.email == resource.data.author;
+  
+  // Solo admins y managers pueden eliminar notas
+  allow delete: if request.auth != null && (isAdmin() || isManager());
+}
+
+// Reglas para intercambios de turno
+match /shift_swaps/{swapId} {
+  // Todos pueden leer solicitudes de intercambio
+  allow read: if request.auth != null && isUserActive();
+  
+  // Los empleados pueden crear solicitudes de intercambio para sus propios turnos
+  allow create: if request.auth != null && isUserActive() &&
+    // Validar que el solicitante sea el dueño del turno o admin/manager
+    (request.auth.token.email == request.resource.data.requesting_employee ||
+     isAdmin() || isManager());
+  
+  // Los empleados pueden actualizar solicitudes relacionadas con sus turnos
+  // Admins y managers pueden actualizar cualquier solicitud
+  allow update: if request.auth != null &&
+    (request.auth.token.email == resource.data.requesting_employee ||
+     request.auth.token.email == resource.data.target_employee ||
+     isAdmin() || isManager());
+  
+  // Solo admins y managers pueden eliminar solicitudes
+  allow delete: if request.auth != null && (isAdmin() || isManager());
+}
+
+// Reglas para disponibilidad de empleados
+match /employee_availability/{availabilityId} {
+  // Todos pueden leer disponibilidad
+  allow read: if request.auth != null && isUserActive();
+  
+  // Los empleados pueden gestionar su propia disponibilidad
+  // Admins y managers pueden gestionar cualquier disponibilidad
+  allow create, update: if request.auth != null &&
+    (request.auth.token.email == request.resource.data.employee_id ||
+     isAdmin() || isManager());
+  
+  // Solo admins pueden eliminar registros de disponibilidad
+  allow delete: if request.auth != null && isAdmin();
+}
+
+// Reglas para templates de horarios
+match /shift_templates/{templateId} {
+  // Todos pueden leer templates
+  allow read: if request.auth != null && isUserActive();
+  
+  // Solo admins y managers pueden gestionar templates
+  allow create, update, delete: if request.auth != null && (isAdmin() || isManager());
+}
+
+// Funciones auxiliares (agregar a las funciones existentes si no están ya definidas)
+function isManager() {
+  return request.auth.token.role == 'manager';
+}
+
+function isUserActive() {
+  return request.auth != null && 
+    (!('active' in request.auth.token) || request.auth.token.active == true);
+}

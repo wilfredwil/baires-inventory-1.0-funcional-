@@ -1,0 +1,329 @@
+/* src/styles/shifts.css */
+
+/* Estilos generales para el módulo de horarios */
+.shift-management {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+/* Calendario de turnos */
+.shift-calendar {
+  overflow-x: auto;
+}
+
+.shift-calendar .table {
+  min-width: 800px;
+}
+
+.shift-calendar .table td {
+  min-height: 100px;
+  vertical-align: top;
+  border: 1px solid #dee2e6;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+/* Cards de turnos en el calendario */
+.shift-card {
+  border-radius: 8px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.shift-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.shift-card.morning {
+  background: linear-gradient(135deg, #74b9ff, #0984e3);
+  color: white;
+}
+
+.shift-card.afternoon {
+  background: linear-gradient(135deg, #fdcb6e, #e17055);
+  color: white;
+}
+
+.shift-card.night {
+  background: linear-gradient(135deg, #6c5ce7, #2d3436);
+  color: white;
+}
+
+.shift-card.completed {
+  background: linear-gradient(135deg, #00b894, #00a085) !important;
+  opacity: 0.8;
+}
+
+.shift-card.cancelled {
+  background: linear-gradient(135deg, #d63031, #74b9ff) !important;
+  opacity: 0.7;
+  text-decoration: line-through;
+}
+
+/* Indicadores de estado */
+.shift-status-indicator {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #00b894;
+}
+
+.shift-status-indicator.in-progress {
+  background: #fdcb6e;
+  animation: pulse 2s infinite;
+}
+
+.shift-status-indicator.cancelled {
+  background: #d63031;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Navegación de semanas */
+.week-navigation {
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  padding: 0.5rem;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.week-navigation .btn {
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+/* Tabs personalizados */
+.nav-tabs .nav-link {
+  border: none;
+  border-radius: 12px 12px 0 0;
+  background: rgba(255, 255, 255, 0.6);
+  color: #6c757d;
+  font-weight: 500;
+  margin-right: 0.25rem;
+  transition: all 0.2s ease;
+}
+
+.nav-tabs .nav-link.active {
+  background: white;
+  color: #10B981;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.nav-tabs .nav-link:hover {
+  background: rgba(255, 255, 255, 0.8);
+  transform: translateY(-1px);
+}
+
+/* Notas de turno */
+.shift-note {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  border-left: 4px solid #10B981;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease;
+}
+
+.shift-note:hover {
+  transform: translateX(2px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.shift-note.priority-high {
+  border-left-color: #ffc107;
+  background: rgba(255, 193, 7, 0.05);
+}
+
+.shift-note.priority-urgent {
+  border-left-color: #dc3545;
+  background: rgba(220, 53, 69, 0.05);
+  animation: priority-pulse 3s infinite;
+}
+
+@keyframes priority-pulse {
+  0%, 100% { background: rgba(220, 53, 69, 0.05); }
+  50% { background: rgba(220, 53, 69, 0.1); }
+}
+
+/* Badges de prioridad y categoría */
+.priority-badge {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.category-badge {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 6px;
+  background: rgba(108, 117, 125, 0.1);
+  color: #6c757d;
+  border: 1px solid rgba(108, 117, 125, 0.2);
+}
+
+/* Formularios */
+.shift-form .form-floating > .form-control:focus {
+  border-color: #10B981;
+  box-shadow: 0 0 0 0.2rem rgba(16, 185, 129, 0.25);
+}
+
+.shift-form .form-floating > label {
+  color: #6c757d;
+}
+
+/* Tabla de empleados */
+.employee-table .table th {
+  background: linear-gradient(135deg, #10B981, #059669);
+  color: white;
+  border: none;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.employee-table .table td {
+  border-color: rgba(16, 185, 129, 0.1);
+  vertical-align: middle;
+}
+
+.employee-table .table tr:hover {
+  background: rgba(16, 185, 129, 0.05);
+}
+
+/* Indicador de horas trabajadas */
+.hours-indicator {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.hours-indicator.low {
+  background: rgba(220, 53, 69, 0.1);
+  color: #dc3545;
+  border: 1px solid rgba(220, 53, 69, 0.2);
+}
+
+.hours-indicator.normal {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10B981;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.hours-indicator.high {
+  background: rgba(255, 193, 7, 0.1);
+  color: #ffc107;
+  border: 1px solid rgba(255, 193, 7, 0.2);
+}
+
+/* Modales */
+.modal-header {
+  background: linear-gradient(135deg, #10B981, #059669);
+  color: white;
+  border-bottom: none;
+}
+
+.modal-header .btn-close {
+  filter: brightness(0) invert(1);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .shift-calendar .table {
+    font-size: 0.75rem;
+  }
+  
+  .shift-card {
+    font-size: 0.65rem;
+    padding: 0.25rem;
+  }
+  
+  .week-navigation {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .nav-tabs {
+    flex-direction: column;
+  }
+  
+  .nav-tabs .nav-link {
+    text-align: center;
+    margin-right: 0;
+    margin-bottom: 0.25rem;
+  }
+}
+
+/* Animaciones de entrada */
+.shift-fade-in {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Estados de carga */
+.shift-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: #6c757d;
+}
+
+.shift-loading .spinner-border {
+  color: #10B981;
+}
+
+/* Tooltip personalizado para turnos */
+.shift-tooltip {
+  position: relative;
+}
+
+.shift-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 1000;
+}
+
+.shift-tooltip:hover::after {
+  opacity: 1;
+}
