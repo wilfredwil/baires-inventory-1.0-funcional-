@@ -10,6 +10,7 @@ import { useUserRole } from './hooks/useUserRole';
 import InventoryItemForm from './components/InventoryItemForm';
 import ProviderManagement from './components/ProviderManagement';
 import UserManagement from './components/UserManagement';
+import KitchenInventory from './components/KitchenInventory';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { Navbar, Nav, Button, Row, Col, Card, Form, Modal, Collapse, Alert, Dropdown, Badge } from 'react-bootstrap';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, LineElement, CategoryScale, LinearScale, PointElement } from 'chart.js';
@@ -132,8 +133,8 @@ const MainDashboard = ({
       description: 'Ingredientes, recetas y stock de cocina',
       color: '#EF4444',
       colorDark: '#DC2626',
-      stats: 'Próximamente',
-      available: false
+      stats: 'Sistema FIFO',
+      available: true
     },
     {
       id: 'salon',
@@ -375,6 +376,8 @@ function App() {
   const handleNavigateToModule = (moduleId) => {
     if (moduleId === 'bar') {
       setCurrentView('bar');
+    } else if (moduleId === 'kitchen') {
+      setCurrentView('kitchen');
     } else if (moduleId === 'users' && userRole === 'admin') {
       setShowUserModal(true);
     } else {
@@ -469,7 +472,7 @@ function App() {
     return provider ? provider.nombre : 'Sin proveedor';
   };
 
-const sendLowStockEmail = async () => {
+  const sendLowStockEmail = async () => {
     const recipientEmail = prompt('Por favor, ingrese el correo del destinatario:', '');
     if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
       setError('Por favor, ingrese un correo válido.');
@@ -478,10 +481,8 @@ const sendLowStockEmail = async () => {
     }
 
     try {
-      // Filtrar productos con stock bajo
       const lowStockItems = inventory.filter(item => Number(item.stock) <= Number(item.umbral_low));
       
-      // Debug: mostrar información detallada
       console.log('=== DEBUG EMAIL ===');
       console.log('Total productos en inventario:', inventory.length);
       console.log('Productos con stock bajo encontrados:', lowStockItems.length);
@@ -498,7 +499,6 @@ const sendLowStockEmail = async () => {
         return;
       }
 
-      // Preparar datos para envio
       const emailData = {
         inventory: lowStockItems.map(item => ({
           id: item.id,
@@ -517,7 +517,6 @@ const sendLowStockEmail = async () => {
 
       console.log('Datos a enviar:', emailData);
 
-      // Intentar enviar email
       const functions = getFunctions();
       const sendEmail = httpsCallable(functions, 'sendLowStockEmail');
       
@@ -705,7 +704,7 @@ const sendLowStockEmail = async () => {
                 <FaHome className="me-1" />
                 Dashboard
               </Nav.Link>
-              {currentView === 'bar' && (
+              {(currentView === 'bar' || currentView === 'kitchen') && (
                 <Nav.Link as={Link} to="/historial" style={{ color: '#333333', fontSize: '16px' }}>
                   Historial
                 </Nav.Link>
@@ -1068,6 +1067,36 @@ const sendLowStockEmail = async () => {
               </div>
             } />
           </Routes>
+
+        ) : currentView === 'kitchen' ? (
+          <div>
+            {/* Header del módulo cocina */}
+            <div className="d-flex justify-content-between align-items-center mb-4">
+              <div>
+                <Button 
+                  variant="link" 
+                  onClick={handleBackToDashboard}
+                  className="p-0 text-decoration-none mb-2"
+                  style={{ color: '#87CEEB' }}
+                >
+                  <i className="bi bi-arrow-left me-2"></i>
+                  Volver al Dashboard
+                </Button>
+                <h2 className="mb-0" style={{ 
+                  color: '#333333', 
+                  fontFamily: 'Raleway, sans-serif',
+                  fontWeight: '600'
+                }}>
+                  <FaUtensils className="me-3" style={{ color: '#EF4444' }} />
+                  Inventario de Cocina
+                </h2>
+              </div>
+            </div>
+
+            {/* Componente principal de inventario de cocina */}
+            <KitchenInventory />
+          </div>
+
         ) : null}
 
         {/* Chat button */}
