@@ -80,9 +80,10 @@ import InventoryItemForm from './components/InventoryItemForm';
 import AdvancedUserManagement from './components/AdvancedUserManagement';
 import ProviderManagement from './components/ProviderManagement';
 import KitchenInventory from './components/KitchenInventory';
-import ShiftManagement from './components/ShiftManagement';
+import EnhancedShiftManagement from './components/EnhancedShiftManagement';
 import UserProfile from './components/UserProfile';
 import EmployeeDirectory from './components/EmployeeDirectory';
+import DashboardWidgets from './components/DashboardWidgets';
 
 // Styles
 import './styles/improvements.css';
@@ -369,170 +370,198 @@ function App() {
     
     return notifications;
   };
+  
+// Componente Dashboard Principal MEJORADO
 
-  // Componente Dashboard Principal
-  const MainDashboard = () => {
-    const modules = [
-      {
-        id: 'bar',
-        title: 'Bar / Alcohol',
-        icon: FaWineGlass,
-        description: 'Gestión de bebidas alcohólicas y bar',
-        color: '#F59E0B',
-        colorDark: '#D97706',
-        stats: `${inventory.length} productos`,
-        available: true
-      },
-      {
-        id: 'kitchen',
-        title: 'Cocina / Ingredientes',
-        icon: FaUtensils,
-        description: 'Ingredientes, recetas y stock de cocina',
-        color: '#EF4444',
-        colorDark: '#DC2626',
-        stats: 'Sistema FIFO',
-        available: true
-      },
-      {
-        id: 'salon',
-        title: 'Salón / Menaje',
-        icon: FaConciergeBell,
-        description: 'Platos, cubiertos, cristalería y menaje',
-        color: '#3B82F6',
-        colorDark: '#2563EB',
-        stats: 'Próximamente',
-        available: false
-      },
-      {
-        id: 'users',
-        title: 'Gestión de Usuarios',
-        icon: FaUsers,
-        description: 'Administrar usuarios y permisos del sistema',
-        color: '#8B5CF6',
-        colorDark: '#7C3AED',
-        stats: 'Solo Admin',
-        available: userRole === 'admin',
-        adminOnly: true
-      },
-      {
-        id: 'shifts',
-        title: 'Personal / Horarios',
-        icon: FaCalendarAlt,
-        description: 'Gestión de turnos y personal estilo ShiftNotes',
-        color: '#10B981',
-        colorDark: '#059669',
-        stats: 'ShiftNotes Style',
-        available: true
-      },
-      {
-        id: 'directory',
-        title: 'Directorio de Personal',
-        icon: FaUsers,
-        description: 'Ver información de contacto de empleados',
-        color: '#6366F1',
-        colorDark: '#4F46E5',
-        stats: `${employees.length} empleados`,
-        available: true
-      },
-      {
-        id: 'reports',
-        title: 'Reportes / Analytics',
-        icon: FaChartBar,
-        description: 'Análisis y reportes del restaurante',
-        color: '#6B7280',
-        colorDark: '#4B5563',
-        stats: 'Ver estadísticas',
-        available: false
-      }
-    ];
+const MainDashboard = () => {
+  const modules = [
+    {
+      id: 'bar',
+      title: 'Bar / Alcohol',
+      icon: FaWineGlass,
+      description: 'Gestión de bebidas alcohólicas y bar',
+      color: '#F59E0B',
+      colorDark: '#D97706',
+      stats: `${inventory.length} productos`,
+      available: true
+    },
+    {
+      id: 'kitchen',
+      title: 'Cocina / Ingredientes',
+      icon: FaUtensils,
+      description: 'Ingredientes, recetas y stock de cocina',
+      color: '#EF4444',
+      colorDark: '#DC2626',
+      stats: 'Sistema FIFO',
+      available: true
+    },
+    {
+      id: 'salon',
+      title: 'Salón / Menaje',
+      icon: FaConciergeBell,
+      description: 'Platos, cubiertos, cristalería y menaje',
+      color: '#3B82F6',
+      colorDark: '#2563EB',
+      stats: 'Próximamente',
+      available: false
+    },
+    {
+      id: 'users',
+      title: 'Gestión de Usuarios',
+      icon: FaUsers,
+      description: 'Administrar usuarios y permisos del sistema',
+      color: '#8B5CF6',
+      colorDark: '#7C3AED',
+      stats: 'Solo Admin',
+      available: userRole === 'admin',
+      adminOnly: true
+    },
+    {
+      id: 'shifts',
+      title: 'Personal / Horarios',
+      icon: FaCalendarAlt,
+      description: 'Gestión de turnos y personal estilo ShiftNotes',
+      color: '#10B981',
+      colorDark: '#059669',
+      stats: 'ShiftNotes Style',
+      available: true
+    },
+    {
+      id: 'directory',
+      title: 'Directorio de Personal',
+      icon: FaUsers,
+      description: 'Ver información de contacto de empleados',
+      color: '#6366F1',
+      colorDark: '#4F46E5',
+      stats: `${employees.length} empleados`,
+      available: true
+    },
+    {
+      id: 'reports',
+      title: 'Reportes / Analytics',
+      icon: FaChartBar,
+      description: 'Análisis y reportes del restaurante',
+      color: '#6B7280',
+      colorDark: '#4B5563',
+      stats: 'Ver estadísticas',
+      available: false
+    }
+  ];
 
-    return (
-      <Container fluid style={{ padding: '30px' }}>
-        {/* Header del Dashboard */}
-        <div className="text-center mb-5">
-          <h1 style={{ 
-            fontFamily: 'Raleway, sans-serif', 
-            fontSize: '2.5rem', 
-            color: '#FFFFFF',
-            textShadow: '0 0 10px rgba(135, 206, 235, 0.3)'
+  return (
+    <Container fluid style={{ padding: '30px' }}>
+      {/* Header del Dashboard */}
+      <div className="text-center mb-4">
+        <h1 style={{ 
+          fontFamily: 'Raleway, sans-serif', 
+          fontSize: '2.5rem', 
+          color: '#FFFFFF',
+          textShadow: '0 0 10px rgba(135, 206, 235, 0.3)'
+        }}>
+          Baires Restaurant
+        </h1>
+        <p className="lead" style={{ color: 'rgba(255,255,255,0.8)' }}>
+          Panel de Control Principal
+        </p>
+      </div>
+
+      {/* NUEVO: Widgets Inteligentes */}
+      <div className="mb-5">
+        <DashboardWidgets 
+          user={user}
+          userRole={userRole}
+          inventory={inventory}
+          employees={employees}
+          onNavigate={handleNavigation}
+        />
+      </div>
+
+      {/* Módulos del Sistema */}
+      <div className="mb-5">
+        <div className="text-center mb-4">
+          <h3 style={{ 
+            color: '#FFFFFF', 
+            fontWeight: '600',
+            textShadow: '0 2px 4px rgba(0,0,0,0.3)'
           }}>
-            Baires Restaurant
-          </h1>
-          <p className="lead" style={{ color: 'rgba(255,255,255,0.8)' }}>Panel de Control Principal</p>
+            Módulos del Sistema
+          </h3>
+          <p style={{ color: 'rgba(255,255,255,0.7)' }}>
+            Accede a todas las funcionalidades de gestión
+          </p>
         </div>
-
-        {/* Módulos */}
-        <div className="mb-5">
-          <Row>
-            {modules.map((module) => {
-              const IconComponent = module.icon;
-              return (
-                <Col key={module.id} md={4} className="mb-3">
-                  <Card 
-                    className={`module-card h-100 ${module.available ? 'hover-3d' : ''}`}
-                    style={{
-                      '--module-color': module.color,
-                      '--module-color-dark': module.colorDark,
-                      background: `linear-gradient(135deg, ${module.color}, ${module.colorDark})`,
-                      opacity: module.available ? 1 : 0.6,
-                      cursor: module.available ? 'pointer' : 'not-allowed',
-                      border: 'none',
-                      borderRadius: '20px',
-                      boxShadow: '0 10px 30px rgba(0, 0, 0, 0.3)',
-                      color: 'white',
-                      transition: 'all 0.3s ease'
-                    }}
-                    onClick={() => module.available && handleNavigation(module.id)}
-                  >
-                    <Card.Body className="p-4 d-flex flex-column">
-                      <div className="d-flex align-items-center mb-3">
-                        <IconComponent 
-                          style={{ 
-                            fontSize: '2.5rem', 
-                            marginRight: '15px',
-                            filter: 'drop-shadow(0 0 10px rgba(255,255,255,0.3))'
-                          }} 
-                        />
-                        <div>
-                          <h5 className="mb-1" style={{ fontWeight: '700' }}>{module.title}</h5>
-                          <p className="mb-0" style={{ 
-                            fontSize: '0.9rem', 
-                            opacity: 0.9,
-                            lineHeight: '1.4'
-                          }}>
-                            {module.description}
-                          </p>
+        
+        <Row>
+          {modules.map((module) => {
+            const IconComponent = module.icon;
+            return (
+              <Col key={module.id} md={4} className="mb-3">
+                <Card 
+                  className={`module-card h-100 ${module.available ? 'hover-3d' : ''}`}
+                  style={{
+                    '--module-color': module.color,
+                    '--module-color-dark': module.colorDark,
+                    background: `linear-gradient(135deg, ${module.color}, ${module.colorDark})`,
+                    opacity: module.available ? 1 : 0.6,
+                    cursor: module.available ? 'pointer' : 'not-allowed',
+                    border: 'none',
+                    borderRadius: '20px',
+                    boxShadow: '0 10px 30px rgba(0, 0, 0, 0.3)',
+                    color: 'white',
+                    transition: 'all 0.3s ease'
+                  }}
+                  onClick={() => module.available && handleNavigation(module.id)}
+                >
+                  <Card.Body className="p-4 d-flex flex-column">
+                    <div className="d-flex align-items-center mb-3">
+                      <IconComponent 
+                        style={{ 
+                          fontSize: '2.5rem', 
+                          marginRight: '15px',
+                          filter: 'drop-shadow(0 0 10px rgba(255,255,255,0.3))'
+                        }} 
+                      />
+                      <div>
+                        <h5 className="mb-1" style={{ fontWeight: '700' }}>{module.title}</h5>
+                        <p className="mb-0" style={{ 
+                          fontSize: '0.9rem', 
+                          opacity: 0.9,
+                          lineHeight: '1.4'
+                        }}>
+                          {module.description}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-auto">
+                      <Badge 
+                        bg={module.available ? 'light' : 'warning'} 
+                        text={module.available ? 'dark' : 'dark'}
+                        style={{ 
+                          fontSize: '0.8rem',
+                          padding: '0.5rem 1rem',
+                          borderRadius: '15px',
+                          fontWeight: '600'
+                        }}
+                      >
+                        {module.stats}
+                      </Badge>
+                      {module.adminOnly && userRole !== 'admin' && (
+                        <div className="mt-2">
+                          <small style={{ opacity: 0.8 }}>Solo Administradores</small>
                         </div>
-                      </div>
-                      <div className="mt-auto">
-                        <Badge 
-                          bg={module.available ? 'light' : 'warning'} 
-                          text={module.available ? 'dark' : 'dark'}
-                          style={{ 
-                            fontSize: '0.8rem',
-                            padding: '0.5rem 1rem',
-                            borderRadius: '15px',
-                            fontWeight: '600'
-                          }}
-                        >
-                          {module.stats}
-                        </Badge>
-                        {module.adminOnly && userRole !== 'admin' && (
-                          <div className="mt-2">
-                            <small style={{ opacity: 0.8 }}>Solo Administradores</small>
-                          </div>
-                        )}
-                      </div>
-                    </Card.Body>
-                  </Card>
-                </Col>
-              );
-            })}
-          </Row>
-        </div>
-      </Container>
-    );
-  };
+                      )}
+                    </div>
+                  </Card.Body>
+                </Card>
+              </Col>
+            );
+          })}
+        </Row>
+      </div>
+    </Container>
+  );
+};
+
 
   // Función para mostrar el nombre del usuario en el chat
   const getUserDisplayName = (userEmail) => {
@@ -662,11 +691,11 @@ function App() {
             {/* Gestión de Turnos */}
             {currentView === 'shifts' && (
               <div className="shift-management">
-                <ShiftManagement 
-                  user={user}
-                  userRole={userRole}
-                  onBack={handleBackToDashboard}
-                />
+                <EnhancedShiftManagement 
+                user={user}
+                userRole={userRole}
+              onBack={handleBackToDashboard}
+              />
               </div>
             )}
             
