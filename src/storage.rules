@@ -1,41 +1,151 @@
-/ ===== ARCHIVO 2: storage.rules =====
+// firestore.rules - Versión mejorada con control de acceso por tipo de inventario
 rules_version = '2';
-service firebase.storage {
-  match /b/{bucket}/o {
-    
-    // Reglas para imágenes de perfil
-    match /profiles/{userId}/{fileName} {
-      // Lectura: las imágenes de perfil son públicas
-      allow read: if true;
-      
-      // Escritura: solo el propietario o admin
-      allow write: if request.auth != null && (
-        request.auth.uid == userId || 
-        request.auth.token.role == 'admin'
-      ) && 
-      // Validar que es una imagen
-      request.resource.contentType.matches('image/.*') &&
-      // Máximo 5MB
-      request.resource.size < 5 * 1024 * 1024;
-      
-      // Eliminación: solo el propietario o admin
-      allow delete: if request.auth != null && (
-        request.auth.uid == userId || 
-        request.auth.token.role == 'admin'
-      );
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Función auxiliar para obtener el rol del usuario
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role;
     }
     
-    // Reglas para documentos del sistema (facturas, reportes, etc.)
-    match /documents/{document=**} {
+    // Función para verificar si el usuario está activo
+    function isUserActive() {
+      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.active == true;
+    }
+    
+    // Función para verificar si es admin
+    function isAdmin() {
+      return getUserRole() == 'admin';
+    }
+    
+    // Función para verificar si puede editar todo
+    function canEditAll() {
+      return getUserRole() in ['admin', 'manager'];
+    }
+    
+    // Función para verificar acceso por tipo de inventario
+    function canAccessInventoryType(tipoInventario) {
+      let userRole = getUserRole();
+      
+      // Admin y manager pueden acceder a todo
+      if (userRole in ['admin', 'manager']) {
+        return true;
+      }
+      
+      // Bartender solo puede acceder al bar
+      if (userRole == 'bartender' && tipoInventario == 'bar') {
+        return true;
+      }
+      
+      // Cocinero solo puede acceder a la cocina
+      if (userRole == 'cocinero' && tipoInventario == 'cocina') {
+        return true;
+      }
+      
+      // Mesero solo puede acceder al salón (cuando esté implementado)
+      if (userRole == 'waiter' && tipoInventario == 'salon') {
+        return true;
+      }
+      
+      return false;
+    }
+    
+    // Reglas para la colección de usuarios
+    match /users/{userId} {
+      // Solo admins pueden leer todos los usuarios
+      allow read: if request.auth != null && isAdmin();
+      
+      // Solo admins pueden crear/actualizar/eliminar usuarios
+      allow create, update, delete: if request.auth != null && isAdmin();
+      
+      // Los usuarios pueden leer su propio perfil
+      allow read: if request.auth != null && request.auth.token.email == userId;
+    }
+    
+    // Reglas para inventario con control por tipo
+    match /inventario/{itemId} {
+      // Lectura: usuarios pueden leer según su rol y tipo de inventario
       allow read: if request.auth != null && 
-        (request.auth.token.role == 'admin' || request.auth.token.role == 'manager');
-      allow write: if request.auth != null && request.auth.token.role == 'admin';
+        isUserActive() && 
+        canAccessInventoryType(resource.data.tipo_inventario);
+      
+      // Creación: solo admin y manager pueden crear nuevos items
+      allow create: if request.auth != null && 
+        canEditAll() && 
+        canAccessInventoryType(request.resource.data.tipo_inventario) &&
+        // Validar que el tipo_inventario esté presente y sea válido
+        request.resource.data.tipo_inventario in ['bar', 'cocina', 'salon'];
+      
+      // Actualización completa: admin y manager pueden actualizar cualquier campo
+      allow update: if request.auth != null && 
+        canEditAll() && 
+        canAccessInventoryType(resource.data.tipo_inventario);
+      
+      // Actualización limitada: otros roles solo pueden actualizar stock
+      allow update: if request.auth != null && 
+        isUserActive() && 
+        canAccessInventoryType(resource.data.tipo_inventario) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['stock', 'ultima_actualizacion', 'actualizado_por']);
+      
+      // Solo admins pueden eliminar
+      allow delete: if request.auth != null && 
+        isAdmin() && 
+        canAccessInventoryType(resource.data.tipo_inventario);
     }
     
-    // Reglas para respaldos/exports
-    match /exports/{fileName} {
-      allow read, write: if request.auth != null && 
-        (request.auth.token.role == 'admin' || request.auth.token.role == 'manager');
+    // Reglas para historial
+    match /historial/{logId} {
+      // Todos pueden leer el historial
+      allow read: if request.auth != null && isUserActive();
+      
+      // Todos pueden crear entradas de historial
+      allow create: if request.auth != null && isUserActive();
+      
+      // Nadie puede actualizar o eliminar historial (integridad de datos)
+      allow update, delete: if false;
+    }
+    
+    // Reglas para proveedores con control por tipo
+    match /providers/{providerId} {
+      // Lectura: usuarios pueden leer proveedores según su tipo de inventario
+      allow read: if request.auth != null && 
+        isUserActive() && 
+        canAccessInventoryType(resource.data.tipo);
+      
+      // Solo admins pueden gestionar proveedores
+      allow create: if request.auth != null && 
+        isAdmin() &&
+        // Validar que el tipo esté presente y sea válido
+        request.resource.data.tipo in ['bar', 'cocina', 'salon'];
+        
+      allow update, delete: if request.auth != null && 
+        isAdmin() && 
+        canAccessInventoryType(resource.data.tipo);
+    }
+    
+    // Reglas para notas/chat
+    match /notas/{noteId} {
+      // Todos pueden leer y crear notas
+      allow read, create: if request.auth != null && isUserActive();
+      
+      // Los usuarios pueden actualizar sus propias notas
+      allow update: if request.auth != null && 
+        request.auth.token.email == resource.data.usuario;
+      
+      // Solo admins pueden eliminar notas
+      allow delete: if request.auth != null && isAdmin();
+    }
+    
+    // Reglas para configuraciones del sistema (futuro)
+    match /config/{configId} {
+      // Solo admins pueden gestionar configuraciones
+      allow read, write: if request.auth != null && isAdmin();
+    }
+    
+    // Reglas para reportes y analytics (futuro)
+    match /reports/{reportId} {
+      // Admin y manager pueden gestionar reportes
+      allow read, write: if request.auth != null && canEditAll();
     }
   }
 }
