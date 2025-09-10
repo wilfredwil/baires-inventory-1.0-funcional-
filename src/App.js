@@ -1,4 +1,4 @@
-// src/App.js - VERSIÓN COMPLETA CON SISTEMA DE MENSAJES INTEGRADO
+// src/App.js - VERSIÓN COMPLETA CON TODAS LAS FUNCIONALIDADES
 import React, { useState, useEffect } from 'react';
 import { 
   Container, 
@@ -75,7 +75,7 @@ import { getStorage } from 'firebase/storage';
 // Local imports
 import { auth, db, storage } from './firebase';
 import AppLayout from './components/AppLayout';
-import MessagingSystem from './components/MessagingSystem'; // NUEVO IMPORT
+import MessagingSystem from './components/MessagingSystem';
 import InventoryItemForm from './components/InventoryItemForm';
 import AdvancedUserManagement from './components/AdvancedUserManagement';
 import ProviderManagement from './components/ProviderManagement';
@@ -84,92 +84,70 @@ import EnhancedShiftManagement from './components/EnhancedShiftManagement';
 import UserProfile from './components/UserProfile';
 import EmployeeDirectory from './components/EmployeeDirectory';
 import DashboardWidgets from './components/DashboardWidgets';
+import PublicScheduleViewer from './components/PublicScheduleViewer';
 
 // Styles
 import './styles/improvements.css';
 import './styles/shifts.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
-// Utils
-import { exportInventoryToPDF, exportLowStockToPDF } from './utils/pdfExport';
-
-// Chart.js configuration
+// Chart.js setup
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 function App() {
   // Estados principales
   const [user, setUser] = useState(null);
-  const [userRole, setUserRole] = useState('');
-  const [inventory, setInventory] = useState([]);
-  const [providers, setProviders] = useState([]);
-  const [historial, setHistorial] = useState([]);
-  const [notes, setNotes] = useState([]);
-  const [employees, setEmployees] = useState([]);
+  const [userRole, setUserRole] = useState('employee');
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState('dashboard');
-
-  // Estados de modales
-  const [showLoginModal, setShowLoginModal] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [showUserModal, setShowUserModal] = useState(false);
-  const [showProviderModal, setShowProviderModal] = useState(false);
-  const [showChat, setShowChat] = useState(false);
-  const [showMyProfile, setShowMyProfile] = useState(false);
-  const [showEmployeeDirectory, setShowEmployeeDirectory] = useState(false);
-
-  // Estados de formularios
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [editingItem, setEditingItem] = useState(null);
-  const [newNote, setNewNote] = useState('');
-
-  // Estados de perfil
-  const [currentUserData, setCurrentUserData] = useState(null);
-
-  // Estados de filtros y búsqueda
-  const [searchTerm, setSearchTerm] = useState('');
-  const [licorFilter, setLicorFilter] = useState('');
-  const [showLowStockOnly, setShowLowStockOnly] = useState(false);
-
-  // Estados de alertas
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [unreadNotes, setUnreadNotes] = useState(new Set());
 
-  // FUNCIÓN PARA NAVEGACIÓN (con notificaciones actualizadas)
-  const handleNavigation = (viewName) => {
-    setCurrentView(viewName);
-    // Cerrar modales si están abiertos
-    setShowAddForm(false);
-    setShowUserModal(false);
-    setShowProviderModal(false);
-    setShowMyProfile(false);
-    setShowEmployeeDirectory(false);
-  };
+  // Estados para inventario
+  const [inventory, setInventory] = useState([]);
+  const [providers, setProviders] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [showItemModal, setShowItemModal] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterCategory, setFilterCategory] = useState('all');
+  const [showUserModal, setShowUserModal] = useState(false);
 
-  // Verificar autenticación
+  // Estados de filtros
+  const [showProviderModal, setShowProviderModal] = useState(false);
+  const [editingProvider, setEditingProvider] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState(null);
+
+  // Estados de login
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  // Estados de perfil
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
+  // Efectos principales
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setUser(user);
-        // Obtener rol del usuario
+        // Cargar rol del usuario
         try {
-          const userDoc = await getDocs(
-            query(collection(db, 'users'), where('email', '==', user.email))
-          );
+          const userDoc = await getDocs(query(
+            collection(db, 'users'), 
+            where('email', '==', user.email)
+          ));
           if (!userDoc.empty) {
             const userData = userDoc.docs[0].data();
-            setUserRole(userData.role || 'waiter');
-          } else {
-            setUserRole('waiter');
+            setUserRole(userData.role || 'employee');
           }
-        } catch (err) {
-          console.error('Error getting user role:', err);
-          setUserRole('waiter');
+        } catch (error) {
+          console.error('Error loading user role:', error);
         }
       } else {
         setUser(null);
-        setUserRole('');
+        setUserRole('employee');
       }
       setLoading(false);
     });
@@ -177,159 +155,98 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  // Función para cargar datos del usuario actual
-  const loadCurrentUserData = async () => {
-    if (!user) return;
-    
-    try {
-      const userQuery = query(
-        collection(db, 'users'), 
-        where('email', '==', user.email)
-      );
-      const userSnapshot = await getDocs(userQuery);
-      if (!userSnapshot.empty) {
-        const userData = userSnapshot.docs[0].data();
-        setCurrentUserData({
-          id: userSnapshot.docs[0].id,
-          ...userData
-        });
-      }
-    } catch (err) {
-      console.error('Error loading current user data:', err);
-    }
-  };
-
-  // Cargar datos en tiempo real
+  // Cargar datos del inventario
   useEffect(() => {
-    if (user) {
-      // Cargar datos del usuario actual
-      loadCurrentUserData();
+    if (!user) return;
 
-      // Inventory listener
-      const unsubscribeInventory = onSnapshot(
-        query(collection(db, 'inventario'), orderBy('nombre')),
-        (snapshot) => {
-          const inventoryData = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-          setInventory(inventoryData);
-        },
-        (error) => {
-          console.error('Error loading inventory:', error);
-          setError('Error cargando inventario');
-        }
-      );
+    const unsubscribeInventory = onSnapshot(
+      query(collection(db, 'inventory'), orderBy('nombre')),
+      (snapshot) => {
+        const items = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setInventory(items);
+      }
+    );
 
-      // Providers listener
-      const unsubscribeProviders = onSnapshot(
-        query(collection(db, 'providers'), orderBy('nombre')),
-        (snapshot) => {
-          const providersData = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-          setProviders(providersData);
-        }
-      );
+    const unsubscribeProviders = onSnapshot(
+      collection(db, 'providers'),
+      (snapshot) => {
+        const providersList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setProviders(providersList);
+      }
+    );
 
-      // Historial listener
-      const unsubscribeHistorial = onSnapshot(
-        query(collection(db, 'historial'), orderBy('timestamp', 'desc')),
-        (snapshot) => {
-          const historialData = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-          setHistorial(historialData);
-        }
-      );
+    const unsubscribeUsers = onSnapshot(
+      collection(db, 'users'),
+      (snapshot) => {
+        const usersList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setUsers(usersList);
+      }
+    );
 
-      // Notes listener
-      const unsubscribeNotes = onSnapshot(
-        query(collection(db, 'notes'), orderBy('timestamp', 'desc')),
-        (snapshot) => {
-          const notesData = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-          setNotes(notesData);
-        }
-      );
-
-      // Employees listener
-      const unsubscribeEmployees = onSnapshot(
-        collection(db, 'users'),
-        (snapshot) => {
-          const employeesData = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-          setEmployees(employeesData);
-        }
-      );
-
-      return () => {
-        unsubscribeInventory();
-        unsubscribeProviders();
-        unsubscribeHistorial();
-        unsubscribeNotes();
-        unsubscribeEmployees();
-      };
-    }
+    return () => {
+      unsubscribeInventory();
+      unsubscribeProviders();
+      unsubscribeUsers();
+    };
   }, [user]);
 
-  // Función de login
+  // Funciones de manejo
   const handleLogin = async (e) => {
     e.preventDefault();
+    setLoginLoading(true);
     setError('');
-    setLoading(true);
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      setShowLoginModal(false);
-      setEmail('');
-      setPassword('');
-      setSuccess('Sesión iniciada correctamente');
-    } catch (err) {
-      console.error('Error de login:', err);
-      setError('Error de autenticación. Verifica tu email y contraseña.');
+      await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+      setLoginEmail('');
+      setLoginPassword('');
+    } catch (error) {
+      console.error('Login error:', error);
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        setError('Email o contraseña incorrectos');
+      } else {
+        setError('Error al iniciar sesión. Intenta de nuevo.');
+      }
+    } finally {
+      setLoginLoading(false);
     }
-    setLoading(false);
   };
 
-  // Función de logout
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      setSuccess('Sesión cerrada correctamente');
       setCurrentView('dashboard');
-    } catch (err) {
-      console.error('Error de logout:', err);
+    } catch (error) {
+      console.error('Logout error:', error);
       setError('Error al cerrar sesión');
     }
   };
 
-  // Funciones auxiliares
+  const handleNavigation = (view) => {
+    setCurrentView(view);
+    setError('');
+    setSuccess('');
+  };
+
   const handleBackToDashboard = () => {
     setCurrentView('dashboard');
   };
 
-  const handleProfileUpdate = (updatedData) => {
-    setCurrentUserData(prev => ({
-      ...prev,
-      ...updatedData
-    }));
-  };
-
-  // Función para obtener badge del rol
-  const getRoleBadge = (role) => {
+  // Función para obtener rol con badge
+  const getRoleBadge = () => {
     const roleNames = {
       'admin': 'Administrador',
-      'manager': 'Gerente', 
-      'bartender': 'Bartender',
-      'cocinero': 'Cocinero',
-      'waiter': 'Mesero'
+      'manager': 'Gerente',
+      'employee': 'Empleado'
     };
 
     const badgeClass = userRole === 'admin' ? 'admin-badge' : 
@@ -342,10 +259,8 @@ function App() {
     );
   };
 
-  // Función para obtener notificaciones (simulada)
+  // Función para obtener notificaciones
   const getNotifications = () => {
-    // Aquí puedes agregar lógica para notificaciones reales
-    // Por ahora, simulamos algunas notificaciones
     const notifications = [];
     
     // Agregar notificaciones de stock bajo
@@ -361,512 +276,527 @@ function App() {
       });
     }
     
-    // Agregar notificaciones de mensajes no leídos (cuando esté implementado)
-    // notifications.push({
-    //   type: 'message',
-    //   message: 'Nuevos mensajes',
-    //   count: 3
-    // });
-    
     return notifications;
   };
   
-// Componente Dashboard Principal MEJORADO
+  // Componente Dashboard Principal
+  const MainDashboard = () => {
+    const modules = [
+      {
+        id: 'bar',
+        title: 'Bar / Alcohol',
+        icon: FaWineGlass,
+        description: 'Gestión de bebidas alcohólicas y bar',
+        color: '#F59E0B',
+        colorDark: '#D97706',
+        stats: `${inventory.length} productos`,
+        available: true
+      },
+      {
+        id: 'kitchen',
+        title: 'Cocina / Ingredientes',
+        icon: FaUtensils,
+        description: 'Ingredientes, recetas y stock de cocina',
+        color: '#EF4444',
+        colorDark: '#DC2626',
+        stats: 'Sistema FIFO',
+        available: true
+      },
+      {
+        id: 'salon',
+        title: 'Salón / Menaje',
+        icon: FaConciergeBell,
+        description: 'Platos, cubiertos, cristalería y menaje',
+        color: '#3B82F6',
+        colorDark: '#2563EB',
+        stats: 'Próximamente',
+        available: false
+      },
+      {
+        id: 'users',
+        title: 'Gestión de Usuarios',
+        icon: FaUsers,
+        description: 'Administrar usuarios y permisos del sistema',
+        color: '#8B5CF6',
+        colorDark: '#7C3AED',
+        stats: 'Solo Admin',
+        available: userRole === 'admin',
+        adminOnly: true
+      },
+      {
+        id: 'shifts',
+        title: 'Personal / Horarios',
+        icon: FaCalendarAlt,
+        description: 'Gestión de turnos y personal estilo ShiftNotes',
+        color: '#10B981',
+        colorDark: '#059669',
+        stats: 'ShiftNotes Style',
+        available: true
+      },
+      {
+        id: 'directory',
+        title: 'Directorio de Personal',
+        icon: FaUsers,
+        description: 'Ver información de contacto de empleados',
+        color: '#6366F1',
+        colorDark: '#4F46E5',
+        stats: `${users.length} empleados`,
+        available: true
+      },
+      {
+        id: 'reports',
+        title: 'Reportes / Analytics',
+        icon: FaChartBar,
+        description: 'Análisis y reportes del restaurante',
+        color: '#6B7280',
+        colorDark: '#4B5563',
+        stats: 'Ver estadísticas',
+        available: false
+      }
+    ];
 
-const MainDashboard = () => {
-  const modules = [
-    {
-      id: 'bar',
-      title: 'Bar / Alcohol',
-      icon: FaWineGlass,
-      description: 'Gestión de bebidas alcohólicas y bar',
-      color: '#F59E0B',
-      colorDark: '#D97706',
-      stats: `${inventory.length} productos`,
-      available: true
-    },
-    {
-      id: 'kitchen',
-      title: 'Cocina / Ingredientes',
-      icon: FaUtensils,
-      description: 'Ingredientes, recetas y stock de cocina',
-      color: '#EF4444',
-      colorDark: '#DC2626',
-      stats: 'Sistema FIFO',
-      available: true
-    },
-    {
-      id: 'salon',
-      title: 'Salón / Menaje',
-      icon: FaConciergeBell,
-      description: 'Platos, cubiertos, cristalería y menaje',
-      color: '#3B82F6',
-      colorDark: '#2563EB',
-      stats: 'Próximamente',
-      available: false
-    },
-    {
-      id: 'users',
-      title: 'Gestión de Usuarios',
-      icon: FaUsers,
-      description: 'Administrar usuarios y permisos del sistema',
-      color: '#8B5CF6',
-      colorDark: '#7C3AED',
-      stats: 'Solo Admin',
-      available: userRole === 'admin',
-      adminOnly: true
-    },
-    {
-      id: 'shifts',
-      title: 'Personal / Horarios',
-      icon: FaCalendarAlt,
-      description: 'Gestión de turnos y personal estilo ShiftNotes',
-      color: '#10B981',
-      colorDark: '#059669',
-      stats: 'ShiftNotes Style',
-      available: true
-    },
-    {
-      id: 'directory',
-      title: 'Directorio de Personal',
-      icon: FaUsers,
-      description: 'Ver información de contacto de empleados',
-      color: '#6366F1',
-      colorDark: '#4F46E5',
-      stats: `${employees.length} empleados`,
-      available: true
-    },
-    {
-      id: 'reports',
-      title: 'Reportes / Analytics',
-      icon: FaChartBar,
-      description: 'Análisis y reportes del restaurante',
-      color: '#6B7280',
-      colorDark: '#4B5563',
-      stats: 'Ver estadísticas',
-      available: false
-    }
-  ];
-
-  return (
-    <Container fluid style={{ padding: '30px' }}>
-      {/* Header del Dashboard */}
-      <div className="text-center mb-4">
-        <h1 style={{ 
-          fontFamily: 'Raleway, sans-serif', 
-          fontSize: '2.5rem', 
-          color: '#FFFFFF',
-          textShadow: '0 0 10px rgba(135, 206, 235, 0.3)'
-        }}>
-          Baires Restaurant
-        </h1>
-        <p className="lead" style={{ color: 'rgba(255,255,255,0.8)' }}>
-          Panel de Control Principal
-        </p>
-      </div>
-
-      {/* NUEVO: Widgets Inteligentes */}
-      <div className="mb-5">
-        <DashboardWidgets 
-          user={user}
-          userRole={userRole}
-          inventory={inventory}
-          employees={employees}
-          onNavigate={handleNavigation}
-        />
-      </div>
-
-      {/* Módulos del Sistema */}
-      <div className="mb-5">
-        <div className="text-center mb-4">
-          <h3 style={{ 
-            color: '#FFFFFF', 
-            fontWeight: '600',
-            textShadow: '0 2px 4px rgba(0,0,0,0.3)'
-          }}>
-            Módulos del Sistema
-          </h3>
-          <p style={{ color: 'rgba(255,255,255,0.7)' }}>
-            Accede a todas las funcionalidades de gestión
-          </p>
-        </div>
-        
-        <Row>
-          {modules.map((module) => {
-            const IconComponent = module.icon;
-            return (
-              <Col key={module.id} md={4} className="mb-3">
-                <Card 
-                  className={`module-card h-100 ${module.available ? 'hover-3d' : ''}`}
-                  style={{
-                    '--module-color': module.color,
-                    '--module-color-dark': module.colorDark,
-                    background: `linear-gradient(135deg, ${module.color}, ${module.colorDark})`,
-                    opacity: module.available ? 1 : 0.6,
-                    cursor: module.available ? 'pointer' : 'not-allowed',
-                    border: 'none',
-                    borderRadius: '20px',
-                    boxShadow: '0 10px 30px rgba(0, 0, 0, 0.3)',
-                    color: 'white',
-                    transition: 'all 0.3s ease'
-                  }}
-                  onClick={() => module.available && handleNavigation(module.id)}
-                >
-                  <Card.Body className="p-4 d-flex flex-column">
-                    <div className="d-flex align-items-center mb-3">
-                      <IconComponent 
-                        style={{ 
-                          fontSize: '2.5rem', 
-                          marginRight: '15px',
-                          filter: 'drop-shadow(0 0 10px rgba(255,255,255,0.3))'
-                        }} 
-                      />
-                      <div>
-                        <h5 className="mb-1" style={{ fontWeight: '700' }}>{module.title}</h5>
-                        <p className="mb-0" style={{ 
-                          fontSize: '0.9rem', 
-                          opacity: 0.9,
-                          lineHeight: '1.4'
-                        }}>
-                          {module.description}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-auto">
-                      <Badge 
-                        bg={module.available ? 'light' : 'warning'} 
-                        text={module.available ? 'dark' : 'dark'}
-                        style={{ 
-                          fontSize: '0.8rem',
-                          padding: '0.5rem 1rem',
-                          borderRadius: '15px',
-                          fontWeight: '600'
-                        }}
-                      >
-                        {module.stats}
-                      </Badge>
-                      {module.adminOnly && userRole !== 'admin' && (
-                        <div className="mt-2">
-                          <small style={{ opacity: 0.8 }}>Solo Administradores</small>
-                        </div>
-                      )}
-                    </div>
-                  </Card.Body>
-                </Card>
-              </Col>
-            );
-          })}
+    return (
+      <Container fluid>
+        <Row className="mb-4">
+          <Col>
+            <h2>Dashboard Principal</h2>
+            <p className="text-muted">Sistema de gestión integral para Baires</p>
+          </Col>
         </Row>
-      </div>
-    </Container>
-  );
-};
 
+        {/* Widgets del Dashboard */}
+        <DashboardWidgets 
+          inventory={inventory}
+          users={users}
+          userRole={userRole}
+        />
 
-  // Función para mostrar el nombre del usuario en el chat
-  const getUserDisplayName = (userEmail) => {
-    if (currentUserData?.email === userEmail) {
-      return currentUserData?.displayName || 
-             `${currentUserData?.firstName || ''} ${currentUserData?.lastName || ''}`.trim() || 
-             userEmail.split('@')[0];
-    }
-    return userEmail.split('@')[0];
+        {/* Módulos principales */}
+        <Row className="g-4">
+          {modules.map(module => (
+            <Col key={module.id} lg={4} md={6}>
+              <Card 
+                className={`h-100 module-card ${!module.available ? 'disabled-module' : ''}`}
+                style={{
+                  background: module.available 
+                    ? `linear-gradient(135deg, ${module.color} 0%, ${module.colorDark} 100%)`
+                    : '#f8f9fa',
+                  cursor: module.available ? 'pointer' : 'not-allowed',
+                  border: 'none',
+                  color: module.available ? 'white' : '#6c757d'
+                }}
+                onClick={() => module.available && handleNavigation(module.id)}
+              >
+                <Card.Body className="d-flex flex-column">
+                  <div className="d-flex justify-content-between align-items-start mb-3">
+                    <module.icon size={48} className={module.available ? 'text-white' : 'text-muted'} />
+                    {module.adminOnly && (
+                      <Badge bg="warning" text="dark">Admin</Badge>
+                    )}
+                  </div>
+                  
+                  <h5 className="mb-2">{module.title}</h5>
+                  <p className="mb-3 small opacity-75">{module.description}</p>
+                  
+                  <div className="mt-auto">
+                    <small className="opacity-75">{module.stats}</small>
+                    {!module.available && (
+                      <div className="mt-2">
+                        <Badge bg="secondary">Próximamente</Badge>
+                      </div>
+                    )}
+                  </div>
+                </Card.Body>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      </Container>
+    );
   };
 
-  if (loading) {
-    return (
-      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh' }}>
-        <Spinner animation="border" role="status" style={{ color: '#10B981' }}>
-          <span className="visually-hidden">Cargando...</span>
-        </Spinner>
-      </div>
-    );
-  }
+  // Componente de Login
+  const Login = () => (
+    <div className="login-container">
+      <Container>
+        <Row className="justify-content-center align-items-center min-vh-100">
+          <Col md={6} lg={4}>
+            <Card className="shadow-lg">
+              <Card.Body className="p-5">
+                <div className="text-center mb-4">
+                  <FaWineGlass size={48} className="text-primary mb-3" />
+                  <h2>Baires Inventory</h2>
+                  <p className="text-muted">Sistema de gestión integral</p>
+                </div>
 
-  // RETURN PRINCIPAL CON APPLAYOUT Y SISTEMA DE MENSAJES
-  return (
-    <Router>
-      <div className="App">
-        {!user ? (
-          // Vista de login (sin cambios)
-          <div style={{
-            minHeight: '100vh',
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <Container>
-              <Row className="justify-content-center">
-                <Col md={6}>
-                  <Card className="shadow-lg border-0" style={{ borderRadius: '20px', background: 'rgba(255, 255, 255, 0.95)' }}>
-                    <Card.Body className="p-5">
-                      <div className="text-center mb-4">
-                        <h2 style={{ color: '#333333', fontFamily: 'Raleway, sans-serif' }}>
-                          Baires Restaurant
-                        </h2>
-                        <p className="text-muted">Sistema de Gestión Integral</p>
-                      </div>
-                      <Button 
-                        variant="primary" 
-                        size="lg" 
-                        className="w-100 mb-3"
-                        onClick={() => setShowLoginModal(true)}
-                        style={{ borderRadius: '15px', padding: '12px' }}
-                      >
-                        Iniciar Sesión
-                      </Button>
-                    </Card.Body>
-                  </Card>
-                </Col>
-              </Row>
-            </Container>
+                {error && <Alert variant="danger">{error}</Alert>}
 
-            {/* Modal de Login */}
-            <Modal show={showLoginModal} onHide={() => setShowLoginModal(false)} centered>
-              <Modal.Header closeButton>
-                <Modal.Title>Iniciar Sesión</Modal.Title>
-              </Modal.Header>
-              <Modal.Body>
                 <Form onSubmit={handleLogin}>
                   <Form.Group className="mb-3">
                     <Form.Label>Email</Form.Label>
                     <Form.Control
                       type="email"
-                      placeholder="tu@email.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
                       required
+                      placeholder="tu@email.com"
                     />
                   </Form.Group>
-                  <Form.Group className="mb-3">
+
+                  <Form.Group className="mb-4">
                     <Form.Label>Contraseña</Form.Label>
                     <Form.Control
                       type="password"
-                      placeholder="Tu contraseña"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
                       required
+                      placeholder="••••••••"
                     />
                   </Form.Group>
+
                   <Button 
-                    variant="primary" 
                     type="submit" 
-                    className="w-100" 
-                    disabled={loading}
+                    variant="primary" 
+                    className="w-100"
+                    disabled={loginLoading}
                   >
-                    {loading ? <Spinner animation="border" size="sm" /> : 'Ingresar'}
+                    {loginLoading ? <Spinner animation="border" size="sm" /> : 'Ingresar'}
                   </Button>
                 </Form>
-              </Modal.Body>
-            </Modal>
-          </div>
-        ) : (
-          // Contenido autenticado envuelto en AppLayout
-          <AppLayout
+              </Card.Body>
+            </Card>
+          </Col>
+        </Row>
+      </Container>
+    </div>
+  );
+
+  // Función para renderizar la vista actual
+  const renderCurrentView = () => {
+    switch (currentView) {
+      case 'dashboard':
+        return <MainDashboard />;
+      
+      case 'messages':
+        return (
+          <MessagingSystem 
             user={user}
             userRole={userRole}
-            currentView={currentView}
-            onNavigate={handleNavigation}
-            notifications={getNotifications()}
-            error={error}
-            success={success}
-            onClearError={() => setError('')}
-            onClearSuccess={() => setSuccess('')}
-          >
-            {/* TODAS LAS VISTAS DEL SISTEMA */}
-            
-            {/* Dashboard Principal */}
-            {currentView === 'dashboard' && <MainDashboard />}
-            
-            {/* Sistema de Mensajes - NUEVA VISTA */}
-            {currentView === 'messages' && (
-              <MessagingSystem 
-                user={user}
-                userRole={userRole}
-                onBack={handleBackToDashboard}
-              />
-            )}
-            
-            {/* Gestión de Turnos */}
-            {currentView === 'shifts' && (
-              <div className="shift-management">
-                <EnhancedShiftManagement 
-                user={user}
-                userRole={userRole}
-              onBack={handleBackToDashboard}
-              />
-              </div>
-            )}
-            
-            {/* Inventario de Bar */}
-            {currentView === 'bar' && (
-              <Routes>
-                <Route path="/" element={
-                  <div>
-                    {/* Header del módulo bar */}
-                    <div className="d-flex justify-content-between align-items-center mb-4">
-                      <div>
-                        <Button 
-                          variant="link" 
-                          onClick={handleBackToDashboard}
-                          className="p-0 text-decoration-none mb-2"
-                          style={{ color: '#87CEEB' }}
-                        >
-                          <FaArrowLeft className="me-2" />
-                          Volver al Dashboard
-                        </Button>
-                        <h2 className="mb-0" style={{ 
-                          color: '#333333', 
-                          fontFamily: 'Raleway, sans-serif',
-                          fontWeight: '600'
-                        }}>
-                          <FaWineGlass className="me-3" style={{ color: '#F59E0B' }} />
-                          Inventario Bar
-                        </h2>
-                      </div>
-                      <div className="d-flex gap-2">
-                        {(userRole === 'admin' || userRole === 'manager' || userRole === 'bartender') && (
-                          <Button 
-                            variant="primary" 
-                            onClick={() => setShowAddForm(true)}
-                            style={{ background: '#F59E0B', borderColor: '#F59E0B' }}
-                          >
-                            <FaPlus className="me-2" />
-                            Agregar Producto
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Aquí iría el resto del contenido del bar */}
-                    {/* Mantener todo tu código actual del inventario */}
-                  </div>
-                } />
-              </Routes>
-            )}
-            
-            {/* Inventario de Cocina */}
-            {currentView === 'kitchen' && (
-              <KitchenInventory 
-                user={user}
-                userRole={userRole}
-                onBack={handleBackToDashboard}
-              />
-            )}
-
-            {/* Gestión de Usuarios (Solo Admin) */}
-            {currentView === 'users' && userRole === 'admin' && (
-              <div>
-                <AdvancedUserManagement
-                  show={true}
-                  onHide={handleBackToDashboard}
-                  user={user}
-                  userRole={userRole}
-                />
-              </div>
-            )}
-
-            {/* Directorio de Personal */}
-            {currentView === 'directory' && (
-              <EmployeeDirectory
-                show={true}
-                onHide={handleBackToDashboard}
-                user={user}
-                userRole={userRole}
-              />
-            )}
-
-            {/* Gestión de Proveedores */}
-            {currentView === 'providers' && (
-              <ProviderManagement
-                show={true}
-                onHide={handleBackToDashboard}
-                user={user}
-                userRole={userRole}
-              />
-            )}
-
-            {/* TODOS LOS MODALES MANTIENEN SU POSICIÓN ACTUAL */}
-            {showAddForm && (
-              <InventoryItemForm
-                show={showAddForm}
-                onHide={() => setShowAddForm(false)}
-                onSave={() => {
-                  setShowAddForm(false);
-                  setSuccess('Producto agregado exitosamente');
-                }}
-                editingItem={editingItem}
-                setEditingItem={setEditingItem}
-                user={user}
-                userRole={userRole}
-                providers={providers}
-              />
-            )}
-
-            {showUserModal && (
-              <AdvancedUserManagement
-                show={showUserModal}
-                onHide={() => setShowUserModal(false)}
-                user={user}
-                userRole={userRole}
-              />
-            )}
-
-            {showProviderModal && (
-              <ProviderManagement
-                show={showProviderModal}
-                onHide={() => setShowProviderModal(false)}
-                user={user}
-                userRole={userRole}
-              />
-            )}
-
-            {showMyProfile && currentUserData && (
-              <UserProfile
-                show={showMyProfile}
-                onHide={() => setShowMyProfile(false)}
-                user={user}
-                userRole={userRole}
-                currentUserData={currentUserData}
-                onProfileUpdate={handleProfileUpdate}
-              />
-            )}
-
-            <EmployeeDirectory
-              show={showEmployeeDirectory}
-              onHide={() => setShowEmployeeDirectory(false)}
+            onBack={handleBackToDashboard}
+          />
+        );
+      
+      case 'shifts':
+        return (
+          <div className="shift-management">
+            <EnhancedShiftManagement 
               user={user}
               userRole={userRole}
+              onBack={handleBackToDashboard}
             />
-          </AppLayout>
-        )}
+          </div>
+        );
+      
+      case 'bar':
+        return (
+          <div>
+            {/* Header del módulo bar */}
+            <div className="d-flex justify-content-between align-items-center mb-4">
+              <div>
+                <Button 
+                  variant="link" 
+                  onClick={handleBackToDashboard}
+                  className="p-0 mb-2"
+                >
+                  <FaArrowLeft className="me-2" />
+                  Volver al Dashboard
+                </Button>
+                <h2>
+                  <FaWineGlass className="me-2" />
+                  Gestión de Bar
+                </h2>
+                <p className="text-muted mb-0">Control de bebidas alcohólicas y no alcohólicas</p>
+              </div>
+              <div>
+                {(userRole === 'admin' || userRole === 'manager') && (
+                  <Button variant="primary" onClick={() => setShowItemModal(true)}>
+                    <FaPlus className="me-1" />
+                    Agregar Producto
+                  </Button>
+                )}
+              </div>
+            </div>
 
-        {/* Estilos adicionales */}
-        <style jsx>{`
-          .navbar-toggler-icon {
-            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='%23000000' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") !important;
-          }
+            {/* Filtros y búsqueda */}
+            <Row className="mb-4">
+              <Col md={6}>
+                <InputGroup>
+                  <InputGroup.Text><FaSearch /></InputGroup.Text>
+                  <Form.Control
+                    placeholder="Buscar productos..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </InputGroup>
+              </Col>
+              <Col md={3}>
+                <Form.Select
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                >
+                  <option value="all">Todas las categorías</option>
+                  <option value="cerveza">Cerveza</option>
+                  <option value="vino">Vino</option>
+                  <option value="spirits">Spirits</option>
+                  <option value="sin_alcohol">Sin Alcohol</option>
+                </Form.Select>
+              </Col>
+            </Row>
+
+            {/* Tabla de inventario */}
+            <Card>
+              <Card.Body>
+                <Table responsive hover>
+                  <thead>
+                    <tr>
+                      <th>Nombre</th>
+                      <th>Categoría</th>
+                      <th>Stock</th>
+                      <th>Precio</th>
+                      <th>Proveedor</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inventory
+                      .filter(item => {
+                        const matchesSearch = item.nombre?.toLowerCase().includes(searchTerm.toLowerCase());
+                        const matchesCategory = filterCategory === 'all' || item.categoria === filterCategory;
+                        return matchesSearch && matchesCategory;
+                      })
+                      .map(item => (
+                        <tr key={item.id}>
+                          <td>
+                            <strong>{item.nombre}</strong>
+                            {item.marca && <div className="small text-muted">{item.marca}</div>}
+                          </td>
+                          <td>
+                            <Badge bg="secondary">{item.categoria}</Badge>
+                          </td>
+                          <td>
+                            <span className={item.stock <= (item.umbral_low || 5) ? 'text-danger' : ''}>
+                              {item.stock} {item.unidad}
+                            </span>
+                          </td>
+                          <td>${item.precio_venta}</td>
+                          <td>{item.proveedor}</td>
+                          <td>
+                            {item.stock <= (item.umbral_low || 5) ? (
+                              <Badge bg="danger">Stock Bajo</Badge>
+                            ) : (
+                              <Badge bg="success">Disponible</Badge>
+                            )}
+                          </td>
+                          <td>
+                            <Button 
+                              variant="outline-primary" 
+                              size="sm" 
+                              className="me-1"
+                              onClick={() => {
+                                setEditingItem(item);
+                                setShowItemModal(true);
+                              }}
+                            >
+                              <FaEdit />
+                            </Button>
+                            {(userRole === 'admin') && (
+                              <Button 
+                                variant="outline-danger" 
+                                size="sm"
+                                onClick={() => {
+                                  setItemToDelete(item);
+                                  setShowDeleteConfirm(true);
+                                }}
+                              >
+                                <FaTrash />
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </Table>
+              </Card.Body>
+            </Card>
+          </div>
+        );
+
+      case 'kitchen':
+        return (
+          <KitchenInventory 
+            onBack={handleBackToDashboard}
+            userRole={userRole}
+          />
+        );
+
+      case 'users':
+        if (userRole !== 'admin') {
+          return (
+            <Alert variant="warning">
+              <h4>Acceso Restringido</h4>
+              <p>Solo los administradores pueden acceder a la gestión de usuarios.</p>
+              <Button variant="secondary" onClick={handleBackToDashboard}>
+                Volver al Dashboard
+              </Button>
+            </Alert>
+          );
+        }
+        return (
+          <AdvancedUserManagement 
+            onBack={handleBackToDashboard}
+            currentUser={user}
+            userRole={userRole}
+          />
+        );
+
+      case 'providers':
+        return (
+          <ProviderManagement 
+            onBack={handleBackToDashboard}
+            userRole={userRole}
+          />
+        );
+
+      case 'directory':
+        return (
+          <EmployeeDirectory 
+            onBack={handleBackToDashboard}
+            currentUser={user}
+          />
+        );
+
+      default:
+        return <MainDashboard />;
+    }
+  };
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="d-flex justify-content-center align-items-center vh-100">
+        <Spinner animation="border" variant="primary" />
+      </div>
+    );
+  }
+
+  // Render principal con Router
+  return (
+    <Router>
+      <div className="App">
+        <Routes>
+          {/* Ruta pública para ver horarios */}
+          <Route 
+            path="/schedule/view/:scheduleId" 
+            element={<PublicScheduleViewer />} 
+          />
           
-          .module-card {
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          }
-          
-          .module-card.hover-3d:hover {
-            transform: translateY(-8px) scale(1.02);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4) !important;
-          }
-          
-          .admin-badge {
-            background: linear-gradient(135deg, #dc2626, #b91c1c);
-            color: white;
-          }
-          
-          .manager-badge {
-            background: linear-gradient(135deg, #2563eb, #1d4ed8);
-            color: white;
-          }
-        `}</style>
+          {/* Ruta principal de la aplicación */}
+          <Route 
+            path="/*" 
+            element={
+              <div>
+                {!user ? (
+                  <Login />
+                ) : (
+                  <AppLayout
+                    user={user}
+                    userRole={userRole}
+                    currentView={currentView}
+                    onNavigate={handleNavigation}
+                    notifications={getNotifications()}
+                    error={error}
+                    success={success}
+                    onClearError={() => setError('')}
+                    onClearSuccess={() => setSuccess('')}
+                  >
+                    {renderCurrentView()}
+                  </AppLayout>
+                )}
+
+                {/* Modales */}
+                {showItemModal && (
+                  <InventoryItemForm
+                    show={showItemModal}
+                    onHide={() => {
+                      setShowItemModal(false);
+                      setEditingItem(null);
+                    }}
+                    editingItem={editingItem}
+                    providers={providers}
+                    onSuccess={(message) => {
+                      setSuccess(message);
+                      setTimeout(() => setSuccess(''), 3000);
+                    }}
+                    onError={(message) => {
+                      setError(message);
+                      setTimeout(() => setError(''), 3000);
+                    }}
+                  />
+                )}
+
+                {showProfileModal && (
+                  <UserProfile
+                    show={showProfileModal}
+                    onHide={() => setShowProfileModal(false)}
+                    user={user}
+                    onSuccess={(message) => {
+                      setSuccess(message);
+                      setTimeout(() => setSuccess(''), 3000);
+                    }}
+                    onError={(message) => {
+                      setError(message);
+                      setTimeout(() => setError(''), 3000);
+                    }}
+                  />
+                )}
+
+                {/* Modal de confirmación de eliminación */}
+                <Modal show={showDeleteConfirm} onHide={() => setShowDeleteConfirm(false)}>
+                  <Modal.Header closeButton>
+                    <Modal.Title>Confirmar Eliminación</Modal.Title>
+                  </Modal.Header>
+                  <Modal.Body>
+                    ¿Estás seguro de que quieres eliminar "{itemToDelete?.nombre}"?
+                    Esta acción no se puede deshacer.
+                  </Modal.Body>
+                  <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)}>
+                      Cancelar
+                    </Button>
+                    <Button 
+                      variant="danger" 
+                      onClick={async () => {
+                        try {
+                          await deleteDoc(doc(db, 'inventario', itemToDelete.id));
+                          setSuccess('Producto eliminado exitosamente');
+                          setTimeout(() => setSuccess(''), 3000);
+                        } catch (error) {
+                          setError('Error al eliminar el producto');
+                          setTimeout(() => setError(''), 3000);
+                        }
+                        setShowDeleteConfirm(false);
+                        setItemToDelete(null);
+                      }}
+                    >
+                      Eliminar
+                    </Button>
+                  </Modal.Footer>
+                </Modal>
+              </div>
+            } 
+          />
+        </Routes>
       </div>
     </Router>
   );

@@ -1,9 +1,10 @@
 // src/components/ShiftManagement.js
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Button, Form, Modal, Table, Badge, Alert, Tabs, Tab, Spinner } from 'react-bootstrap';
-import { FaCalendarAlt, FaPlus, FaEdit, FaTrash, FaClock, FaUsers, FaStickyNote, FaExchangeAlt, FaCheck, FaTimes, FaCalendarWeek, FaUserClock } from 'react-icons/fa';
+import { FaCalendarAlt, FaPlus, FaEdit, FaTrash, FaClock, FaUsers, FaStickyNote, FaExchangeAlt, FaCheck, FaTimes, FaCalendarWeek, FaUserClock, FaShare } from 'react-icons/fa';
 import { collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, query, orderBy, where, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
+import SchedulePublishing from './SchedulePublishing';
 
 const ShiftManagement = ({ user, userRole, onBack }) => {
   const [shifts, setShifts] = useState([]);
@@ -347,6 +348,14 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
       {success && <Alert variant="success" className="mb-3">{success}</Alert>}
 
       {/* Tabs de Navegación */}
+      <Tab eventKey="publish" title={<><FaShare className="me-1" />Publicar Horarios</>}>
+      <SchedulePublishing 
+       shifts={shifts}
+       employees={employees}
+       user={user}
+       userRole={userRole}
+      />
+      </Tab>
       <Tabs activeKey={currentView} onSelect={(k) => setCurrentView(k)} className="mb-4">
         <Tab eventKey="calendar" title={<><FaCalendarWeek className="me-1" />Calendario Semanal</>}>
           {/* Vista de Calendario */}

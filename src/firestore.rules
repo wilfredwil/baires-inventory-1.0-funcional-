@@ -1,90 +1,175 @@
-/ ===== ARCHIVO 1: firestore.rules =====
+// PROBLEMA IDENTIFICADO: Las reglas de Firestore están buscando el rol en el token de autenticación,
+// pero tu aplicación solo guarda el rol en la base de datos.
+
+// SOLUCIÓN 1: Modificar las reglas de Firestore para que sean más permisivas temporalmente
+// Reemplaza tu archivo firestore.rules con esto:
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Funciones auxiliares
+    // Función auxiliar
     function isAuthenticated() {
       return request.auth != null;
     }
     
-    function isAdmin() {
-      return request.auth.token.role == 'admin';
+    // Función para verificar si es admin desde la base de datos
+    function isAdminFromDB() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
     
-    function isManager() {
-      return request.auth.token.role == 'manager';
-    }
-    
-    function isOwner(email) {
-      return request.auth.token.email == email;
-    }
-    
-    function isUserActive() {
-      return request.auth != null && 
-        (!('active' in request.auth.token) || request.auth.token.active == true);
+    // Función para verificar si es manager desde la base de datos
+    function isManagerFromDB() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'manager';
     }
 
-    // Reglas para usuarios/perfiles
+    // Reglas para usuarios
     match /users/{userId} {
-      // Lectura: todos pueden leer información básica
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && (isAdminFromDB() || userId == request.auth.uid);
+      allow delete: if isAuthenticated() && isAdminFromDB();
+    }
+
+    // Reglas para inventario - MÁS PERMISIVAS
+    match /inventario/{itemId} {
+      // Lectura: cualquier usuario autenticado
       allow read: if isAuthenticated();
       
-      // Creación: solo admins
-      allow create: if isAuthenticated() && isAdmin();
+      // Escritura: usuarios autenticados (temporalmente permisivo)
+      allow create, update: if isAuthenticated();
       
-      // Actualización: el usuario puede editar su perfil, admins todo
-      allow update: if isAuthenticated() && (
-        isOwner(resource.data.email) || isAdmin()
-      );
-      
-      // Eliminación: solo admins
-      allow delete: if isAuthenticated() && isAdmin();
-    }
-
-    // Reglas para inventario
-    match /inventario/{itemId} {
-      allow read: if isAuthenticated() && isUserActive();
-      allow create, update: if isAuthenticated() && 
-        (isAdmin() || isManager());
-      allow delete: if isAuthenticated() && isAdmin();
+      // Eliminación: solo admins verificados desde DB
+      allow delete: if isAuthenticated() && isAdminFromDB();
     }
 
     // Reglas para proveedores
     match /providers/{providerId} {
-      allow read: if isAuthenticated() && isUserActive();
-      allow create, update, delete: if isAuthenticated() && isAdmin();
-    }
-
-    // Reglas para historial
-    match /historial/{historialId} {
-      allow read: if isAuthenticated() && isUserActive();
-      allow create: if isAuthenticated() && isUserActive();
-      allow update, delete: if false; // Historial inmutable
-    }
-
-    // Reglas para notas/chat
-    match /notas/{noteId} {
-      allow read, create: if isAuthenticated() && isUserActive();
-      allow update: if isAuthenticated() && 
-        request.auth.token.email == resource.data.usuario;
-      allow delete: if isAuthenticated() && (isAdmin() || isManager());
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated() && isAdminFromDB();
     }
 
     // Reglas para turnos
     match /shifts/{shiftId} {
-      allow read: if isAuthenticated() && isUserActive();
-      allow create, update: if isAuthenticated() && (isAdmin() || isManager());
-      allow delete: if isAuthenticated() && isAdmin();
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() && isAdminFromDB();
+    }
+
+    // Reglas para horarios publicados
+    match /published_schedules/{scheduleId} {
+      // Lectura: cualquier usuario (para enlaces públicos)
+      allow read: if true;
+      
+      // Escritura: usuarios autenticados
+      allow write: if isAuthenticated();
+    }
+
+    // Reglas para notificaciones
+    match /notifications/{notificationId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Reglas para mensajes
+    match /messages/{messageId} {
+      allow read, write: if isAuthenticated();
     }
 
     // Reglas para notas de turno
     match /shift_notes/{noteId} {
-      allow read: if isAuthenticated() && isUserActive();
-      allow create: if isAuthenticated() && isUserActive();
-      allow update: if isAuthenticated() && 
-        request.auth.token.email == resource.data.author;
-      allow delete: if isAuthenticated() && (isAdmin() || isManager());
+      allow read, write: if isAuthenticated();
+    }
+
+    // Reglas para intercambios de turno
+    match /shift_swaps/{swapId} {
+      allow read, write: if isAuthenticated();
     }
   }
 }
+
+// SOLUCIÓN 2: Código de depuración para verificar la autenticación
+// Agrega esto a tu App.js para verificar el estado de autenticación:
+
+const debugAuthentication = () => {
+  console.log('=== DEBUG AUTENTICACIÓN ===');
+  console.log('Usuario:', user);
+  console.log('Usuario UID:', user?.uid);
+  console.log('Usuario email:', user?.email);
+  console.log('UserRole desde estado:', userRole);
+  
+  // Verificar token de autenticación
+  if (user) {
+    user.getIdTokenResult().then(idTokenResult => {
+      console.log('Token claims:', idTokenResult.claims);
+      console.log('Token customClaims:', idTokenResult.claims.role);
+      console.log('Token admin:', idTokenResult.claims.admin);
+    }).catch(error => {
+      console.error('Error obteniendo token:', error);
+    });
+  }
+};
+
+// SOLUCIÓN 3: Función para establecer claims personalizados (solo para desarrollo)
+// IMPORTANTE: Esto normalmente se hace desde Cloud Functions, pero para pruebas puedes usar Firebase Admin SDK
+
+const setUserRole = async (email, role) => {
+  try {
+    // Esto requiere permisos de admin y Cloud Functions
+    const setRoleFunction = httpsCallable(functions, 'setUserRole');
+    await setRoleFunction({ email, role });
+    console.log('Rol establecido exitosamente');
+  } catch (error) {
+    console.error('Error estableciendo rol:', error);
+  }
+};
+
+// SOLUCIÓN 4: Componente de depuración para agregar al dashboard
+const AuthDebugComponent = () => {
+  return (
+    <Card className="mb-4 border-warning">
+      <Card.Header className="bg-warning text-dark">
+        <strong>Debug de Autenticación</strong>
+      </Card.Header>
+      <Card.Body>
+        <p><strong>Usuario autenticado:</strong> {user ? 'Sí' : 'No'}</p>
+        <p><strong>Email:</strong> {user?.email}</p>
+        <p><strong>UID:</strong> {user?.uid}</p>
+        <p><strong>Rol desde estado:</strong> {userRole}</p>
+        
+        <Button 
+          variant="primary" 
+          onClick={debugAuthentication}
+          className="me-2"
+        >
+          Debug en Console
+        </Button>
+        
+        <Button 
+          variant="success" 
+          onClick={async () => {
+            try {
+              // Intentar crear un documento de prueba
+              await addDoc(collection(db, 'inventario'), {
+                nombre: 'PRODUCTO_TEST',
+                stock: 1,
+                categoria: 'test',
+                precio_venta: 100,
+                created_by: user.email,
+                timestamp: serverTimestamp()
+              });
+              alert('Producto de prueba creado exitosamente');
+            } catch (error) {
+              console.error('Error creando producto:', error);
+              alert('Error: ' + error.message);
+            }
+          }}
+        >
+          Probar Crear Producto
+        </Button>
+      </Card.Body>
+    </Card>
+  );
+};
