@@ -518,7 +518,7 @@ const EmployeeDirectory = ({ show, onHide, user, userRole }) => {
       )}
 
       {/* Estilos adicionales */}
-      <style jsx>{`
+      <style>{`
         .employee-card {
           transition: all 0.2s ease;
           border-radius: 12px;
