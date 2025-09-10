@@ -1,0 +1,41 @@
+/ ===== ARCHIVO 2: storage.rules =====
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Reglas para imágenes de perfil
+    match /profiles/{userId}/{fileName} {
+      // Lectura: las imágenes de perfil son públicas
+      allow read: if true;
+      
+      // Escritura: solo el propietario o admin
+      allow write: if request.auth != null && (
+        request.auth.uid == userId || 
+        request.auth.token.role == 'admin'
+      ) && 
+      // Validar que es una imagen
+      request.resource.contentType.matches('image/.*') &&
+      // Máximo 5MB
+      request.resource.size < 5 * 1024 * 1024;
+      
+      // Eliminación: solo el propietario o admin
+      allow delete: if request.auth != null && (
+        request.auth.uid == userId || 
+        request.auth.token.role == 'admin'
+      );
+    }
+    
+    // Reglas para documentos del sistema (facturas, reportes, etc.)
+    match /documents/{document=**} {
+      allow read: if request.auth != null && 
+        (request.auth.token.role == 'admin' || request.auth.token.role == 'manager');
+      allow write: if request.auth != null && request.auth.token.role == 'admin';
+    }
+    
+    // Reglas para respaldos/exports
+    match /exports/{fileName} {
+      allow read, write: if request.auth != null && 
+        (request.auth.token.role == 'admin' || request.auth.token.role == 'manager');
+    }
+  }
+}

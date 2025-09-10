@@ -1,4 +1,4 @@
-// src/App.js - VERSIÓN COMPLETA Y CORREGIDA
+// src/App.js - VERSIÓN COMPLETA CON SISTEMA DE PERFILES
 import React, { useState, useEffect } from 'react';
 import { 
   Container, 
@@ -35,7 +35,8 @@ import {
   FaEnvelope,
   FaEye,
   FaCog,
-  FaArrowLeft
+  FaArrowLeft,
+  FaUser
 } from 'react-icons/fa';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Pie } from 'react-chartjs-2';
@@ -69,14 +70,17 @@ import {
   getFunctions, 
   httpsCallable 
 } from 'firebase/functions';
+import { getStorage } from 'firebase/storage';
 
 // Local imports
-import { auth, db } from './firebase';
+import { auth, db, storage } from './firebase';
 import InventoryItemForm from './components/InventoryItemForm';
-import UserManagement from './components/UserManagement';
+import AdvancedUserManagement from './components/AdvancedUserManagement';
 import ProviderManagement from './components/ProviderManagement';
 import KitchenInventory from './components/KitchenInventory';
 import ShiftManagement from './components/ShiftManagement';
+import UserProfile from './components/UserProfile';
+import EmployeeDirectory from './components/EmployeeDirectory';
 
 // Styles
 import './styles/improvements.css';
@@ -97,6 +101,7 @@ function App() {
   const [providers, setProviders] = useState([]);
   const [historial, setHistorial] = useState([]);
   const [notes, setNotes] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState('dashboard');
 
@@ -106,12 +111,17 @@ function App() {
   const [showUserModal, setShowUserModal] = useState(false);
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [showMyProfile, setShowMyProfile] = useState(false);
+  const [showEmployeeDirectory, setShowEmployeeDirectory] = useState(false);
 
   // Estados de formularios
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [editingItem, setEditingItem] = useState(null);
   const [newNote, setNewNote] = useState('');
+
+  // Estados de perfil
+  const [currentUserData, setCurrentUserData] = useState(null);
 
   // Estados de filtros y búsqueda
   const [searchTerm, setSearchTerm] = useState('');
@@ -153,9 +163,34 @@ function App() {
     return () => unsubscribe();
   }, []);
 
+  // Función para cargar datos del usuario actual
+  const loadCurrentUserData = async () => {
+    if (!user) return;
+    
+    try {
+      const userQuery = query(
+        collection(db, 'users'), 
+        where('email', '==', user.email)
+      );
+      const userSnapshot = await getDocs(userQuery);
+      if (!userSnapshot.empty) {
+        const userData = userSnapshot.docs[0].data();
+        setCurrentUserData({
+          id: userSnapshot.docs[0].id,
+          ...userData
+        });
+      }
+    } catch (err) {
+      console.error('Error loading current user data:', err);
+    }
+  };
+
   // Cargar datos en tiempo real
   useEffect(() => {
     if (user) {
+      // Cargar datos del usuario actual
+      loadCurrentUserData();
+
       // Inventory listener
       const unsubscribeInventory = onSnapshot(
         query(collection(db, 'inventario'), orderBy('nombre')),
@@ -221,11 +256,27 @@ function App() {
         }
       );
 
+      // Employees listener (para el contador en dashboard)
+      const unsubscribeEmployees = onSnapshot(
+        collection(db, 'users'),
+        (snapshot) => {
+          const employeeData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          setEmployees(employeeData);
+        },
+        (error) => {
+          console.error('Error loading employees:', error);
+        }
+      );
+
       return () => {
         unsubscribeInventory();
         unsubscribeProviders();
         unsubscribeHistorial();
         unsubscribeNotes();
+        unsubscribeEmployees();
       };
     }
   }, [user]);
@@ -251,6 +302,7 @@ function App() {
     try {
       await signOut(auth);
       setCurrentView('dashboard');
+      setCurrentUserData(null);
       setSuccess('Sesión cerrada correctamente');
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
@@ -271,6 +323,8 @@ function App() {
       setCurrentView('kitchen');
     } else if (moduleId === 'staff') {
       setCurrentView('shifts');
+    } else if (moduleId === 'directory') {
+      setShowEmployeeDirectory(true);
     } else if (moduleId === 'users' && userRole === 'admin') {
       setShowUserModal(true);
     } else if (moduleId === 'users') {
@@ -289,6 +343,13 @@ function App() {
     setShowLowStockOnly(false);
     setError('');
     setSuccess('');
+  };
+
+  // Funciones de perfil
+  const handleProfileUpdate = (updatedData) => {
+    setCurrentUserData(prev => prev ? { ...prev, ...updatedData } : null);
+    setSuccess('Perfil actualizado exitosamente');
+    setTimeout(() => setSuccess(''), 3000);
   };
 
   // Funciones de inventario
@@ -571,6 +632,16 @@ function App() {
         available: true
       },
       {
+        id: 'directory',
+        title: 'Directorio de Personal',
+        icon: FaUsers,
+        description: 'Ver información de contacto de empleados',
+        color: '#6366F1',
+        colorDark: '#4F46E5',
+        stats: `${employees.length} empleados`,
+        available: true
+      },
+      {
         id: 'reports',
         title: 'Reportes / Analytics',
         icon: FaChartBar,
@@ -675,6 +746,16 @@ function App() {
     );
   };
 
+  // Función para mostrar el nombre del usuario en el chat
+  const getUserDisplayName = (userEmail) => {
+    if (currentUserData?.email === userEmail) {
+      return currentUserData?.displayName || 
+             `${currentUserData?.firstName || ''} ${currentUserData?.lastName || ''}`.trim() || 
+             userEmail.split('@')[0];
+    }
+    return userEmail.split('@')[0];
+  };
+
   if (loading) {
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh' }}>
@@ -723,6 +804,29 @@ function App() {
                           <span className="me-2">{user.email.split('@')[0]}</span>
                           {getRoleDisplay()}
                         </Nav.Item>
+                        
+                        {/* Botón Mi Perfil */}
+                        <Button 
+                          variant="outline-success" 
+                          size="sm" 
+                          onClick={() => setShowMyProfile(true)}
+                          className="me-2"
+                        >
+                          <FaUser className="me-1" />
+                          Mi Perfil
+                        </Button>
+
+                        {/* Botón Directorio */}
+                        <Button 
+                          variant="outline-info" 
+                          size="sm" 
+                          onClick={() => setShowEmployeeDirectory(true)}
+                          className="me-2"
+                        >
+                          <FaUsers className="me-1" />
+                          Directorio
+                        </Button>
+
                         {canManageUsers && (
                           <Button 
                             variant="outline-info" 
@@ -1164,7 +1268,7 @@ function App() {
               notes.map(note => (
                 <div key={note.id} className="mb-3 p-3 rounded bg-light">
                   <div className="d-flex justify-content-between">
-                    <strong>{note.usuario.split('@')[0]}</strong>
+                    <strong>{getUserDisplayName(note.usuario)}</strong>
                     <small className="text-muted">
                       {note.fecha?.toDate().toLocaleString('es-AR')}
                     </small>
@@ -1246,13 +1350,14 @@ function App() {
 
         {/* User Management Modal */}
         {showUserModal && (
-          <UserManagement
-            show={showUserModal}
-            onHide={() => setShowUserModal(false)}
-            user={user}
-            userRole={userRole}
-          />
-        )}
+        <AdvancedUserManagement
+        show={showUserModal}
+        onHide={() => setShowUserModal(false)}
+        user={user}
+        userRole={userRole}
+  />
+)}
+
 
         {/* Provider Management Modal */}
         {showProviderModal && (
@@ -1263,6 +1368,28 @@ function App() {
             userRole={userRole}
           />
         )}
+
+        {/* NUEVOS MODALES DE PERFIL */}
+
+        {/* Modal Mi Perfil */}
+        {showMyProfile && currentUserData && (
+          <UserProfile
+            show={showMyProfile}
+            onHide={() => setShowMyProfile(false)}
+            user={user}
+            userRole={userRole}
+            currentUserData={currentUserData}
+            onProfileUpdate={handleProfileUpdate}
+          />
+        )}
+
+        {/* Modal Directorio de Empleados */}
+        <EmployeeDirectory
+          show={showEmployeeDirectory}
+          onHide={() => setShowEmployeeDirectory(false)}
+          user={user}
+          userRole={userRole}
+        />
 
         {/* Estilos adicionales */}
         <style jsx>{`

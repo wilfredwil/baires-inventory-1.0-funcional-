@@ -1,188 +1,90 @@
-// firestore.rules
+/ ===== ARCHIVO 1: firestore.rules =====
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Función auxiliar para obtener el rol del usuario
-    function getUserRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role;
+    
+    // Funciones auxiliares
+    function isAuthenticated() {
+      return request.auth != null;
     }
     
-    // Función para verificar si el usuario está activo
-    function isUserActive() {
-      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.active == true;
-    }
-    
-    // Función para verificar si es admin
     function isAdmin() {
-      return getUserRole() == 'admin';
+      return request.auth.token.role == 'admin';
     }
     
-    // Función para verificar si puede editar todo
-    function canEditAll() {
-      return getUserRole() in ['admin', 'manager'];
+    function isManager() {
+      return request.auth.token.role == 'manager';
     }
     
-    // Reglas para la colección de usuarios
+    function isOwner(email) {
+      return request.auth.token.email == email;
+    }
+    
+    function isUserActive() {
+      return request.auth != null && 
+        (!('active' in request.auth.token) || request.auth.token.active == true);
+    }
+
+    // Reglas para usuarios/perfiles
     match /users/{userId} {
-      // Solo admins pueden leer todos los usuarios
-      allow read: if request.auth != null && isAdmin();
+      // Lectura: todos pueden leer información básica
+      allow read: if isAuthenticated();
       
-      // Solo admins pueden crear/actualizar/eliminar usuarios
-      allow create, update, delete: if request.auth != null && isAdmin();
+      // Creación: solo admins
+      allow create: if isAuthenticated() && isAdmin();
       
-      // Los usuarios pueden leer su propio perfil
-      allow read: if request.auth != null && request.auth.token.email == userId;
+      // Actualización: el usuario puede editar su perfil, admins todo
+      allow update: if isAuthenticated() && (
+        isOwner(resource.data.email) || isAdmin()
+      );
+      
+      // Eliminación: solo admins
+      allow delete: if isAuthenticated() && isAdmin();
     }
-    
+
     // Reglas para inventario
     match /inventario/{itemId} {
-      // Todos los usuarios autenticados y activos pueden leer
-      allow read: if request.auth != null && isUserActive();
-      
-      // Solo admin y manager pueden crear nuevos items
-      allow create: if request.auth != null && canEditAll();
-      
-      // Admin y manager pueden actualizar cualquier campo
-      allow update: if request.auth != null && canEditAll();
-      
-      // Otros roles solo pueden actualizar stock, ultima_actualizacion y actualizado_por
-      allow update: if request.auth != null && isUserActive() && 
-        request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['stock', 'ultima_actualizacion', 'actualizado_por']);
-      
-      // Solo admins pueden eliminar
-      allow delete: if request.auth != null && isAdmin();
+      allow read: if isAuthenticated() && isUserActive();
+      allow create, update: if isAuthenticated() && 
+        (isAdmin() || isManager());
+      allow delete: if isAuthenticated() && isAdmin();
     }
-    
-    // Reglas para historial
-    match /historial/{logId} {
-      // Todos pueden leer el historial
-      allow read: if request.auth != null && isUserActive();
-      
-      // Todos pueden crear entradas de historial
-      allow create: if request.auth != null && isUserActive();
-      
-      // Nadie puede actualizar o eliminar historial (integridad de datos)
-      allow update, delete: if false;
-    }
-    
+
     // Reglas para proveedores
     match /providers/{providerId} {
-      // Todos pueden leer proveedores
-      allow read: if request.auth != null && isUserActive();
-      
-      // Solo admins pueden gestionar proveedores
-      allow create, update, delete: if request.auth != null && isAdmin();
+      allow read: if isAuthenticated() && isUserActive();
+      allow create, update, delete: if isAuthenticated() && isAdmin();
     }
-    
+
+    // Reglas para historial
+    match /historial/{historialId} {
+      allow read: if isAuthenticated() && isUserActive();
+      allow create: if isAuthenticated() && isUserActive();
+      allow update, delete: if false; // Historial inmutable
+    }
+
     // Reglas para notas/chat
     match /notas/{noteId} {
-      // Todos pueden leer y crear notas
-      allow read, create: if request.auth != null && isUserActive();
-      
-      // Los usuarios pueden actualizar sus propias notas
-      allow update: if request.auth != null && 
+      allow read, create: if isAuthenticated() && isUserActive();
+      allow update: if isAuthenticated() && 
         request.auth.token.email == resource.data.usuario;
-      
-      // Solo admins pueden eliminar notas
-      allow delete: if request.auth != null && isAdmin();
+      allow delete: if isAuthenticated() && (isAdmin() || isManager());
+    }
+
+    // Reglas para turnos
+    match /shifts/{shiftId} {
+      allow read: if isAuthenticated() && isUserActive();
+      allow create, update: if isAuthenticated() && (isAdmin() || isManager());
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    // Reglas para notas de turno
+    match /shift_notes/{noteId} {
+      allow read: if isAuthenticated() && isUserActive();
+      allow create: if isAuthenticated() && isUserActive();
+      allow update: if isAuthenticated() && 
+        request.auth.token.email == resource.data.author;
+      allow delete: if isAuthenticated() && (isAdmin() || isManager());
     }
   }
-}
-
-// Agregar estas reglas al archivo firestore.rules existente
-
-// Reglas para gestión de turnos (shifts)
-match /shifts/{shiftId} {
-  // Todos los usuarios autenticados pueden leer turnos
-  allow read: if request.auth != null && isUserActive();
-  
-  // Solo admins y managers pueden crear/editar turnos
-  allow create, update: if request.auth != null && 
-    (isAdmin() || isManager()) &&
-    // Validar que los datos requeridos estén presentes
-    request.resource.data.keys().hasAll(['employee_id', 'date', 'start_time', 'end_time', 'position']) &&
-    // Validar formato de fecha
-    request.resource.data.date is string &&
-    // Validar que el empleado asignado existe
-    request.resource.data.employee_id is string;
-  
-  // Solo admins pueden eliminar turnos
-  allow delete: if request.auth != null && isAdmin();
-}
-
-// Reglas para notas de turno
-match /shift_notes/{noteId} {
-  // Todos pueden leer notas
-  allow read: if request.auth != null && isUserActive();
-  
-  // Todos pueden crear notas
-  allow create: if request.auth != null && isUserActive() &&
-    // Validar campos requeridos
-    request.resource.data.keys().hasAll(['content', 'author', 'priority', 'category']) &&
-    // Validar que el autor sea el usuario actual
-    request.resource.data.author == request.auth.token.email;
-  
-  // Los usuarios pueden editar sus propias notas
-  allow update: if request.auth != null && 
-    request.auth.token.email == resource.data.author;
-  
-  // Solo admins y managers pueden eliminar notas
-  allow delete: if request.auth != null && (isAdmin() || isManager());
-}
-
-// Reglas para intercambios de turno
-match /shift_swaps/{swapId} {
-  // Todos pueden leer solicitudes de intercambio
-  allow read: if request.auth != null && isUserActive();
-  
-  // Los empleados pueden crear solicitudes de intercambio para sus propios turnos
-  allow create: if request.auth != null && isUserActive() &&
-    // Validar que el solicitante sea el dueño del turno o admin/manager
-    (request.auth.token.email == request.resource.data.requesting_employee ||
-     isAdmin() || isManager());
-  
-  // Los empleados pueden actualizar solicitudes relacionadas con sus turnos
-  // Admins y managers pueden actualizar cualquier solicitud
-  allow update: if request.auth != null &&
-    (request.auth.token.email == resource.data.requesting_employee ||
-     request.auth.token.email == resource.data.target_employee ||
-     isAdmin() || isManager());
-  
-  // Solo admins y managers pueden eliminar solicitudes
-  allow delete: if request.auth != null && (isAdmin() || isManager());
-}
-
-// Reglas para disponibilidad de empleados
-match /employee_availability/{availabilityId} {
-  // Todos pueden leer disponibilidad
-  allow read: if request.auth != null && isUserActive();
-  
-  // Los empleados pueden gestionar su propia disponibilidad
-  // Admins y managers pueden gestionar cualquier disponibilidad
-  allow create, update: if request.auth != null &&
-    (request.auth.token.email == request.resource.data.employee_id ||
-     isAdmin() || isManager());
-  
-  // Solo admins pueden eliminar registros de disponibilidad
-  allow delete: if request.auth != null && isAdmin();
-}
-
-// Reglas para templates de horarios
-match /shift_templates/{templateId} {
-  // Todos pueden leer templates
-  allow read: if request.auth != null && isUserActive();
-  
-  // Solo admins y managers pueden gestionar templates
-  allow create, update, delete: if request.auth != null && (isAdmin() || isManager());
-}
-
-// Funciones auxiliares (agregar a las funciones existentes si no están ya definidas)
-function isManager() {
-  return request.auth.token.role == 'manager';
-}
-
-function isUserActive() {
-  return request.auth != null && 
-    (!('active' in request.auth.token) || request.auth.token.active == true);
 }
