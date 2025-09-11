@@ -1,4 +1,3 @@
-// src/App.js - VERSIÓN COMPLETA CON TODAS LAS FUNCIONALIDADES
 import React, { useState, useEffect } from 'react';
 import { 
   Container, 
@@ -498,258 +497,139 @@ function App() {
         );
       
       case 'bar':
-  return (
-    <div>
-      {/* Header del módulo bar */}
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <div>
-          <Button 
-            variant="link" 
-            onClick={handleBackToDashboard}
-            className="p-0 mb-2"
-          >
-            <FaArrowLeft className="me-2" />
-            Volver al Dashboard
-          </Button>
-          <h2>
-            <FaWineGlass className="me-2" />
-            Gestión de Bar
-          </h2>
-          <p className="text-muted mb-0">Control de bebidas alcohólicas y no alcohólicas</p>
-        </div>
-        <div>
-          {(userRole === 'admin' || userRole === 'manager') && (
-            <Button variant="primary" onClick={() => setShowItemModal(true)}>
-              <FaPlus className="me-1" />
-              Agregar Producto
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Información de inventario para depuración */}
-      <Card className="mb-4 border-info">
-        <Card.Header className="bg-info text-white">
-          <h6 className="mb-0">Información del Inventario</h6>
-        </Card.Header>
-        <Card.Body>
-          <p><strong>Total productos cargados:</strong> {inventory ? inventory.length : 0}</p>
-          <p><strong>Término de búsqueda:</strong> "{searchTerm}"</p>
-          <p><strong>Filtro de tipo:</strong> "{filterCategory}"</p>
-          
-          {inventory && inventory.length > 0 && (
-            <div>
-              <p><strong>Primeros 3 productos:</strong></p>
-              <pre style={{ fontSize: '11px', background: '#f8f9fa', padding: '8px', maxHeight: '150px', overflow: 'auto' }}>
-                {JSON.stringify(inventory.slice(0, 3).map(item => ({
-                  id: item.id,
-                  nombre: item.nombre,
-                  tipo: item.tipo,
-                  subTipo: item.subTipo,
-                  stock: item.stock
-                })), null, 2)}
-              </pre>
-            </div>
-          )}
-        </Card.Body>
-      </Card>
-
-      {/* Filtros y búsqueda */}
-      <Row className="mb-4">
-        <Col md={6}>
-          <InputGroup>
-            <InputGroup.Text><FaSearch /></InputGroup.Text>
-            <Form.Control
-              placeholder="Buscar productos..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </InputGroup>
-        </Col>
-        <Col md={3}>
-          <Form.Select
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-          >
-            <option value="all">Todos los tipos</option>
-            <option value="licor">Licor</option>
-            <option value="vino">Vino</option>
-            <option value="cerveza">Cerveza</option>
-            <option value="otros">Otros</option>
-          </Form.Select>
-        </Col>
-        <Col md={3}>
-          <Button 
-            variant="info" 
-            onClick={() => {
-              console.log('=== DEBUG INVENTARIO BAR ===');
-              console.log('Inventory completo:', inventory);
-              console.log('Filtros aplicados:', { searchTerm, filterCategory });
-              console.log('Productos filtrados:', inventory.filter(item => {
-                if (!item) return false;
-                
-                const matchesSearch = !searchTerm || 
-                  (item.nombre && item.nombre.toLowerCase().includes(searchTerm.toLowerCase()));
-                
-                const matchesType = filterCategory === 'all' || 
-                  (item.tipo && item.tipo === filterCategory);
-                
-                console.log(`Producto ${item.nombre}: search=${matchesSearch}, type=${matchesType}`);
-                return matchesSearch && matchesType;
-              }));
-            }}
-          >
-            Debug Console
-          </Button>
-        </Col>
-      </Row>
-
-      {/* Tabla de inventario */}
-      <Card>
-        <Card.Body>
-          {/* Mostrar mensaje si no hay datos */}
-          {!inventory || inventory.length === 0 ? (
-            <div className="text-center py-5">
-              <FaWineGlass size={64} className="text-muted mb-3" />
-              <h4>No hay productos en el inventario</h4>
-              <p className="text-muted mb-4">
-                Comienza agregando tu primer producto al inventario del bar
-              </p>
-              {(userRole === 'admin' || userRole === 'manager') && (
-                <Button variant="primary" onClick={() => setShowItemModal(true)}>
-                  <FaPlus className="me-1" />
-                  Agregar Primer Producto
+        return (
+          <div>
+            {/* Header del módulo bar */}
+            <div className="d-flex justify-content-between align-items-center mb-4">
+              <div>
+                <Button 
+                  variant="link" 
+                  onClick={handleBackToDashboard}
+                  className="p-0 mb-2"
+                >
+                  <FaArrowLeft className="me-2" />
+                  Volver al Dashboard
                 </Button>
-              )}
+                <h2>
+                  <FaWineGlass className="me-2" />
+                  Gestión de Bar
+                </h2>
+                <p className="text-muted mb-0">Control de bebidas alcohólicas y no alcohólicas</p>
+              </div>
+              <div>
+                {(userRole === 'admin' || userRole === 'manager') && (
+                  <Button variant="primary" onClick={() => setShowItemModal(true)}>
+                    <FaPlus className="me-1" />
+                    Agregar Producto
+                  </Button>
+                )}
+              </div>
             </div>
-          ) : (
-            <div>
-              <Table responsive hover>
-                <thead>
-                  <tr>
-                    <th>Nombre</th>
-                    <th>Tipo</th>
-                    <th>Sub-tipo</th>
-                    <th>Stock</th>
-                    <th>Precio</th>
-                    <th>Estado</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {inventory
-                    .filter(item => {
-                      if (!item) return false;
-                      
-                      // Buscar en nombre
-                      const matchesSearch = !searchTerm || 
-                        (item.nombre && item.nombre.toLowerCase().includes(searchTerm.toLowerCase()));
-                      
-                      // Filtrar por tipo (no por categoria)
-                      const matchesType = filterCategory === 'all' || 
-                        (item.tipo && item.tipo === filterCategory);
-                      
-                      return matchesSearch && matchesType;
-                    })
-                    .map(item => (
-                      <tr key={item.id}>
-                        <td>
-                          <strong>{item.nombre || 'Sin nombre'}</strong>
-                          {item.marca && <div className="small text-muted">{item.marca}</div>}
-                        </td>
-                        <td>
-                          <Badge bg="primary">{item.tipo || 'Sin tipo'}</Badge>
-                        </td>
-                        <td>
-                          <Badge bg="secondary">{item.subTipo || 'N/A'}</Badge>
-                        </td>
-                        <td>
-                          <span className={item.stock <= (item.umbral_low || 5) ? 'text-danger' : ''}>
-                            {item.stock || 0} {item.unidad || 'unidades'}
-                          </span>
-                        </td>
-                        <td>${item.precio_venta || 0}</td>
-                        <td>
-                          {item.stock <= (item.umbral_low || 5) ? (
-                            <Badge bg="danger">Stock Bajo</Badge>
-                          ) : (
-                            <Badge bg="success">Disponible</Badge>
-                          )}
-                        </td>
-                        <td>
-                          <Button 
-                            variant="outline-primary" 
-                            size="sm" 
-                            className="me-1"
-                            onClick={() => {
-                              setEditingItem(item);
-                              setShowItemModal(true);
-                            }}
-                          >
-                            <FaEdit />
-                          </Button>
-                          {(userRole === 'admin') && (
+
+            {/* Filtros y búsqueda */}
+            <Row className="mb-4">
+              <Col md={6}>
+                <InputGroup>
+                  <InputGroup.Text><FaSearch /></InputGroup.Text>
+                  <Form.Control
+                    placeholder="Buscar productos..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </InputGroup>
+              </Col>
+              <Col md={3}>
+                <Form.Select
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                >
+                  <option value="all">Todas las categorías</option>
+                  <option value="cerveza">Cerveza</option>
+                  <option value="vino">Vino</option>
+                  <option value="spirits">Spirits</option>
+                  <option value="sin_alcohol">Sin Alcohol</option>
+                </Form.Select>
+              </Col>
+            </Row>
+
+            {/* Tabla de inventario */}
+            <Card>
+              <Card.Body>
+                <Table responsive hover>
+                  <thead>
+                    <tr>
+                      <th>Nombre</th>
+                      <th>Categoría</th>
+                      <th>Stock</th>
+                      <th>Precio</th>
+                      <th>Proveedor</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inventory
+                      .filter(item => {
+                        const matchesSearch = item.nombre?.toLowerCase().includes(searchTerm.toLowerCase());
+                        const matchesCategory = filterCategory === 'all' || item.categoria === filterCategory;
+                        return matchesSearch && matchesCategory;
+                      })
+                      .map(item => (
+                        <tr key={item.id}>
+                          <td>
+                            <strong>{item.nombre}</strong>
+                            {item.marca && <div className="small text-muted">{item.marca}</div>}
+                          </td>
+                          <td>
+                            <Badge bg="secondary">{item.categoria}</Badge>
+                          </td>
+                          <td>
+                            <span className={item.stock <= (item.umbral_low || 5) ? 'text-danger' : ''}>
+                              {item.stock} {item.unidad}
+                            </span>
+                          </td>
+                          <td>${item.precio_venta}</td>
+                          <td>{item.proveedor}</td>
+                          <td>
+                            {item.stock <= (item.umbral_low || 5) ? (
+                              <Badge bg="danger">Stock Bajo</Badge>
+                            ) : (
+                              <Badge bg="success">Disponible</Badge>
+                            )}
+                          </td>
+                          <td>
                             <Button 
-                              variant="outline-danger" 
-                              size="sm"
+                              variant="outline-primary" 
+                              size="sm" 
+                              className="me-1"
                               onClick={() => {
-                                setItemToDelete(item);
-                                setShowDeleteConfirm(true);
+                                setEditingItem(item);
+                                setShowItemModal(true);
                               }}
                             >
-                              <FaTrash />
+                              <FaEdit />
                             </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </Table>
-
-              {/* Mensaje si hay inventario pero no hay resultados filtrados */}
-              {inventory.filter(item => {
-                if (!item) return false;
-                const matchesSearch = !searchTerm || 
-                  (item.nombre && item.nombre.toLowerCase().includes(searchTerm.toLowerCase()));
-                const matchesType = filterCategory === 'all' || 
-                  (item.tipo && item.tipo === filterCategory);
-                return matchesSearch && matchesType;
-              }).length === 0 && (
-                <div className="text-center py-4">
-                  <Alert variant="warning">
-                    <h5>No se encontraron productos</h5>
-                    <p>No hay productos que coincidan con los filtros aplicados.</p>
-                    <div className="d-flex gap-2 justify-content-center">
-                      <Button 
-                        variant="outline-secondary" 
-                        onClick={() => {
-                          setSearchTerm('');
-                          setFilterCategory('all');
-                        }}
-                      >
-                        Limpiar filtros
-                      </Button>
-                      <Button 
-                        variant="info" 
-                        onClick={() => {
-                          console.log('Todos los productos disponibles:');
-                          inventory.forEach((item, index) => {
-                            console.log(`${index + 1}. ${item.nombre} - Tipo: ${item.tipo} - Stock: ${item.stock}`);
-                          });
-                        }}
-                      >
-                        Ver todos en consola
-                      </Button>
-                    </div>
-                  </Alert>
-                </div>
-              )}
-            </div>
-          )}
-        </Card.Body>
-      </Card>
-    </div>
-  );
+                            {(userRole === 'admin') && (
+                              <Button 
+                                variant="outline-danger" 
+                                size="sm"
+                                onClick={() => {
+                                  setItemToDelete(item);
+                                  setShowDeleteConfirm(true);
+                                }}
+                              >
+                                <FaTrash />
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </Table>
+              </Card.Body>
+            </Card>
+          </div>
+        );
 
       case 'kitchen':
         return (
