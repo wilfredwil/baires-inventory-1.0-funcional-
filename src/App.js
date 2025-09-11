@@ -1,4 +1,4 @@
-// src/App.js - VERSIÓN CORREGIDA CON INVENTARIO Y PERMISOS FUNCIONANDO
+// src/App.js - VERSIÓN CORREGIDA CON NAVEGACIÓN PERSONAL FUNCIONANDO
 import React, { useState, useEffect } from 'react';
 import { 
   Container, 
@@ -36,7 +36,8 @@ import {
   FaEye,
   FaCog,
   FaArrowLeft,
-  FaUser
+  FaUser,
+  FaDatabase
 } from 'react-icons/fa';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Pie } from 'react-chartjs-2';
@@ -246,9 +247,15 @@ function App() {
   };
 
   const handleNavigation = (view) => {
+    console.log('=== NAVEGACIÓN ===');
+    console.log('Vista solicitada:', view);
+    console.log('currentView antes:', currentView);
+    
     setCurrentView(view);
     setError('');
     setSuccess('');
+    
+    console.log('setCurrentView llamado con:', view);
   };
 
   const handleBackToDashboard = () => {
@@ -275,11 +282,13 @@ function App() {
     );
   };
 
-  // Función para verificar permisos de módulos
+  // CORREGIDO: Función para verificar permisos de módulos
   const canAccessModule = (moduleId) => {
     switch (moduleId) {
       case 'users':
         return userRole === 'admin';
+      case 'personal':  // AGREGADO: case para personal
+        return ['admin', 'manager'].includes(userRole);
       case 'bar':
         return ['admin', 'manager', 'bartender'].includes(userRole);
       case 'kitchen':
@@ -562,11 +571,19 @@ function App() {
 
   // Función para renderizar la vista actual
   const renderCurrentView = () => {
+    // DEBUG COMPLETO
+    console.log('=== RENDERIZANDO VISTA ===');
+    console.log('currentView:', currentView);
+    console.log('Tipo de currentView:', typeof currentView);
+    console.log('currentView === "personal":', currentView === 'personal');
+    
     switch (currentView) {
       case 'dashboard':
+        console.log('✅ Renderizando Dashboard');
         return <MainDashboard />;
       
       case 'messages':
+        console.log('✅ Renderizando Messages');
         return (
           <MessagingSystem 
             user={user}
@@ -576,6 +593,7 @@ function App() {
         );
       
       case 'shifts':
+        console.log('✅ Renderizando Shifts');
         return (
           <div className="shift-management">
             <EnhancedShiftManagement 
@@ -586,7 +604,251 @@ function App() {
           </div>
         );
       
+      case 'personal':
+        console.log('✅ RENDERIZANDO PERSONAL');
+        console.log('users:', users);
+        console.log('users.length:', users.length);
+        console.log('userRole:', userRole);
+        
+        // VERIFICAR PERMISOS
+        if (!canAccessModule('personal')) {
+          return (
+            <Alert variant="warning">
+              <h4>Acceso Restringido</h4>
+              <p>No tienes permisos para acceder al módulo de personal.</p>
+              <Button variant="secondary" onClick={handleBackToDashboard}>
+                Volver al Dashboard
+              </Button>
+            </Alert>
+          );
+        }
+        
+        return (
+          <div>
+            {/* Header del módulo personal */}
+            <div className="d-flex justify-content-between align-items-center mb-4">
+              <div>
+                <Button 
+                  variant="link" 
+                  onClick={handleBackToDashboard}
+                  className="p-0 mb-2"
+                >
+                  <FaArrowLeft className="me-2" />
+                  Volver al Dashboard
+                </Button>
+                <h2>
+                  <FaUsers className="me-2" />
+                  Gestión de Personal
+                </h2>
+                <p className="text-muted mb-0">Administración de empleados y su información</p>
+              </div>
+              <div>
+                {(userRole === 'admin' || userRole === 'manager') && (
+                  <Button variant="primary" onClick={() => handleNavigation('users')}>
+                    <FaCog className="me-1" />
+                    Gestión Avanzada
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* DEBUG ESPECÍFICO PARA PERSONAL */}
+            <Alert variant="success" className="mb-4">
+              <h5><FaDatabase className="me-2" />Módulo Personal Funcionando</h5>
+              <div className="row mb-3">
+                <div className="col-md-3">
+                  <strong>Total empleados:</strong> {users.length}
+                </div>
+                <div className="col-md-3">
+                  <strong>Array users existe:</strong> {users ? 'Sí' : 'No'}
+                </div>
+                <div className="col-md-3">
+                  <strong>Array users es array:</strong> {Array.isArray(users) ? 'Sí' : 'No'}
+                </div>
+                <div className="col-md-3">
+                  <strong>Usuario actual:</strong> {user?.email}
+                </div>
+              </div>
+            </Alert>
+
+            {/* Lista de empleados */}
+            <Row>
+              {users.length === 0 ? (
+                <Col>
+                  <Alert variant="warning">
+                    <h5><FaUsers className="me-2" />No hay empleados registrados</h5>
+                    <p>Los empleados aparecerán automáticamente cuando se registren en el sistema.</p>
+                    {userRole === 'admin' && (
+                      <div className="mt-3">
+                        <Button 
+                          variant="primary" 
+                          onClick={() => handleNavigation('users')}
+                        >
+                          <FaPlus className="me-2" />
+                          Agregar Empleados
+                        </Button>
+                      </div>
+                    )}
+                  </Alert>
+                </Col>
+              ) : (
+                users.map((employee, index) => {
+                  const roleNames = {
+                    'admin': 'Administrador',
+                    'manager': 'Gerente',
+                    'bartender': 'Bartender',
+                    'cocinero': 'Cocinero',
+                    'employee': 'Empleado'
+                  };
+
+                  const getRoleColor = (role) => {
+                    switch(role) {
+                      case 'admin': return 'danger';
+                      case 'manager': return 'primary';
+                      case 'bartender': return 'success';
+                      case 'cocinero': return 'info';
+                      default: return 'secondary';
+                    }
+                  };
+
+                  return (
+                    <Col md={6} lg={4} key={employee.id || index} className="mb-4">
+                      <Card className="h-100 shadow-sm">
+                        <Card.Body>
+                          <div className="d-flex align-items-center mb-3">
+                            <div 
+                              className="rounded-circle d-flex align-items-center justify-content-center me-3"
+                              style={{ 
+                                width: '50px', 
+                                height: '50px',
+                                backgroundColor: `var(--bs-${getRoleColor(employee.role)})`,
+                                color: 'white'
+                              }}
+                            >
+                              <FaUser size={20} />
+                            </div>
+                            <div className="flex-grow-1">
+                              <h6 className="mb-1">
+                                {employee.name || employee.displayName || employee.email?.split('@')[0] || 'Sin nombre'}
+                              </h6>
+                              <small className="text-muted">{employee.email || 'Sin email'}</small>
+                            </div>
+                          </div>
+                          
+                          <div className="mb-3">
+                            <Badge 
+                              bg={getRoleColor(employee.role)} 
+                              className="me-2"
+                            >
+                              {roleNames[employee.role] || employee.role || 'Sin rol'}
+                            </Badge>
+                            {employee.active !== false ? (
+                              <Badge bg="success">Activo</Badge>
+                            ) : (
+                              <Badge bg="secondary">Inactivo</Badge>
+                            )}
+                          </div>
+
+                          <div className="small text-muted mb-2">
+                            <div><strong>Email:</strong> {employee.email || 'No disponible'}</div>
+                            {employee.phone && (
+                              <div><strong>Teléfono:</strong> {employee.phone}</div>
+                            )}
+                            {employee.workInfo?.position && (
+                              <div><strong>Posición:</strong> {employee.workInfo.position}</div>
+                            )}
+                            {employee.workInfo?.department && (
+                              <div><strong>Departamento:</strong> {employee.workInfo.department}</div>
+                            )}
+                            {employee.created_at && (
+                              <div>
+                                <strong>Registrado:</strong> {
+                                  employee.created_at.toDate ? 
+                                    employee.created_at.toDate().toLocaleDateString() :
+                                    'Fecha no disponible'
+                                }
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="d-flex justify-content-between align-items-center">
+                            <Button 
+                              variant="outline-primary" 
+                              size="sm"
+                              onClick={() => {
+                                console.log('Ver detalles de:', employee);
+                                alert(`Detalles de ${employee.name || employee.email}: ${JSON.stringify(employee, null, 2)}`);
+                              }}
+                            >
+                              <FaEye className="me-1" />
+                              Ver Detalles
+                            </Button>
+                            
+                            {(userRole === 'admin' || userRole === 'manager') && (
+                              <Button 
+                                variant="outline-secondary" 
+                                size="sm"
+                                onClick={() => handleNavigation('users')}
+                              >
+                                <FaEdit className="me-1" />
+                                Editar
+                              </Button>
+                            )}
+                          </div>
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                  );
+                })
+              )}
+            </Row>
+
+            {/* Estadísticas de personal */}
+            {users.length > 0 && (
+              <Row className="mt-4">
+                <Col>
+                  <Card>
+                    <Card.Header>
+                      <h5 className="mb-0">
+                        <FaChartBar className="me-2" />
+                        Estadísticas de Personal
+                      </h5>
+                    </Card.Header>
+                    <Card.Body>
+                      <Row>
+                        <Col md={3} className="text-center">
+                          <h3 className="text-primary">{users.length}</h3>
+                          <p className="mb-0">Total Empleados</p>
+                        </Col>
+                        <Col md={3} className="text-center">
+                          <h3 className="text-success">
+                            {users.filter(u => u.active !== false).length}
+                          </h3>
+                          <p className="mb-0">Empleados Activos</p>
+                        </Col>
+                        <Col md={3} className="text-center">
+                          <h3 className="text-info">
+                            {users.filter(u => u.role === 'admin').length}
+                          </h3>
+                          <p className="mb-0">Administradores</p>
+                        </Col>
+                        <Col md={3} className="text-center">
+                          <h3 className="text-warning">
+                            {users.filter(u => u.role === 'manager').length}
+                          </h3>
+                          <p className="mb-0">Gerentes</p>
+                        </Col>
+                      </Row>
+                    </Card.Body>
+                  </Card>
+                </Col>
+              </Row>
+            )}
+          </div>
+        );
+      
       case 'bar':
+        console.log('✅ Renderizando Bar');
         if (!canAccessModule('bar')) {
           return (
             <Alert variant="warning">
@@ -824,6 +1086,8 @@ function App() {
         );
 
       default:
+        console.log('❌ EJECUTANDO DEFAULT - currentView no coincide');
+        console.log('currentView recibido:', JSON.stringify(currentView));
         return <MainDashboard />;
     }
   };
