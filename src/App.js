@@ -1,4 +1,4 @@
-// src/App.js - VERSIÓN COMPLETA FUNCIONANDO CON TODAS LAS CARACTERÍSTICAS
+// src/App.js - VERSIÓN COMPLETA CON COMPONENTE DE CREAR USUARIO INDEPENDIENTE
 import React, { useState, useEffect } from 'react';
 import { 
   Container, 
@@ -94,6 +94,7 @@ import UserProfile from './components/UserProfile';
 import EmployeeDirectory from './components/EmployeeDirectory';
 import DashboardWidgets from './components/DashboardWidgets';
 import PublicScheduleViewer from './components/PublicScheduleViewer';
+import CreateUserComponent from './components/CreateUserComponent';
 
 // Styles
 import './styles/improvements.css';
@@ -120,13 +121,13 @@ function App() {
   const [editingItem, setEditingItem] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
-  const [showUserModal, setShowUserModal] = useState(false);
 
-  // Estados de filtros
+  // Estados de modales
   const [showProviderModal, setShowProviderModal] = useState(false);
   const [editingProvider, setEditingProvider] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
 
   // Estados de login
   const [loginEmail, setLoginEmail] = useState('');
@@ -139,14 +140,15 @@ function App() {
   // Efectos principales
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('onAuthStateChanged ejecutado:', user ? 'Usuario autenticado' : 'Usuario no autenticado');
+      
       if (user) {
+        console.log('Usuario autenticado:', user.email, user.uid);
         setUser(user);
-        // Crear usuario admin por defecto si no existe
-        await createDefaultAdmin();
         
         // Cargar rol del usuario con mejor manejo de errores
         try {
-          // CORREGIDO: Buscar por UID y también por email como fallback
+          // Buscar por UID y también por email como fallback
           let userData = null;
           
           // Primero intentar por UID
@@ -190,8 +192,12 @@ function App() {
           setUserRole('employee');
         }
       } else {
+        console.log('No hay usuario autenticado, ejecutando createDefaultAdmin...');
         setUser(null);
         setUserRole('employee');
+        
+        // Crear usuario admin por defecto solo cuando NO hay usuario autenticado
+        await createDefaultAdmin();
       }
       setLoading(false);
     });
@@ -202,27 +208,102 @@ function App() {
   // Crear usuario admin por defecto
   const createDefaultAdmin = async () => {
     try {
+      console.log('Verificando si existe usuario admin...');
+      
       const usersQuery = query(collection(db, 'users'), where('role', '==', 'admin'));
       const usersSnapshot = await getDocs(usersQuery);
       
+      console.log('Usuarios admin encontrados:', usersSnapshot.size);
+      
       if (usersSnapshot.empty) {
-        // No hay admin, crear uno por defecto
-        const defaultAdminRef = doc(db, 'users', 'admin@baires.com');
-        await setDoc(defaultAdminRef, {
-          email: 'admin@baires.com',
-          name: 'Administrador',
-          role: 'admin',
-          createdAt: serverTimestamp(),
-          isActive: true
+        console.log('No se encontró usuario admin, creando uno por defecto...');
+        
+        try {
+          console.log('Creando usuario en Firebase Authentication...');
+          
+          // PASO 1: Crear usuario en Firebase Authentication
+          const userCredential = await createUserWithEmailAndPassword(
+            auth, 
+            'admin@baires.com', 
+            'admin123456'  // Contraseña por defecto - CÁMBIALA DESPUÉS
+          );
+          
+          console.log('Usuario admin creado en Authentication:', userCredential.user.uid);
+          
+          // PASO 2: Crear documento en Firestore usando el UID como documento ID
+          console.log('Creando documento en Firestore...');
+          const defaultAdminRef = doc(db, 'users', userCredential.user.uid);
+          await setDoc(defaultAdminRef, {
+            email: 'admin@baires.com',
+            name: 'Administrador',
+            role: 'admin',
+            createdAt: serverTimestamp(),
+            isActive: true,
+            uid: userCredential.user.uid
+          });
+          
+          console.log('Documento admin creado en Firestore');
+          
+          // Mostrar información importante
+          console.log('USUARIO ADMIN CREADO EXITOSAMENTE');
+          console.log('Email: admin@baires.com');
+          console.log('Contraseña: admin123456');
+          console.log('IMPORTANTE: Cambia esta contraseña después del primer login');
+          
+          // Desloguear inmediatamente para evitar autenticación automática
+          await signOut(auth);
+          console.log('Usuario deslogueado, listo para login manual');
+          
+        } catch (authError) {
+          console.error('Error en createUserWithEmailAndPassword:', authError);
+          
+          if (authError.code === 'auth/email-already-in-use') {
+            console.log('El email admin ya existe en Authentication');
+            console.log('Verificando si necesita documento en Firestore...');
+            
+            // Buscar si ya existe documento para este email
+            const existingUserQuery = query(
+              collection(db, 'users'), 
+              where('email', '==', 'admin@baires.com')
+            );
+            const existingUserSnapshot = await getDocs(existingUserQuery);
+            
+            if (existingUserSnapshot.empty) {
+              console.log('Creando documento en Firestore para usuario existente...');
+              // Crear documento usando email como ID para compatibilidad
+              const defaultAdminRef = doc(db, 'users', 'admin@baires.com');
+              await setDoc(defaultAdminRef, {
+                email: 'admin@baires.com',
+                name: 'Administrador',
+                role: 'admin',
+                createdAt: serverTimestamp(),
+                isActive: true
+              });
+              console.log('Documento creado para usuario existente');
+            } else {
+              console.log('Usuario admin ya tiene documento en Firestore');
+            }
+            
+            console.log('Usa: admin@baires.com / admin123456 para login');
+          } else {
+            throw authError;
+          }
+        }
+      } else {
+        console.log('Usuario admin ya existe');
+        usersSnapshot.forEach(doc => {
+          console.log('Admin encontrado:', doc.data());
         });
-        console.log('Usuario admin por defecto creado');
+        console.log('Usa las credenciales existentes para login');
       }
     } catch (error) {
-      console.error('Error creando admin por defecto:', error);
+      console.error('Error fatal creando admin por defecto:', error);
+      console.error('Detalles del error:', error.message);
+      console.error('Código del error:', error.code);
     }
   };
 
-  // CORREGIDO: Cargar datos del inventario desde la colección correcta
+  // Cargar datos del inventario desde la colección correcta
   useEffect(() => {
     if (!user) return;
 
@@ -286,6 +367,8 @@ function App() {
       console.error('Login error:', error);
       if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
         setError('Email o contraseña incorrectos');
+      } else if (error.code === 'auth/invalid-credential') {
+        setError('Credenciales inválidas. Verifica tu email y contraseña.');
       } else {
         setError('Error al iniciar sesión. Intenta de nuevo.');
       }
@@ -321,7 +404,8 @@ function App() {
       'manager': 'Gerente',
       'employee': 'Empleado',
       'bartender': 'Bartender',
-      'cocinero': 'Cocinero'
+      'cocinero': 'Cocinero',
+      'waiter': 'Mesero'
     };
 
     const badgeClass = userRole === 'admin' ? 'admin-badge' : 
@@ -334,7 +418,7 @@ function App() {
     );
   };
 
-  // CORREGIDO: Función para verificar permisos de módulos
+  // Función para verificar permisos de módulos
   const canAccessModule = (moduleId) => {
     switch (moduleId) {
       case 'users':
@@ -382,100 +466,6 @@ function App() {
     return providers.filter(provider => 
       !provider.tipo || provider.tipo === tipo || provider.tipo === 'ambos'
     );
-  };
-
-  // MÉTODO 1: Usando Cloud Functions (Recomendado - Sin deslogeo)
-  const handleCreateUserCloudFunction = async (userData) => {
-    try {
-      setLoading(true);
-      setError('');
-      
-      const functions = getFunctions();
-      const createUser = httpsCallable(functions, 'createUser');
-      
-      const result = await createUser({
-        email: userData.email,
-        password: userData.password,
-        name: userData.name,
-        role: userData.role
-      });
-
-      if (result.data.success) {
-        setSuccess(`Usuario ${userData.email} creado exitosamente`);
-        setShowUserModal(false);
-        setTimeout(() => setSuccess(''), 5000);
-      }
-      
-    } catch (error) {
-      console.error('Error creando usuario:', error);
-      
-      if (error.code === 'functions/permission-denied') {
-        setError('No tienes permisos para crear usuarios');
-      } else if (error.message.includes('email-already-in-use')) {
-        setError('Este email ya está registrado');
-      } else {
-        setError('Error al crear usuario: ' + error.message);
-      }
-      
-      setTimeout(() => setError(''), 5000);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // MÉTODO 2: Método alternativo simple (Solo crea en Firestore)
-  const handleCreateUserSimple = async (userData) => {
-    try {
-      setLoading(true);
-      setError('');
-      
-      // Verificar si el email ya existe
-      const existingUser = query(
-        collection(db, 'users'),
-        where('email', '==', userData.email)
-      );
-      const existingDocs = await getDocs(existingUser);
-      
-      if (!existingDocs.empty) {
-        setError('Este email ya está registrado en el sistema');
-        return;
-      }
-
-      // Crear solo documento en Firestore (el usuario se registra después)
-      await addDoc(collection(db, 'users'), {
-        email: userData.email,
-        name: userData.name,
-        role: userData.role,
-        active: true,
-        created_at: serverTimestamp(),
-        created_by: user.email,
-        status: 'pending_registration', // Usuario debe registrarse
-        temp_password: userData.password // Solo para referencia, no seguro
-      });
-
-      setSuccess(`Usuario ${userData.email} agregado al sistema. Debe registrarse con email y contraseña proporcionados.`);
-      setShowUserModal(false);
-      setTimeout(() => setSuccess(''), 7000);
-      
-    } catch (error) {
-      console.error('Error creando usuario:', error);
-      setError('Error al crear usuario: ' + error.message);
-      setTimeout(() => setError(''), 5000);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Función principal que intenta Cloud Functions primero, luego fallback
-  const handleCreateUser = async (userData) => {
-    try {
-      // Intentar Cloud Functions primero
-      await handleCreateUserCloudFunction(userData);
-    } catch (error) {
-      console.log('Cloud Functions no disponible, usando método alternativo');
-      // Si falla, usar método simple
-      await handleCreateUserSimple(userData);
-    }
   };
   
   // Componente Dashboard Principal
@@ -654,7 +644,7 @@ function App() {
     // Función manual para crear admin
     const createAdminManually = async () => {
       setAdminCreating(true);
-      console.log('🔧 Creando usuario admin manualmente...');
+      console.log('Creando usuario admin manualmente...');
       
       try {
         // Crear usuario en Firebase Authentication
@@ -664,7 +654,7 @@ function App() {
           'admin123456'
         );
         
-        console.log('✅ Usuario creado en Auth:', userCredential.user.uid);
+        console.log('Usuario creado en Auth:', userCredential.user.uid);
         
         // Crear documento en Firestore
         await setDoc(doc(db, 'users', userCredential.user.uid), {
@@ -676,7 +666,7 @@ function App() {
           uid: userCredential.user.uid
         });
         
-        console.log('✅ Documento creado en Firestore');
+        console.log('Documento creado en Firestore');
         
         // Desloguear inmediatamente
         await signOut(auth);
@@ -854,23 +844,19 @@ function App() {
                 {userRole === 'admin' && (
                   <Button 
                     variant="success" 
-                    onClick={() => setShowUserModal(true)}
+                    onClick={() => setShowCreateUserModal(true)}
                   >
                     <FaPlus className="me-1" />
-                    Crear Usuario
+                    Crear Usuario Completo
                   </Button>
                 )}
-                {(userRole === 'admin' || userRole === 'manager') && (
-                  <Button 
-                    variant="primary" 
-                    onClick={() => {
-                      alert('Gestión Avanzada - En construcción. Usa "Crear Usuario" por ahora.');
-                    }}
-                  >
-                    <FaCog className="me-1" />
-                    Gestión Avanzada
-                  </Button>
-                )}
+                <Button 
+                  variant="primary" 
+                  onClick={() => handleNavigation('users')}
+                >
+                  <FaCog className="me-1" />
+                  Gestión Avanzada
+                </Button>
               </div>
             </div>
 
@@ -899,7 +885,7 @@ function App() {
                       <div className="mt-3">
                         <Button 
                           variant="primary" 
-                          onClick={() => setShowUserModal(true)}
+                          onClick={() => setShowCreateUserModal(true)}
                         >
                           <FaPlus className="me-2" />
                           Crear Primer Usuario
@@ -915,6 +901,7 @@ function App() {
                     'manager': 'Gerente',
                     'bartender': 'Bartender',
                     'cocinero': 'Cocinero',
+                    'waiter': 'Mesero',
                     'employee': 'Empleado'
                   };
 
@@ -924,6 +911,7 @@ function App() {
                       case 'manager': return 'primary';
                       case 'bartender': return 'success';
                       case 'cocinero': return 'info';
+                      case 'waiter': return 'warning';
                       default: return 'secondary';
                     }
                   };
@@ -946,7 +934,9 @@ function App() {
                             </div>
                             <div>
                               <h6 className="mb-1">
-                                {employee.name || employee.displayName || employee.email?.split('@')[0] || 'Sin nombre'}
+                                {employee.firstName && employee.lastName ? 
+                                  `${employee.firstName} ${employee.lastName}` :
+                                  employee.name || employee.displayName || employee.email?.split('@')[0] || 'Sin nombre'}
                               </h6>
                               <small className="text-muted">{employee.email || 'Sin email'}</small>
                             </div>
@@ -973,6 +963,12 @@ function App() {
                             {employee.phone && (
                               <div><strong>Teléfono:</strong> {employee.phone}</div>
                             )}
+                            {employee.workInfo?.employeeId && (
+                              <div><strong>ID:</strong> {employee.workInfo.employeeId}</div>
+                            )}
+                            {employee.workInfo?.department && (
+                              <div><strong>Departamento:</strong> {employee.workInfo.department}</div>
+                            )}
                             {employee.created_at && (
                               <div>
                                 <strong>Registrado:</strong> {
@@ -994,7 +990,7 @@ function App() {
                               variant="outline-primary" 
                               size="sm"
                               onClick={() => {
-                                alert(`Detalles de ${employee.name || employee.email}: ${JSON.stringify(employee, null, 2)}`);
+                                alert(`Detalles de ${employee.firstName || employee.name || employee.email}: ${JSON.stringify(employee, null, 2)}`);
                               }}
                             >
                               <FaEye className="me-1" />
@@ -1257,11 +1253,47 @@ function App() {
           );
         }
         return (
-          <AdvancedUserManagement 
-            onBack={handleBackToDashboard}
-            currentUser={user}
-            userRole={userRole}
-          />
+          <div>
+            <div className="d-flex justify-content-between align-items-center mb-4">
+              <div>
+                <Button 
+                  variant="link" 
+                  onClick={handleBackToDashboard}
+                  className="p-0 mb-2"
+                >
+                  <FaArrowLeft className="me-2" />
+                  Volver al Dashboard
+                </Button>
+                <h2>
+                  <FaCog className="me-2" />
+                  Gestión de Usuarios Avanzada
+                </h2>
+                <p className="text-muted mb-0">
+                  Administración completa de usuarios con todos los campos
+                </p>
+              </div>
+            </div>
+
+            <Alert variant="info" className="mb-4">
+              <h5>Sistema de Gestión Completa</h5>
+              <p className="mb-2">
+                Este módulo permite crear usuarios con toda la información completa:
+                información personal, laboral, dirección, preferencias, etc.
+              </p>
+              <ul className="mb-0">
+                <li>Formulario completo con todos los campos</li>
+                <li>Compatible con la estructura existente en Firebase</li>
+                <li>Generación automática de ID de empleado</li>
+                <li>Contraseñas temporales seguras</li>
+              </ul>
+            </Alert>
+
+            <AdvancedUserManagement 
+              onBack={handleBackToDashboard}
+              currentUser={user}
+              userRole={userRole}
+            />
+          </div>
         );
 
       case 'providers':
@@ -1347,115 +1379,21 @@ function App() {
                   </AppLayout>
                 )}
 
-                {/* MODAL PARA CREAR USUARIO - SIN DESLOGEO */}
-                {showUserModal && (
-                  <Modal show={showUserModal} onHide={() => setShowUserModal(false)} size="lg">
-                    <Modal.Header closeButton>
-                      <Modal.Title>
-                        <FaPlus className="me-2" />
-                        Crear Nuevo Usuario
-                      </Modal.Title>
-                    </Modal.Header>
-                    <Form onSubmit={async (e) => {
-                      e.preventDefault();
-                      const formData = new FormData(e.target);
-                      
-                      const userData = {
-                        email: formData.get('email'),
-                        password: formData.get('password'),
-                        name: formData.get('name'),
-                        role: formData.get('role')
-                      };
-
-                      await handleCreateUser(userData);
-                    }}>
-                      <Modal.Body>
-                        <Row>
-                          <Col md={6}>
-                            <Form.Group className="mb-3">
-                              <Form.Label>Nombre Completo *</Form.Label>
-                              <Form.Control
-                                type="text"
-                                name="name"
-                                required
-                                placeholder="Juan Pérez"
-                              />
-                            </Form.Group>
-                          </Col>
-                          <Col md={6}>
-                            <Form.Group className="mb-3">
-                              <Form.Label>Email *</Form.Label>
-                              <Form.Control
-                                type="email"
-                                name="email"
-                                required
-                                placeholder="juan@baires.com"
-                              />
-                            </Form.Group>
-                          </Col>
-                        </Row>
-
-                        <Row>
-                          <Col md={6}>
-                            <Form.Group className="mb-3">
-                              <Form.Label>Contraseña Temporal *</Form.Label>
-                              <Form.Control
-                                type="password"
-                                name="password"
-                                required
-                                placeholder="Mínimo 6 caracteres"
-                                minLength={6}
-                              />
-                              <Form.Text className="text-muted">
-                                El usuario usará esta contraseña para registrarse
-                              </Form.Text>
-                            </Form.Group>
-                          </Col>
-                          <Col md={6}>
-                            <Form.Group className="mb-3">
-                              <Form.Label>Rol *</Form.Label>
-                              <Form.Select name="role" required>
-                                <option value="">Seleccionar rol...</option>
-                                <option value="employee">Empleado</option>
-                                <option value="bartender">Bartender</option>
-                                <option value="cocinero">Cocinero</option>
-                                <option value="manager">Gerente</option>
-                                {userRole === 'admin' && (
-                                  <option value="admin">Administrador</option>
-                                )}
-                              </Form.Select>
-                            </Form.Group>
-                          </Col>
-                        </Row>
-
-                        <Alert variant="info">
-                          <strong>Método mejorado sin deslogeo:</strong> 
-                          <br />• El usuario será agregado al sistema sin desloguearte
-                          <br />• El nuevo usuario debe registrarse por primera vez en Firebase Authentication
-                          <br />• Aparecerá como "Pendiente Registro" hasta completar el registro
-                          <br />• Una vez registrado, podrá hacer login normalmente
-                        </Alert>
-                      </Modal.Body>
-                      <Modal.Footer>
-                        <Button variant="secondary" onClick={() => setShowUserModal(false)}>
-                          Cancelar
-                        </Button>
-                        <Button variant="primary" type="submit" disabled={loading}>
-                          {loading ? (
-                            <>
-                              <Spinner animation="border" size="sm" className="me-2" />
-                              Creando...
-                            </>
-                          ) : (
-                            <>
-                              <FaPlus className="me-2" />
-                              Crear Usuario
-                            </>
-                          )}
-                        </Button>
-                      </Modal.Footer>
-                    </Form>
-                  </Modal>
+                {/* MODAL PARA CREAR USUARIO MEJORADO */}
+                {showCreateUserModal && (
+                  <CreateUserComponent
+                    show={showCreateUserModal}
+                    onHide={() => setShowCreateUserModal(false)}
+                    currentUser={user}
+                    onSuccess={(message) => {
+                      setSuccess(message);
+                      setTimeout(() => setSuccess(''), 10000);
+                    }}
+                    onError={(message) => {
+                      setError(message);
+                      setTimeout(() => setError(''), 5000);
+                    }}
+                  />
                 )}
 
                 {showItemModal && (
