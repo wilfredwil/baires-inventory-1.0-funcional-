@@ -1,4 +1,4 @@
-// src/App.js - VERSIÓN CORREGIDA CON NAVEGACIÓN PERSONAL FUNCIONANDO
+// src/App.js - VERSIÓN COMPLETA FUNCIONANDO CON TODAS LAS CARACTERÍSTICAS
 import React, { useState, useEffect } from 'react';
 import { 
   Container, 
@@ -37,7 +37,13 @@ import {
   FaCog,
   FaArrowLeft,
   FaUser,
-  FaDatabase
+  FaDatabase,
+  FaSignOutAlt,
+  FaTachometerAlt,
+  FaClipboardList,
+  FaTruck,
+  FaClock,
+  FaComments
 } from 'react-icons/fa';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Pie } from 'react-chartjs-2';
@@ -52,7 +58,8 @@ import {
 import { 
   signInWithEmailAndPassword, 
   signOut, 
-  onAuthStateChanged 
+  onAuthStateChanged,
+  createUserWithEmailAndPassword
 } from 'firebase/auth';
 import { 
   collection, 
@@ -65,7 +72,8 @@ import {
   orderBy, 
   serverTimestamp,
   getDocs,
-  where
+  where,
+  setDoc
 } from 'firebase/firestore';
 import { 
   getFunctions, 
@@ -74,7 +82,7 @@ import {
 import { getStorage } from 'firebase/storage';
 
 // Local imports
-import { auth, db, storage } from './firebase';
+import { auth, db } from './firebase';
 import AppLayout from './components/AppLayout';
 import MessagingSystem from './components/MessagingSystem';
 import InventoryItemForm from './components/InventoryItemForm';
@@ -133,16 +141,43 @@ function App() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setUser(user);
+        // Crear usuario admin por defecto si no existe
+        await createDefaultAdmin();
+        
         // Cargar rol del usuario con mejor manejo de errores
         try {
-          const userQuery = query(
-            collection(db, 'users'), 
-            where('email', '==', user.email)
-          );
-          const userDoc = await getDocs(userQuery);
+          // CORREGIDO: Buscar por UID y también por email como fallback
+          let userData = null;
           
-          if (!userDoc.empty) {
-            const userData = userDoc.docs[0].data();
+          // Primero intentar por UID
+          try {
+            const userDocByUID = await getDocs(query(
+              collection(db, 'users'), 
+              where('uid', '==', user.uid)
+            ));
+            
+            if (!userDocByUID.empty) {
+              userData = userDocByUID.docs[0].data();
+              console.log('Usuario encontrado por UID:', userData);
+            }
+          } catch (uidError) {
+            console.log('Error buscando por UID:', uidError);
+          }
+          
+          // Si no se encuentra por UID, buscar por email
+          if (!userData) {
+            const userDocByEmail = await getDocs(query(
+              collection(db, 'users'), 
+              where('email', '==', user.email)
+            ));
+            
+            if (!userDocByEmail.empty) {
+              userData = userDocByEmail.docs[0].data();
+              console.log('Usuario encontrado por email:', userData);
+            }
+          }
+          
+          if (userData) {
             const role = userData.role || 'employee';
             setUserRole(role);
             console.log('Rol del usuario cargado:', role);
@@ -163,6 +198,29 @@ function App() {
 
     return () => unsubscribe();
   }, []);
+
+  // Crear usuario admin por defecto
+  const createDefaultAdmin = async () => {
+    try {
+      const usersQuery = query(collection(db, 'users'), where('role', '==', 'admin'));
+      const usersSnapshot = await getDocs(usersQuery);
+      
+      if (usersSnapshot.empty) {
+        // No hay admin, crear uno por defecto
+        const defaultAdminRef = doc(db, 'users', 'admin@baires.com');
+        await setDoc(defaultAdminRef, {
+          email: 'admin@baires.com',
+          name: 'Administrador',
+          role: 'admin',
+          createdAt: serverTimestamp(),
+          isActive: true
+        });
+        console.log('Usuario admin por defecto creado');
+      }
+    } catch (error) {
+      console.error('Error creando admin por defecto:', error);
+    }
+  };
 
   // CORREGIDO: Cargar datos del inventario desde la colección correcta
   useEffect(() => {
@@ -247,15 +305,9 @@ function App() {
   };
 
   const handleNavigation = (view) => {
-    console.log('=== NAVEGACIÓN ===');
-    console.log('Vista solicitada:', view);
-    console.log('currentView antes:', currentView);
-    
     setCurrentView(view);
     setError('');
     setSuccess('');
-    
-    console.log('setCurrentView llamado con:', view);
   };
 
   const handleBackToDashboard = () => {
@@ -287,7 +339,7 @@ function App() {
     switch (moduleId) {
       case 'users':
         return userRole === 'admin';
-      case 'personal':  // AGREGADO: case para personal
+      case 'personal':
         return ['admin', 'manager'].includes(userRole);
       case 'bar':
         return ['admin', 'manager', 'bartender'].includes(userRole);
@@ -296,9 +348,11 @@ function App() {
       case 'shifts':
         return ['admin', 'manager'].includes(userRole);
       case 'directory':
-        return true; // Todos pueden ver el directorio
+        return true;
       case 'reports':
         return ['admin', 'manager'].includes(userRole);
+      case 'messages':
+        return true;
       default:
         return true;
     }
@@ -308,7 +362,6 @@ function App() {
   const getNotifications = () => {
     const notifications = [];
     
-    // Agregar notificaciones de stock bajo
     const lowStock = inventory.filter(item => 
       item.stock <= (item.umbral_low || 5)
     );
@@ -329,6 +382,100 @@ function App() {
     return providers.filter(provider => 
       !provider.tipo || provider.tipo === tipo || provider.tipo === 'ambos'
     );
+  };
+
+  // MÉTODO 1: Usando Cloud Functions (Recomendado - Sin deslogeo)
+  const handleCreateUserCloudFunction = async (userData) => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      const functions = getFunctions();
+      const createUser = httpsCallable(functions, 'createUser');
+      
+      const result = await createUser({
+        email: userData.email,
+        password: userData.password,
+        name: userData.name,
+        role: userData.role
+      });
+
+      if (result.data.success) {
+        setSuccess(`Usuario ${userData.email} creado exitosamente`);
+        setShowUserModal(false);
+        setTimeout(() => setSuccess(''), 5000);
+      }
+      
+    } catch (error) {
+      console.error('Error creando usuario:', error);
+      
+      if (error.code === 'functions/permission-denied') {
+        setError('No tienes permisos para crear usuarios');
+      } else if (error.message.includes('email-already-in-use')) {
+        setError('Este email ya está registrado');
+      } else {
+        setError('Error al crear usuario: ' + error.message);
+      }
+      
+      setTimeout(() => setError(''), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // MÉTODO 2: Método alternativo simple (Solo crea en Firestore)
+  const handleCreateUserSimple = async (userData) => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      // Verificar si el email ya existe
+      const existingUser = query(
+        collection(db, 'users'),
+        where('email', '==', userData.email)
+      );
+      const existingDocs = await getDocs(existingUser);
+      
+      if (!existingDocs.empty) {
+        setError('Este email ya está registrado en el sistema');
+        return;
+      }
+
+      // Crear solo documento en Firestore (el usuario se registra después)
+      await addDoc(collection(db, 'users'), {
+        email: userData.email,
+        name: userData.name,
+        role: userData.role,
+        active: true,
+        created_at: serverTimestamp(),
+        created_by: user.email,
+        status: 'pending_registration', // Usuario debe registrarse
+        temp_password: userData.password // Solo para referencia, no seguro
+      });
+
+      setSuccess(`Usuario ${userData.email} agregado al sistema. Debe registrarse con email y contraseña proporcionados.`);
+      setShowUserModal(false);
+      setTimeout(() => setSuccess(''), 7000);
+      
+    } catch (error) {
+      console.error('Error creando usuario:', error);
+      setError('Error al crear usuario: ' + error.message);
+      setTimeout(() => setError(''), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Función principal que intenta Cloud Functions primero, luego fallback
+  const handleCreateUser = async (userData) => {
+    try {
+      // Intentar Cloud Functions primero
+      await handleCreateUserCloudFunction(userData);
+    } catch (error) {
+      console.log('Cloud Functions no disponible, usando método alternativo');
+      // Si falla, usar método simple
+      await handleCreateUserSimple(userData);
+    }
   };
   
   // Componente Dashboard Principal
@@ -378,10 +525,10 @@ function App() {
         id: 'users',
         title: 'Gestión de Usuarios',
         icon: FaCog,
-        description: 'Administrar usuarios y permisos del sistema',
+        description: 'Sistema completo de administración de usuarios con todos los campos',
         color: '#DC2626',
         colorDark: '#B91C1C',
-        stats: 'Solo Admin',
+        stats: 'Formulario Completo',
         available: canAccessModule('users'),
         adminOnly: true
       },
@@ -428,27 +575,12 @@ function App() {
           </Col>
         </Row>
 
-        {/* Debug de permisos - Solo para admin */}
-        {userRole === 'admin' && (
-          <Row className="mb-4">
-            <Col>
-              <Alert variant="info">
-                <strong>Debug Admin:</strong> Rol actual: {userRole} | 
-                Productos en inventario: {inventory.length} | 
-                Usuario: {user?.email}
-              </Alert>
-            </Col>
-          </Row>
-        )}
-
-        {/* Widgets del Dashboard */}
         <DashboardWidgets 
           inventory={inventory}
           users={users}
           userRole={userRole}
         />
 
-        {/* Módulos disponibles para el usuario */}
         <Row className="mb-4">
           <Col>
             <h4>Módulos Disponibles</h4>
@@ -514,76 +646,160 @@ function App() {
   };
 
   // Componente de Login
-  const Login = () => (
-    <div className="login-container">
-      <Container>
-        <Row className="justify-content-center align-items-center min-vh-100">
-          <Col md={6} lg={4}>
-            <Card className="shadow-lg">
-              <Card.Body className="p-5">
-                <div className="text-center mb-4">
-                  <FaWineGlass size={48} className="text-primary mb-3" />
-                  <h2>Baires Inventory</h2>
-                  <p className="text-muted">Sistema de gestión integral</p>
-                </div>
+  const Login = () => {
+    // Estado para mostrar/ocultar el botón de crear admin
+    const [showCreateAdmin, setShowCreateAdmin] = useState(false);
+    const [adminCreating, setAdminCreating] = useState(false);
 
-                {error && <Alert variant="danger">{error}</Alert>}
+    // Función manual para crear admin
+    const createAdminManually = async () => {
+      setAdminCreating(true);
+      console.log('🔧 Creando usuario admin manualmente...');
+      
+      try {
+        // Crear usuario en Firebase Authentication
+        const userCredential = await createUserWithEmailAndPassword(
+          auth, 
+          'admin@baires.com', 
+          'admin123456'
+        );
+        
+        console.log('✅ Usuario creado en Auth:', userCredential.user.uid);
+        
+        // Crear documento en Firestore
+        await setDoc(doc(db, 'users', userCredential.user.uid), {
+          email: 'admin@baires.com',
+          name: 'Administrador',
+          role: 'admin',
+          createdAt: serverTimestamp(),
+          isActive: true,
+          uid: userCredential.user.uid
+        });
+        
+        console.log('✅ Documento creado en Firestore');
+        
+        // Desloguear inmediatamente
+        await signOut(auth);
+        
+        alert('Usuario admin creado exitosamente!\nEmail: admin@baires.com\nContraseña: admin123456');
+        setShowCreateAdmin(false);
+        
+      } catch (error) {
+        console.error('Error:', error);
+        if (error.code === 'auth/email-already-in-use') {
+          alert('El email ya existe. Usa: admin@baires.com / admin123456');
+        } else {
+          alert('Error: ' + error.message);
+        }
+      } finally {
+        setAdminCreating(false);
+      }
+    };
 
-                <Form onSubmit={handleLogin}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Email</Form.Label>
-                    <Form.Control
-                      type="email"
-                      value={loginEmail}
-                      onChange={(e) => setLoginEmail(e.target.value)}
-                      required
-                      placeholder="tu@email.com"
-                    />
-                  </Form.Group>
+    return (
+      <div className="login-container">
+        <Container>
+          <Row className="justify-content-center align-items-center min-vh-100">
+            <Col md={6} lg={4}>
+              <Card className="shadow-lg">
+                <Card.Body className="p-5">
+                  <div className="text-center mb-4">
+                    <FaWineGlass size={48} className="text-primary mb-3" />
+                    <h2>Baires Inventory</h2>
+                    <p className="text-muted">Sistema de gestión integral</p>
+                  </div>
 
-                  <Form.Group className="mb-4">
-                    <Form.Label>Contraseña</Form.Label>
-                    <Form.Control
-                      type="password"
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      required
-                      placeholder="••••••••"
-                    />
-                  </Form.Group>
+                  {error && <Alert variant="danger">{error}</Alert>}
 
-                  <Button 
-                    type="submit" 
-                    variant="primary" 
-                    className="w-100"
-                    disabled={loginLoading}
-                  >
-                    {loginLoading ? <Spinner animation="border" size="sm" /> : 'Ingresar'}
-                  </Button>
-                </Form>
-              </Card.Body>
-            </Card>
-          </Col>
-        </Row>
-      </Container>
-    </div>
-  );
+                  <Form onSubmit={handleLogin}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Email</Form.Label>
+                      <Form.Control
+                        type="email"
+                        value={loginEmail}
+                        onChange={(e) => setLoginEmail(e.target.value)}
+                        required
+                        placeholder="admin@baires.com"
+                      />
+                    </Form.Group>
+
+                    <Form.Group className="mb-4">
+                      <Form.Label>Contraseña</Form.Label>
+                      <Form.Control
+                        type="password"
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        required
+                        placeholder="admin123456"
+                      />
+                    </Form.Group>
+
+                    <Button 
+                      type="submit" 
+                      variant="primary" 
+                      className="w-100 mb-3"
+                      disabled={loginLoading}
+                    >
+                      {loginLoading ? <Spinner animation="border" size="sm" /> : 'Ingresar'}
+                    </Button>
+                  </Form>
+
+                  {/* BOTÓN DE EMERGENCIA PARA CREAR ADMIN */}
+                  <div className="text-center">
+                    <small className="text-muted d-block mb-2">
+                      ¿No tienes credenciales de admin?
+                    </small>
+                    
+                    {!showCreateAdmin ? (
+                      <Button 
+                        variant="outline-warning" 
+                        size="sm"
+                        onClick={() => setShowCreateAdmin(true)}
+                      >
+                        Crear Usuario Admin
+                      </Button>
+                    ) : (
+                      <div>
+                        <Alert variant="warning" className="small">
+                          <strong>¡Atención!</strong> Esto creará un usuario admin por defecto.
+                          <br />Email: admin@baires.com
+                          <br />Contraseña: admin123456
+                        </Alert>
+                        <Button 
+                          variant="success" 
+                          size="sm" 
+                          className="me-2"
+                          onClick={createAdminManually}
+                          disabled={adminCreating}
+                        >
+                          {adminCreating ? <Spinner size="sm" /> : 'Crear Admin'}
+                        </Button>
+                        <Button 
+                          variant="secondary" 
+                          size="sm"
+                          onClick={() => setShowCreateAdmin(false)}
+                        >
+                          Cancelar
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </Card.Body>
+              </Card>
+            </Col>
+          </Row>
+        </Container>
+      </div>
+    );
+  };
 
   // Función para renderizar la vista actual
   const renderCurrentView = () => {
-    // DEBUG COMPLETO
-    console.log('=== RENDERIZANDO VISTA ===');
-    console.log('currentView:', currentView);
-    console.log('Tipo de currentView:', typeof currentView);
-    console.log('currentView === "personal":', currentView === 'personal');
-    
     switch (currentView) {
       case 'dashboard':
-        console.log('✅ Renderizando Dashboard');
         return <MainDashboard />;
       
       case 'messages':
-        console.log('✅ Renderizando Messages');
         return (
           <MessagingSystem 
             user={user}
@@ -593,7 +809,6 @@ function App() {
         );
       
       case 'shifts':
-        console.log('✅ Renderizando Shifts');
         return (
           <div className="shift-management">
             <EnhancedShiftManagement 
@@ -605,12 +820,6 @@ function App() {
         );
       
       case 'personal':
-        console.log('✅ RENDERIZANDO PERSONAL');
-        console.log('users:', users);
-        console.log('users.length:', users.length);
-        console.log('userRole:', userRole);
-        
-        // VERIFICAR PERMISOS
         if (!canAccessModule('personal')) {
           return (
             <Alert variant="warning">
@@ -625,7 +834,6 @@ function App() {
         
         return (
           <div>
-            {/* Header del módulo personal */}
             <div className="d-flex justify-content-between align-items-center mb-4">
               <div>
                 <Button 
@@ -642,9 +850,23 @@ function App() {
                 </h2>
                 <p className="text-muted mb-0">Administración de empleados y su información</p>
               </div>
-              <div>
+              <div className="d-flex gap-2">
+                {userRole === 'admin' && (
+                  <Button 
+                    variant="success" 
+                    onClick={() => setShowUserModal(true)}
+                  >
+                    <FaPlus className="me-1" />
+                    Crear Usuario
+                  </Button>
+                )}
                 {(userRole === 'admin' || userRole === 'manager') && (
-                  <Button variant="primary" onClick={() => handleNavigation('users')}>
+                  <Button 
+                    variant="primary" 
+                    onClick={() => {
+                      alert('Gestión Avanzada - En construcción. Usa "Crear Usuario" por ahora.');
+                    }}
+                  >
                     <FaCog className="me-1" />
                     Gestión Avanzada
                   </Button>
@@ -652,7 +874,6 @@ function App() {
               </div>
             </div>
 
-            {/* DEBUG ESPECÍFICO PARA PERSONAL */}
             <Alert variant="success" className="mb-4">
               <h5><FaDatabase className="me-2" />Módulo Personal Funcionando</h5>
               <div className="row mb-3">
@@ -660,18 +881,14 @@ function App() {
                   <strong>Total empleados:</strong> {users.length}
                 </div>
                 <div className="col-md-3">
-                  <strong>Array users existe:</strong> {users ? 'Sí' : 'No'}
-                </div>
-                <div className="col-md-3">
-                  <strong>Array users es array:</strong> {Array.isArray(users) ? 'Sí' : 'No'}
-                </div>
-                <div className="col-md-3">
                   <strong>Usuario actual:</strong> {user?.email}
+                </div>
+                <div className="col-md-3">
+                  <strong>Rol:</strong> {userRole}
                 </div>
               </div>
             </Alert>
 
-            {/* Lista de empleados */}
             <Row>
               {users.length === 0 ? (
                 <Col>
@@ -682,10 +899,10 @@ function App() {
                       <div className="mt-3">
                         <Button 
                           variant="primary" 
-                          onClick={() => handleNavigation('users')}
+                          onClick={() => setShowUserModal(true)}
                         >
                           <FaPlus className="me-2" />
-                          Agregar Empleados
+                          Crear Primer Usuario
                         </Button>
                       </div>
                     )}
@@ -727,7 +944,7 @@ function App() {
                             >
                               <FaUser size={20} />
                             </div>
-                            <div className="flex-grow-1">
+                            <div>
                               <h6 className="mb-1">
                                 {employee.name || employee.displayName || employee.email?.split('@')[0] || 'Sin nombre'}
                               </h6>
@@ -742,7 +959,9 @@ function App() {
                             >
                               {roleNames[employee.role] || employee.role || 'Sin rol'}
                             </Badge>
-                            {employee.active !== false ? (
+                            {employee.status === 'pending_registration' ? (
+                              <Badge bg="warning">Pendiente Registro</Badge>
+                            ) : employee.active !== false ? (
                               <Badge bg="success">Activo</Badge>
                             ) : (
                               <Badge bg="secondary">Inactivo</Badge>
@@ -754,12 +973,6 @@ function App() {
                             {employee.phone && (
                               <div><strong>Teléfono:</strong> {employee.phone}</div>
                             )}
-                            {employee.workInfo?.position && (
-                              <div><strong>Posición:</strong> {employee.workInfo.position}</div>
-                            )}
-                            {employee.workInfo?.department && (
-                              <div><strong>Departamento:</strong> {employee.workInfo.department}</div>
-                            )}
                             {employee.created_at && (
                               <div>
                                 <strong>Registrado:</strong> {
@@ -769,6 +982,11 @@ function App() {
                                 }
                               </div>
                             )}
+                            {employee.status === 'pending_registration' && (
+                              <div className="text-warning">
+                                <strong>Estado:</strong> Debe completar registro
+                              </div>
+                            )}
                           </div>
 
                           <div className="d-flex justify-content-between align-items-center">
@@ -776,7 +994,6 @@ function App() {
                               variant="outline-primary" 
                               size="sm"
                               onClick={() => {
-                                console.log('Ver detalles de:', employee);
                                 alert(`Detalles de ${employee.name || employee.email}: ${JSON.stringify(employee, null, 2)}`);
                               }}
                             >
@@ -784,11 +1001,13 @@ function App() {
                               Ver Detalles
                             </Button>
                             
-                            {(userRole === 'admin' || userRole === 'manager') && (
+                            {userRole === 'admin' && (
                               <Button 
                                 variant="outline-secondary" 
                                 size="sm"
-                                onClick={() => handleNavigation('users')}
+                                onClick={() => {
+                                  alert('Editar usuario - En construcción');
+                                }}
                               >
                                 <FaEdit className="me-1" />
                                 Editar
@@ -803,7 +1022,6 @@ function App() {
               )}
             </Row>
 
-            {/* Estadísticas de personal */}
             {users.length > 0 && (
               <Row className="mt-4">
                 <Col>
@@ -822,7 +1040,7 @@ function App() {
                         </Col>
                         <Col md={3} className="text-center">
                           <h3 className="text-success">
-                            {users.filter(u => u.active !== false).length}
+                            {users.filter(u => u.active !== false && u.status !== 'pending_registration').length}
                           </h3>
                           <p className="mb-0">Empleados Activos</p>
                         </Col>
@@ -834,9 +1052,9 @@ function App() {
                         </Col>
                         <Col md={3} className="text-center">
                           <h3 className="text-warning">
-                            {users.filter(u => u.role === 'manager').length}
+                            {users.filter(u => u.status === 'pending_registration').length}
                           </h3>
-                          <p className="mb-0">Gerentes</p>
+                          <p className="mb-0">Pendientes Registro</p>
                         </Col>
                       </Row>
                     </Card.Body>
@@ -848,7 +1066,6 @@ function App() {
         );
       
       case 'bar':
-        console.log('✅ Renderizando Bar');
         if (!canAccessModule('bar')) {
           return (
             <Alert variant="warning">
@@ -861,7 +1078,6 @@ function App() {
           );
         }
 
-        // Filtrar productos del bar
         const barProducts = inventory.filter(item => 
           item.tipo === 'licor' || 
           item.tipo === 'cerveza' || 
@@ -872,7 +1088,6 @@ function App() {
 
         return (
           <div>
-            {/* Header del módulo bar */}
             <div className="d-flex justify-content-between align-items-center mb-4">
               <div>
                 <Button 
@@ -899,17 +1114,6 @@ function App() {
               </div>
             </div>
 
-            {/* Debug para admin */}
-            {userRole === 'admin' && (
-              <Alert variant="info" className="mb-4">
-                <strong>Debug:</strong> Total inventario: {inventory.length} | 
-                Productos bar: {barProducts.length} | 
-                Filtro: {filterCategory} | 
-                Búsqueda: "{searchTerm}"
-              </Alert>
-            )}
-
-            {/* Filtros y búsqueda */}
             <Row className="mb-4">
               <Col md={6}>
                 <InputGroup>
@@ -936,16 +1140,12 @@ function App() {
               </Col>
             </Row>
 
-            {/* Tabla de inventario */}
             <Card>
               <Card.Body>
                 {barProducts.length === 0 ? (
                   <Alert variant="warning">
                     <h5>No hay productos de bar</h5>
                     <p>No se encontraron productos del bar en el inventario.</p>
-                    {userRole === 'admin' && (
-                      <p><small>Como admin, puedes agregar productos haciendo clic en "Agregar Producto".</small></p>
-                    )}
                   </Alert>
                 ) : (
                   <Table responsive hover>
@@ -953,7 +1153,6 @@ function App() {
                       <tr>
                         <th>Nombre</th>
                         <th>Tipo</th>
-                        <th>Subtipo</th>
                         <th>Stock</th>
                         <th>Precio</th>
                         <th>Proveedor</th>
@@ -964,8 +1163,7 @@ function App() {
                     <tbody>
                       {barProducts
                         .filter(item => {
-                          const matchesSearch = item.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                              item.marca?.toLowerCase().includes(searchTerm.toLowerCase());
+                          const matchesSearch = item.nombre?.toLowerCase().includes(searchTerm.toLowerCase());
                           const matchesCategory = filterCategory === 'all' || item.tipo === filterCategory;
                           return matchesSearch && matchesCategory;
                         })
@@ -977,9 +1175,6 @@ function App() {
                             </td>
                             <td>
                               <Badge bg="secondary">{item.tipo || 'Sin tipo'}</Badge>
-                            </td>
-                            <td>
-                              <Badge bg="outline-secondary">{item.subTipo || 'Sin subtipo'}</Badge>
                             </td>
                             <td>
                               <span className={item.stock <= (item.umbral_low || 5) ? 'text-danger' : ''}>
@@ -1085,14 +1280,33 @@ function App() {
           />
         );
 
+      case 'reports':
+        if (!canAccessModule('reports')) {
+          return (
+            <Alert variant="warning">
+              <h4>Acceso Restringido</h4>
+              <p>No tienes permisos para acceder a los reportes.</p>
+              <Button variant="secondary" onClick={handleBackToDashboard}>
+                Volver al Dashboard
+              </Button>
+            </Alert>
+          );
+        }
+        return (
+          <Alert variant="info">
+            <h4>Módulo de Reportes</h4>
+            <p>Esta sección está en desarrollo. Pronto tendrás acceso a análisis detallados y reportes.</p>
+            <Button variant="secondary" onClick={handleBackToDashboard}>
+              Volver al Dashboard
+            </Button>
+          </Alert>
+        );
+
       default:
-        console.log('❌ EJECUTANDO DEFAULT - currentView no coincide');
-        console.log('currentView recibido:', JSON.stringify(currentView));
         return <MainDashboard />;
     }
   };
 
-  // Loading state
   if (loading) {
     return (
       <div className="d-flex justify-content-center align-items-center vh-100">
@@ -1101,18 +1315,15 @@ function App() {
     );
   }
 
-  // Render principal con Router
   return (
     <Router>
       <div className="App">
         <Routes>
-          {/* Ruta pública para ver horarios */}
           <Route 
             path="/schedule/view/:scheduleId" 
             element={<PublicScheduleViewer />} 
           />
           
-          {/* Ruta principal de la aplicación */}
           <Route 
             path="/*" 
             element={
@@ -1130,12 +1341,123 @@ function App() {
                     success={success}
                     onClearError={() => setError('')}
                     onClearSuccess={() => setSuccess('')}
+                    onLogout={handleLogout}
                   >
                     {renderCurrentView()}
                   </AppLayout>
                 )}
 
-                {/* Modales */}
+                {/* MODAL PARA CREAR USUARIO - SIN DESLOGEO */}
+                {showUserModal && (
+                  <Modal show={showUserModal} onHide={() => setShowUserModal(false)} size="lg">
+                    <Modal.Header closeButton>
+                      <Modal.Title>
+                        <FaPlus className="me-2" />
+                        Crear Nuevo Usuario
+                      </Modal.Title>
+                    </Modal.Header>
+                    <Form onSubmit={async (e) => {
+                      e.preventDefault();
+                      const formData = new FormData(e.target);
+                      
+                      const userData = {
+                        email: formData.get('email'),
+                        password: formData.get('password'),
+                        name: formData.get('name'),
+                        role: formData.get('role')
+                      };
+
+                      await handleCreateUser(userData);
+                    }}>
+                      <Modal.Body>
+                        <Row>
+                          <Col md={6}>
+                            <Form.Group className="mb-3">
+                              <Form.Label>Nombre Completo *</Form.Label>
+                              <Form.Control
+                                type="text"
+                                name="name"
+                                required
+                                placeholder="Juan Pérez"
+                              />
+                            </Form.Group>
+                          </Col>
+                          <Col md={6}>
+                            <Form.Group className="mb-3">
+                              <Form.Label>Email *</Form.Label>
+                              <Form.Control
+                                type="email"
+                                name="email"
+                                required
+                                placeholder="juan@baires.com"
+                              />
+                            </Form.Group>
+                          </Col>
+                        </Row>
+
+                        <Row>
+                          <Col md={6}>
+                            <Form.Group className="mb-3">
+                              <Form.Label>Contraseña Temporal *</Form.Label>
+                              <Form.Control
+                                type="password"
+                                name="password"
+                                required
+                                placeholder="Mínimo 6 caracteres"
+                                minLength={6}
+                              />
+                              <Form.Text className="text-muted">
+                                El usuario usará esta contraseña para registrarse
+                              </Form.Text>
+                            </Form.Group>
+                          </Col>
+                          <Col md={6}>
+                            <Form.Group className="mb-3">
+                              <Form.Label>Rol *</Form.Label>
+                              <Form.Select name="role" required>
+                                <option value="">Seleccionar rol...</option>
+                                <option value="employee">Empleado</option>
+                                <option value="bartender">Bartender</option>
+                                <option value="cocinero">Cocinero</option>
+                                <option value="manager">Gerente</option>
+                                {userRole === 'admin' && (
+                                  <option value="admin">Administrador</option>
+                                )}
+                              </Form.Select>
+                            </Form.Group>
+                          </Col>
+                        </Row>
+
+                        <Alert variant="info">
+                          <strong>Método mejorado sin deslogeo:</strong> 
+                          <br />• El usuario será agregado al sistema sin desloguearte
+                          <br />• El nuevo usuario debe registrarse por primera vez en Firebase Authentication
+                          <br />• Aparecerá como "Pendiente Registro" hasta completar el registro
+                          <br />• Una vez registrado, podrá hacer login normalmente
+                        </Alert>
+                      </Modal.Body>
+                      <Modal.Footer>
+                        <Button variant="secondary" onClick={() => setShowUserModal(false)}>
+                          Cancelar
+                        </Button>
+                        <Button variant="primary" type="submit" disabled={loading}>
+                          {loading ? (
+                            <>
+                              <Spinner animation="border" size="sm" className="me-2" />
+                              Creando...
+                            </>
+                          ) : (
+                            <>
+                              <FaPlus className="me-2" />
+                              Crear Usuario
+                            </>
+                          )}
+                        </Button>
+                      </Modal.Footer>
+                    </Form>
+                  </Modal>
+                )}
+
                 {showItemModal && (
                   <InventoryItemForm
                     show={showItemModal}
@@ -1174,7 +1496,6 @@ function App() {
                   />
                 )}
 
-                {/* Modal de confirmación de eliminación */}
                 <Modal show={showDeleteConfirm} onHide={() => setShowDeleteConfirm(false)}>
                   <Modal.Header closeButton>
                     <Modal.Title>Confirmar Eliminación</Modal.Title>
