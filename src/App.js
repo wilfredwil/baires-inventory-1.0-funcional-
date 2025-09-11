@@ -1,3 +1,4 @@
+// src/App.js - VERSIÓN CORREGIDA CON INVENTARIO Y PERMISOS FUNCIONANDO
 import React, { useState, useEffect } from 'react';
 import { 
   Container, 
@@ -131,18 +132,26 @@ function App() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setUser(user);
-        // Cargar rol del usuario
+        // Cargar rol del usuario con mejor manejo de errores
         try {
-          const userDoc = await getDocs(query(
+          const userQuery = query(
             collection(db, 'users'), 
             where('email', '==', user.email)
-          ));
+          );
+          const userDoc = await getDocs(userQuery);
+          
           if (!userDoc.empty) {
             const userData = userDoc.docs[0].data();
-            setUserRole(userData.role || 'employee');
+            const role = userData.role || 'employee';
+            setUserRole(role);
+            console.log('Rol del usuario cargado:', role);
+          } else {
+            console.log('No se encontró documento de usuario, usando rol por defecto');
+            setUserRole('employee');
           }
         } catch (error) {
           console.error('Error loading user role:', error);
+          setUserRole('employee');
         }
       } else {
         setUser(null);
@@ -154,18 +163,24 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  // Cargar datos del inventario
+  // CORREGIDO: Cargar datos del inventario desde la colección correcta
   useEffect(() => {
     if (!user) return;
 
+    // Usar 'inventario' en lugar de 'inventory'
     const unsubscribeInventory = onSnapshot(
-      query(collection(db, 'inventory'), orderBy('nombre')),
+      query(collection(db, 'inventario'), orderBy('nombre')),
       (snapshot) => {
         const items = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
         setInventory(items);
+        console.log('Inventario cargado:', items.length, 'productos');
+      },
+      (error) => {
+        console.error('Error cargando inventario:', error);
+        setError('Error cargando el inventario');
       }
     );
 
@@ -245,7 +260,9 @@ function App() {
     const roleNames = {
       'admin': 'Administrador',
       'manager': 'Gerente',
-      'employee': 'Empleado'
+      'employee': 'Empleado',
+      'bartender': 'Bartender',
+      'cocinero': 'Cocinero'
     };
 
     const badgeClass = userRole === 'admin' ? 'admin-badge' : 
@@ -256,6 +273,26 @@ function App() {
         {roleNames[userRole] || userRole}
       </Badge>
     );
+  };
+
+  // Función para verificar permisos de módulos
+  const canAccessModule = (moduleId) => {
+    switch (moduleId) {
+      case 'users':
+        return userRole === 'admin';
+      case 'bar':
+        return ['admin', 'manager', 'bartender'].includes(userRole);
+      case 'kitchen':
+        return ['admin', 'manager', 'cocinero'].includes(userRole);
+      case 'shifts':
+        return ['admin', 'manager'].includes(userRole);
+      case 'directory':
+        return true; // Todos pueden ver el directorio
+      case 'reports':
+        return ['admin', 'manager'].includes(userRole);
+      default:
+        return true;
+    }
   };
 
   // Función para obtener notificaciones
@@ -277,10 +314,17 @@ function App() {
     
     return notifications;
   };
+
+  // Función para obtener proveedores filtrados por tipo
+  const getFilteredProviders = (tipo) => {
+    return providers.filter(provider => 
+      !provider.tipo || provider.tipo === tipo || provider.tipo === 'ambos'
+    );
+  };
   
   // Componente Dashboard Principal
   const MainDashboard = () => {
-    const modules = [
+    const availableModules = [
       {
         id: 'bar',
         title: 'Bar / Alcohol',
@@ -288,8 +332,8 @@ function App() {
         description: 'Gestión de bebidas alcohólicas y bar',
         color: '#F59E0B',
         colorDark: '#D97706',
-        stats: `${inventory.length} productos`,
-        available: true
+        stats: `${inventory.filter(item => item.tipo === 'licor' || item.tipo === 'cerveza' || item.tipo === 'vino').length} productos`,
+        available: canAccessModule('bar')
       },
       {
         id: 'kitchen',
@@ -299,7 +343,7 @@ function App() {
         color: '#EF4444',
         colorDark: '#DC2626',
         stats: 'Sistema FIFO',
-        available: true
+        available: canAccessModule('kitchen')
       },
       {
         id: 'salon',
@@ -312,35 +356,45 @@ function App() {
         available: false
       },
       {
-        id: 'users',
-        title: 'Gestión de Usuarios',
+        id: 'personal',
+        title: 'Personal',
         icon: FaUsers,
-        description: 'Administrar usuarios y permisos del sistema',
+        description: 'Ver y gestionar información de empleados',
         color: '#8B5CF6',
         colorDark: '#7C3AED',
+        stats: `${users.length} empleados`,
+        available: canAccessModule('personal')
+      },
+      {
+        id: 'users',
+        title: 'Gestión de Usuarios',
+        icon: FaCog,
+        description: 'Administrar usuarios y permisos del sistema',
+        color: '#DC2626',
+        colorDark: '#B91C1C',
         stats: 'Solo Admin',
-        available: userRole === 'admin',
+        available: canAccessModule('users'),
         adminOnly: true
       },
       {
         id: 'shifts',
-        title: 'Personal / Horarios',
+        title: 'Horarios / Turnos',
         icon: FaCalendarAlt,
-        description: 'Gestión de turnos y personal estilo ShiftNotes',
+        description: 'Gestión de turnos y horarios de trabajo',
         color: '#10B981',
         colorDark: '#059669',
-        stats: 'ShiftNotes Style',
-        available: true
+        stats: 'Calendario',
+        available: canAccessModule('shifts')
       },
       {
         id: 'directory',
         title: 'Directorio de Personal',
-        icon: FaUsers,
+        icon: FaUser,
         description: 'Ver información de contacto de empleados',
         color: '#6366F1',
         colorDark: '#4F46E5',
         stats: `${users.length} empleados`,
-        available: true
+        available: canAccessModule('directory')
       },
       {
         id: 'reports',
@@ -350,18 +404,33 @@ function App() {
         color: '#6B7280',
         colorDark: '#4B5563',
         stats: 'Ver estadísticas',
-        available: false
+        available: canAccessModule('reports')
       }
-    ];
+    ].filter(module => module.available);
 
     return (
       <Container fluid>
         <Row className="mb-4">
           <Col>
             <h2>Dashboard Principal</h2>
-            <p className="text-muted">Sistema de gestión integral para Baires</p>
+            <p className="text-muted">
+              Sistema de gestión integral para Baires - {getRoleBadge()}
+            </p>
           </Col>
         </Row>
+
+        {/* Debug de permisos - Solo para admin */}
+        {userRole === 'admin' && (
+          <Row className="mb-4">
+            <Col>
+              <Alert variant="info">
+                <strong>Debug Admin:</strong> Rol actual: {userRole} | 
+                Productos en inventario: {inventory.length} | 
+                Usuario: {user?.email}
+              </Alert>
+            </Col>
+          </Row>
+        )}
 
         {/* Widgets del Dashboard */}
         <DashboardWidgets 
@@ -370,41 +439,62 @@ function App() {
           userRole={userRole}
         />
 
-        {/* Módulos principales */}
-        <Row className="g-4">
-          {modules.map(module => (
-            <Col key={module.id} lg={4} md={6}>
+        {/* Módulos disponibles para el usuario */}
+        <Row className="mb-4">
+          <Col>
+            <h4>Módulos Disponibles</h4>
+          </Col>
+        </Row>
+
+        <Row>
+          {availableModules.map(module => (
+            <Col md={6} lg={4} key={module.id} className="mb-4">
               <Card 
-                className={`h-100 module-card ${!module.available ? 'disabled-module' : ''}`}
-                style={{
-                  background: module.available 
-                    ? `linear-gradient(135deg, ${module.color} 0%, ${module.colorDark} 100%)`
-                    : '#f8f9fa',
-                  cursor: module.available ? 'pointer' : 'not-allowed',
-                  border: 'none',
-                  color: module.available ? 'white' : '#6c757d'
-                }}
+                className="h-100 module-card cursor-pointer"
                 onClick={() => module.available && handleNavigation(module.id)}
+                style={{
+                  cursor: module.available ? 'pointer' : 'not-allowed',
+                  opacity: module.available ? 1 : 0.6,
+                  borderLeft: `4px solid ${module.color}`,
+                  transition: 'transform 0.2s ease-in-out'
+                }}
+                onMouseEnter={(e) => {
+                  if (module.available) {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '';
+                }}
               >
                 <Card.Body className="d-flex flex-column">
-                  <div className="d-flex justify-content-between align-items-start mb-3">
-                    <module.icon size={48} className={module.available ? 'text-white' : 'text-muted'} />
-                    {module.adminOnly && (
-                      <Badge bg="warning" text="dark">Admin</Badge>
-                    )}
+                  <div className="d-flex align-items-center mb-3">
+                    <div 
+                      className="p-2 rounded me-3"
+                      style={{ backgroundColor: `${module.color}20` }}
+                    >
+                      <module.icon 
+                        size={24} 
+                        style={{ color: module.color }}
+                      />
+                    </div>
+                    <div>
+                      <h6 className="mb-1">{module.title}</h6>
+                      <small className="text-muted">{module.stats}</small>
+                    </div>
                   </div>
                   
-                  <h5 className="mb-2">{module.title}</h5>
-                  <p className="mb-3 small opacity-75">{module.description}</p>
-                  
-                  <div className="mt-auto">
-                    <small className="opacity-75">{module.stats}</small>
-                    {!module.available && (
-                      <div className="mt-2">
-                        <Badge bg="secondary">Próximamente</Badge>
-                      </div>
-                    )}
-                  </div>
+                  <p className="text-muted small mb-0">
+                    {module.description}
+                  </p>
+
+                  {module.adminOnly && (
+                    <Badge bg="warning" className="mt-2 align-self-start">
+                      Solo Administradores
+                    </Badge>
+                  )}
                 </Card.Body>
               </Card>
             </Col>
@@ -497,6 +587,27 @@ function App() {
         );
       
       case 'bar':
+        if (!canAccessModule('bar')) {
+          return (
+            <Alert variant="warning">
+              <h4>Acceso Restringido</h4>
+              <p>No tienes permisos para acceder al módulo de bar.</p>
+              <Button variant="secondary" onClick={handleBackToDashboard}>
+                Volver al Dashboard
+              </Button>
+            </Alert>
+          );
+        }
+
+        // Filtrar productos del bar
+        const barProducts = inventory.filter(item => 
+          item.tipo === 'licor' || 
+          item.tipo === 'cerveza' || 
+          item.tipo === 'vino' || 
+          item.tipo === 'aperitivo' ||
+          item.tipo === 'digestivo'
+        );
+
         return (
           <div>
             {/* Header del módulo bar */}
@@ -526,6 +637,16 @@ function App() {
               </div>
             </div>
 
+            {/* Debug para admin */}
+            {userRole === 'admin' && (
+              <Alert variant="info" className="mb-4">
+                <strong>Debug:</strong> Total inventario: {inventory.length} | 
+                Productos bar: {barProducts.length} | 
+                Filtro: {filterCategory} | 
+                Búsqueda: "{searchTerm}"
+              </Alert>
+            )}
+
             {/* Filtros y búsqueda */}
             <Row className="mb-4">
               <Col md={6}>
@@ -543,11 +664,12 @@ function App() {
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
                 >
-                  <option value="all">Todas las categorías</option>
+                  <option value="all">Todos los tipos</option>
+                  <option value="licor">Licor</option>
                   <option value="cerveza">Cerveza</option>
                   <option value="vino">Vino</option>
-                  <option value="spirits">Spirits</option>
-                  <option value="sin_alcohol">Sin Alcohol</option>
+                  <option value="aperitivo">Aperitivo</option>
+                  <option value="digestivo">Digestivo</option>
                 </Form.Select>
               </Col>
             </Row>
@@ -555,83 +677,109 @@ function App() {
             {/* Tabla de inventario */}
             <Card>
               <Card.Body>
-                <Table responsive hover>
-                  <thead>
-                    <tr>
-                      <th>Nombre</th>
-                      <th>Categoría</th>
-                      <th>Stock</th>
-                      <th>Precio</th>
-                      <th>Proveedor</th>
-                      <th>Estado</th>
-                      <th>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {inventory
-                      .filter(item => {
-                        const matchesSearch = item.nombre?.toLowerCase().includes(searchTerm.toLowerCase());
-                        const matchesCategory = filterCategory === 'all' || item.categoria === filterCategory;
-                        return matchesSearch && matchesCategory;
-                      })
-                      .map(item => (
-                        <tr key={item.id}>
-                          <td>
-                            <strong>{item.nombre}</strong>
-                            {item.marca && <div className="small text-muted">{item.marca}</div>}
-                          </td>
-                          <td>
-                            <Badge bg="secondary">{item.categoria}</Badge>
-                          </td>
-                          <td>
-                            <span className={item.stock <= (item.umbral_low || 5) ? 'text-danger' : ''}>
-                              {item.stock} {item.unidad}
-                            </span>
-                          </td>
-                          <td>${item.precio_venta}</td>
-                          <td>{item.proveedor}</td>
-                          <td>
-                            {item.stock <= (item.umbral_low || 5) ? (
-                              <Badge bg="danger">Stock Bajo</Badge>
-                            ) : (
-                              <Badge bg="success">Disponible</Badge>
-                            )}
-                          </td>
-                          <td>
-                            <Button 
-                              variant="outline-primary" 
-                              size="sm" 
-                              className="me-1"
-                              onClick={() => {
-                                setEditingItem(item);
-                                setShowItemModal(true);
-                              }}
-                            >
-                              <FaEdit />
-                            </Button>
-                            {(userRole === 'admin') && (
+                {barProducts.length === 0 ? (
+                  <Alert variant="warning">
+                    <h5>No hay productos de bar</h5>
+                    <p>No se encontraron productos del bar en el inventario.</p>
+                    {userRole === 'admin' && (
+                      <p><small>Como admin, puedes agregar productos haciendo clic en "Agregar Producto".</small></p>
+                    )}
+                  </Alert>
+                ) : (
+                  <Table responsive hover>
+                    <thead>
+                      <tr>
+                        <th>Nombre</th>
+                        <th>Tipo</th>
+                        <th>Subtipo</th>
+                        <th>Stock</th>
+                        <th>Precio</th>
+                        <th>Proveedor</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {barProducts
+                        .filter(item => {
+                          const matchesSearch = item.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                              item.marca?.toLowerCase().includes(searchTerm.toLowerCase());
+                          const matchesCategory = filterCategory === 'all' || item.tipo === filterCategory;
+                          return matchesSearch && matchesCategory;
+                        })
+                        .map(item => (
+                          <tr key={item.id}>
+                            <td>
+                              <strong>{item.nombre}</strong>
+                              {item.marca && <div className="small text-muted">{item.marca}</div>}
+                            </td>
+                            <td>
+                              <Badge bg="secondary">{item.tipo || 'Sin tipo'}</Badge>
+                            </td>
+                            <td>
+                              <Badge bg="outline-secondary">{item.subTipo || 'Sin subtipo'}</Badge>
+                            </td>
+                            <td>
+                              <span className={item.stock <= (item.umbral_low || 5) ? 'text-danger' : ''}>
+                                {item.stock} {item.unidad || 'und'}
+                              </span>
+                            </td>
+                            <td>${item.precio_venta || 0}</td>
+                            <td>{item.proveedor || 'Sin proveedor'}</td>
+                            <td>
+                              {item.stock <= (item.umbral_low || 5) ? (
+                                <Badge bg="danger">Stock Bajo</Badge>
+                              ) : (
+                                <Badge bg="success">Disponible</Badge>
+                              )}
+                            </td>
+                            <td>
                               <Button 
-                                variant="outline-danger" 
-                                size="sm"
+                                variant="outline-primary" 
+                                size="sm" 
+                                className="me-1"
                                 onClick={() => {
-                                  setItemToDelete(item);
-                                  setShowDeleteConfirm(true);
+                                  setEditingItem({...item, inventoryType: 'bar'});
+                                  setShowItemModal(true);
                                 }}
                               >
-                                <FaTrash />
+                                <FaEdit />
                               </Button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </Table>
+                              {(userRole === 'admin') && (
+                                <Button 
+                                  variant="outline-danger" 
+                                  size="sm"
+                                  onClick={() => {
+                                    setItemToDelete(item);
+                                    setShowDeleteConfirm(true);
+                                  }}
+                                >
+                                  <FaTrash />
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </Table>
+                )}
               </Card.Body>
             </Card>
           </div>
         );
 
       case 'kitchen':
+        if (!canAccessModule('kitchen')) {
+          return (
+            <Alert variant="warning">
+              <h4>Acceso Restringido</h4>
+              <p>No tienes permisos para acceder al módulo de cocina.</p>
+              <Button variant="secondary" onClick={handleBackToDashboard}>
+                Volver al Dashboard
+              </Button>
+            </Alert>
+          );
+        }
         return (
           <KitchenInventory 
             onBack={handleBackToDashboard}
@@ -640,7 +788,7 @@ function App() {
         );
 
       case 'users':
-        if (userRole !== 'admin') {
+        if (!canAccessModule('users')) {
           return (
             <Alert variant="warning">
               <h4>Acceso Restringido</h4>
@@ -732,7 +880,9 @@ function App() {
                       setEditingItem(null);
                     }}
                     editingItem={editingItem}
-                    providers={providers}
+                    providers={getFilteredProviders(editingItem?.inventoryType || 'bar')}
+                    inventoryType={editingItem?.inventoryType || 'bar'}
+                    userRole={userRole}
                     onSuccess={(message) => {
                       setSuccess(message);
                       setTimeout(() => setSuccess(''), 3000);
