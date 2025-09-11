@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
-import { Modal, Form, Button, Row, Col, Alert, InputGroup, Card } from 'react-bootstrap';
-import { FaUser, FaEye, FaEyeSlash, FaBuilding, FaIdCard, FaClock, FaMoneyBillWave } from 'react-icons/fa';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '../firebase';
+import React, { useState, useEffect } from 'react';
+import { Modal, Form, Button, Row, Col, Alert, InputGroup, Card, Badge } from 'react-bootstrap';
+import { FaUser, FaBuilding, FaIdCard, FaClock, FaMoneyBillWave, FaSave } from 'react-icons/fa';
+import { updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 
-const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) => {
+const EditUserComponent = ({ show, onHide, onSuccess, onError, currentUser, userToEdit }) => {
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -23,7 +22,7 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
       }
     },
     permissions: {
-      canAccessPOS: true,
+      canAccessPOS: false,
       canManageInventory: false,
       canViewReports: false,
       canManageStaff: false
@@ -37,11 +36,10 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
       address: '',
       birthDate: ''
     },
-    password: ''
+    status: 'active'
   });
 
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
 
   // Definir roles según departamento
@@ -195,23 +193,39 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
     { value: 'sunday', label: 'Domingo' }
   ];
 
-  // Generar ID de empleado
-  const generateEmployeeId = () => {
-    const year = new Date().getFullYear();
-    const dept = formData.workInfo.department;
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `${dept}${year}${random}`;
-  };
-
-  // Generar contraseña temporal
-  const generatePassword = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$';
-    let password = '';
-    for (let i = 0; i < 10; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length));
+  // Cargar datos del usuario cuando se abre el modal
+  useEffect(() => {
+    if (userToEdit && show) {
+      setFormData({
+        firstName: userToEdit.firstName || '',
+        lastName: userToEdit.lastName || '',
+        email: userToEdit.email || '',
+        phone: userToEdit.phone || '',
+        role: userToEdit.role || 'server',
+        workInfo: {
+          department: userToEdit.workInfo?.department || 'FOH',
+          employeeId: userToEdit.workInfo?.employeeId || '',
+          hourlyRate: userToEdit.workInfo?.hourlyRate || userToEdit.workInfo?.salary || '',
+          startDate: userToEdit.workInfo?.startDate || '',
+          schedule: {
+            hoursPerWeek: userToEdit.workInfo?.schedule?.hoursPerWeek || '',
+            workDays: userToEdit.workInfo?.schedule?.workDays || []
+          }
+        },
+        permissions: userToEdit.permissions || getPermissionsByRole(userToEdit.role || 'server'),
+        personalInfo: {
+          emergencyContact: {
+            name: userToEdit.personalInfo?.emergencyContact?.name || '',
+            phone: userToEdit.personalInfo?.emergencyContact?.phone || '',
+            relationship: userToEdit.personalInfo?.emergencyContact?.relationship || ''
+          },
+          address: userToEdit.personalInfo?.address || '',
+          birthDate: userToEdit.personalInfo?.birthDate || ''
+        },
+        status: userToEdit.status || 'active'
+      });
     }
-    return password;
-  };
+  }, [userToEdit, show]);
 
   // Manejar cambios en el formulario
   const handleInputChange = (e) => {
@@ -261,7 +275,7 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
     }
   };
 
-  // Manejar cambio de días de trabajo
+  // Manejar cambio de días de disponibilidad
   const handleWorkDaysChange = (day) => {
     setFormData(prev => ({
       ...prev,
@@ -286,7 +300,6 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
     if (!formData.email.trim()) newErrors.email = 'Email requerido';
     if (!formData.role) newErrors.role = 'Rol requerido';
     if (!formData.workInfo.department) newErrors['workInfo.department'] = 'Departamento requerido';
-    if (!formData.password) newErrors.password = 'Contraseña requerida';
 
     // Validar email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -307,127 +320,76 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
     setLoading(true);
 
     try {
-      // Generar ID de empleado si no existe
-      const employeeId = formData.workInfo.employeeId || generateEmployeeId();
-      
-      // Crear usuario en Authentication
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        formData.email,
-        formData.password
-      );
-
-      // Preparar datos del usuario
-      const userData = {
-        uid: userCredential.user.uid,
-        email: formData.email,
+      // Preparar datos actualizados
+      const updateData = {
         firstName: formData.firstName,
         lastName: formData.lastName,
         displayName: `${formData.firstName} ${formData.lastName}`,
         phone: formData.phone,
         role: formData.role,
-        workInfo: {
-          ...formData.workInfo,
-          employeeId,
-          startDate: formData.workInfo.startDate || new Date().toISOString().split('T')[0]
-        },
+        workInfo: formData.workInfo,
         permissions: formData.permissions,
         personalInfo: formData.personalInfo,
-        createdAt: serverTimestamp(),
-        createdBy: currentUser?.email || 'system',
+        status: formData.status,
         updatedAt: serverTimestamp(),
-        status: 'active'
+        updatedBy: currentUser?.email || 'system'
       };
 
-      // Guardar en Firestore
-      await addDoc(collection(db, 'users'), userData);
+      // Actualizar en Firestore
+      await updateDoc(doc(db, 'users', userToEdit.id), updateData);
 
       // Mensaje de éxito
       const successMessage = `
-✅ USUARIO CREADO EXITOSAMENTE
+✅ USUARIO ACTUALIZADO EXITOSAMENTE
 
-📋 INFORMACIÓN DEL NUEVO EMPLEADO:
+📋 INFORMACIÓN ACTUALIZADA:
 • Nombre: ${formData.firstName} ${formData.lastName}
 • Email: ${formData.email}
-• ID Empleado: ${employeeId}
+• ID Empleado: ${formData.workInfo.employeeId}
 • Departamento: ${formData.workInfo.department}
 • Rol: ${formData.role}
 • Salario: $${formData.workInfo.hourlyRate}/hora USD
+• Días de Disponibilidad: ${formData.workInfo.schedule.workDays.length} días seleccionados
 
-🔐 CREDENCIALES DE ACCESO:
-• Email: ${formData.email}
-• Contraseña temporal: ${formData.password}
-
-⚠️ IMPORTANTE: 
-- Envía estas credenciales al empleado de forma segura
-- El empleado debe cambiar su contraseña en el primer acceso
-- Guarda esta información para tus registros`;
+🔐 PERMISOS ACTUALIZADOS:
+${formData.permissions.canAccessPOS ? '✅' : '❌'} Acceso al POS
+${formData.permissions.canManageInventory ? '✅' : '❌'} Gestión de Inventario
+${formData.permissions.canViewReports ? '✅' : '❌'} Ver Reportes
+${formData.permissions.canManageStaff ? '✅' : '❌'} Gestión de Personal`;
 
       if (onSuccess) {
         onSuccess(successMessage);
       }
 
-      // Reset formulario
-      setFormData({
-        firstName: '',
-        lastName: '',
-        email: '',
-        phone: '',
-        role: 'server',
-        workInfo: {
-          department: 'FOH',
-          employeeId: '',
-          hourlyRate: '',
-          startDate: '',
-          schedule: {
-            hoursPerWeek: '',
-            workDays: []
-          }
-        },
-        permissions: {
-          canAccessPOS: true,
-          canManageInventory: false,
-          canViewReports: false,
-          canManageStaff: false
-        },
-        personalInfo: {
-          emergencyContact: {
-            name: '',
-            phone: '',
-            relationship: ''
-          },
-          address: '',
-          birthDate: ''
-        },
-        password: ''
-      });
-
       onHide();
 
     } catch (error) {
-      console.error('Error creando usuario:', error);
+      console.error('Error actualizando usuario:', error);
       if (onError) {
-        onError(`Error al crear usuario: ${error.message}`);
+        onError(`Error al actualizar usuario: ${error.message}`);
       }
     } finally {
       setLoading(false);
     }
   };
 
+  if (!userToEdit) return null;
+
   return (
     <Modal show={show} onHide={onHide} size="xl" centered>
       <Modal.Header closeButton>
         <Modal.Title>
           <FaUser className="me-2" />
-          Crear Nuevo Personal FOH/BOH
+          Editar Personal FOH/BOH - {userToEdit.displayName || userToEdit.email}
         </Modal.Title>
       </Modal.Header>
 
       <Form onSubmit={handleSubmit}>
         <Modal.Body style={{ maxHeight: '70vh', overflowY: 'auto' }}>
           <Alert variant="info" className="mb-4">
-            <strong>Formulario Optimizado FOH/BOH</strong><br/>
-            Salario por hora en USD • Permisos automáticos según rol • Sin campos redundantes
+            <strong>Editando Usuario:</strong> Los cambios en el rol actualizarán automáticamente los permisos del sistema.
+            <br/>
+            <Badge bg="secondary" className="mt-1">ID: {userToEdit.workInfo?.employeeId || 'Sin asignar'}</Badge>
           </Alert>
 
           {/* Información Personal */}
@@ -481,11 +443,12 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                       value={formData.email}
                       onChange={handleInputChange}
                       isInvalid={!!errors.email}
-                      placeholder="empleado@restaurante.com"
+                      disabled // No permitir cambiar email
+                      className="bg-light"
                     />
-                    <Form.Control.Feedback type="invalid">
-                      {errors.email}
-                    </Form.Control.Feedback>
+                    <Form.Text className="text-muted">
+                      El email no se puede cambiar después de la creación
+                    </Form.Text>
                   </Form.Group>
                 </Col>
                 <Col md={6}>
@@ -581,7 +544,7 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                       {errors.role}
                     </Form.Control.Feedback>
                     <Form.Text className="text-success">
-                      ✅ Permisos se asignan automáticamente según el rol
+                      ✅ Permisos se actualizan automáticamente
                     </Form.Text>
                   </Form.Group>
                 </Col>
@@ -594,27 +557,17 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                       <FaIdCard className="me-2" />
                       ID Empleado
                     </Form.Label>
-                    <InputGroup>
-                      <Form.Control
-                        type="text"
-                        name="workInfo.employeeId"
-                        value={formData.workInfo.employeeId}
-                        onChange={handleInputChange}
-                        placeholder="Se generará automáticamente"
-                      />
-                      <Button
-                        variant="outline-secondary"
-                        onClick={() => setFormData(prev => ({
-                          ...prev,
-                          workInfo: {
-                            ...prev.workInfo,
-                            employeeId: generateEmployeeId()
-                          }
-                        }))}
-                      >
-                        Generar
-                      </Button>
-                    </InputGroup>
+                    <Form.Control
+                      type="text"
+                      name="workInfo.employeeId"
+                      value={formData.workInfo.employeeId}
+                      onChange={handleInputChange}
+                      disabled
+                      className="bg-light"
+                    />
+                    <Form.Text className="text-muted">
+                      El ID de empleado no se puede modificar
+                    </Form.Text>
                   </Form.Group>
                 </Col>
                 <Col md={4}>
@@ -643,13 +596,18 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                 </Col>
                 <Col md={4}>
                   <Form.Group className="mb-3">
-                    <Form.Label>Fecha de Inicio</Form.Label>
-                    <Form.Control
-                      type="date"
-                      name="workInfo.startDate"
-                      value={formData.workInfo.startDate}
+                    <Form.Label>Estado del Empleado</Form.Label>
+                    <Form.Select
+                      name="status"
+                      value={formData.status}
                       onChange={handleInputChange}
-                    />
+                    >
+                      <option value="active">Activo</option>
+                      <option value="inactive">Inactivo</option>
+                      <option value="vacation">En Vacaciones</option>
+                      <option value="sick">Licencia Médica</option>
+                      <option value="terminated">Despedido</option>
+                    </Form.Select>
                   </Form.Group>
                 </Col>
               </Row>
@@ -680,7 +638,7 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                         <Form.Check
                           key={day.value}
                           type="checkbox"
-                          id={`day-${day.value}`}
+                          id={`edit-day-${day.value}`}
                           label={day.label}
                           checked={formData.workInfo.schedule.workDays.includes(day.value)}
                           onChange={() => handleWorkDaysChange(day.value)}
@@ -688,8 +646,8 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                         />
                       ))}
                     </div>
-                    <Form.Text className="text-muted">
-                      Selecciona los días en que el empleado está disponible para trabajar
+                    <Form.Text className="text-success">
+                      ⚡ Se usará para mostrar disponibilidad en horarios
                     </Form.Text>
                   </Form.Group>
                 </Col>
@@ -703,8 +661,8 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
               <h5 className="mb-0">Permisos del Sistema (Automáticos)</h5>
             </Card.Header>
             <Card.Body>
-              <Alert variant="success" className="mb-3">
-                <strong>🔒 Seguridad Automática:</strong> Los permisos se asignan automáticamente según el rol para mantener la consistencia y seguridad del sistema.
+              <Alert variant="warning" className="mb-3">
+                <strong>🔄 Actualización Automática:</strong> Los permisos se actualizan automáticamente al cambiar el rol del empleado.
               </Alert>
               <Row>
                 <Col md={6}>
@@ -810,61 +768,24 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
               </Row>
             </Card.Body>
           </Card>
-
-          {/* Credenciales de Acceso */}
-          <Card className="mb-4">
-            <Card.Header>
-              <h5 className="mb-0">Credenciales de Acceso</h5>
-            </Card.Header>
-            <Card.Body>
-              <Row>
-                <Col md={8}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Contraseña Temporal *</Form.Label>
-                    <InputGroup>
-                      <Form.Control
-                        type={showPassword ? "text" : "password"}
-                        name="password"
-                        value={formData.password}
-                        onChange={handleInputChange}
-                        isInvalid={!!errors.password}
-                        placeholder="Contraseña temporal para el empleado"
-                      />
-                      <Button
-                        variant="outline-secondary"
-                        onClick={() => setShowPassword(!showPassword)}
-                      >
-                        {showPassword ? <FaEyeSlash /> : <FaEye />}
-                      </Button>
-                      <Button
-                        variant="outline-success"
-                        onClick={() => setFormData(prev => ({
-                          ...prev,
-                          password: generatePassword()
-                        }))}
-                      >
-                        Generar
-                      </Button>
-                    </InputGroup>
-                    <Form.Control.Feedback type="invalid">
-                      {errors.password}
-                    </Form.Control.Feedback>
-                    <Form.Text className="text-muted">
-                      El empleado deberá cambiar esta contraseña en su primer acceso.
-                    </Form.Text>
-                  </Form.Group>
-                </Col>
-              </Row>
-            </Card.Body>
-          </Card>
         </Modal.Body>
 
         <Modal.Footer>
           <Button variant="secondary" onClick={onHide} disabled={loading}>
             Cancelar
           </Button>
-          <Button type="submit" variant="primary" disabled={loading}>
-            {loading ? 'Creando Usuario...' : 'Crear Usuario FOH/BOH'}
+          <Button type="submit" variant="success" disabled={loading}>
+            {loading ? (
+              <>
+                <span className="spinner-border spinner-border-sm me-2" />
+                Guardando...
+              </>
+            ) : (
+              <>
+                <FaSave className="me-2" />
+                Guardar Cambios
+              </>
+            )}
           </Button>
         </Modal.Footer>
       </Form>
@@ -872,4 +793,4 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
   );
 };
 
-export default CreateUserComponent;
+export default EditUserComponent;

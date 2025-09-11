@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Container, Row, Col, Card, Button, Form, Modal, Alert, Badge, 
-  Table, Tabs, Tab, InputGroup, OverlayTrigger, Tooltip, Dropdown 
+  Table, Tabs, Tab, InputGroup, OverlayTrigger, Tooltip, Nav
 } from 'react-bootstrap';
 import { 
   FaCalendarAlt, FaPlus, FaClock, FaUsers, FaExclamationTriangle,
   FaCheck, FaTimes, FaEdit, FaTrash, FaEye, FaFilter, FaSearch,
-  FaUserClock, FaCalendarCheck, FaChartBar, FaBullhorn
+  FaUserClock, FaCalendarCheck, FaChartBar, FaUtensils, FaConciergeBell,
+  FaUserTie, FaChefHat, FaArrowLeft
 } from 'react-icons/fa';
 import { 
   collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, 
@@ -28,81 +29,36 @@ const getDayName = (dayValue) => {
   return dayMap[dayValue] || dayValue;
 };
 
-const getAvailableEmployees = (employees, dayOfWeek, department = null) => {
+const getAvailableEmployees = (employees, dayOfWeek, department) => {
   return employees.filter(employee => {
     // Verificar que esté activo
     if (employee.status !== 'active' || employee.active === false) return false;
+    
+    // Filtrar por departamento
+    if (employee.workInfo?.department !== department) return false;
     
     // Verificar disponibilidad ese día
     const workDays = employee.workInfo?.schedule?.workDays || [];
     if (!workDays.includes(dayOfWeek)) return false;
     
-    // Filtrar por departamento si se especifica
-    if (department && employee.workInfo?.department !== department) return false;
-    
     return true;
   });
 };
 
-const getAvailabilityStats = (employees, dayOfWeek) => {
-  const stats = { FOH: { available: 0, total: 0 }, BOH: { available: 0, total: 0 }, ADMIN: { available: 0, total: 0 } };
-  
-  employees.forEach(employee => {
-    const dept = employee.workInfo?.department || 'FOH';
-    if (stats[dept]) {
-      stats[dept].total++;
-      const workDays = employee.workInfo?.schedule?.workDays || [];
-      if (workDays.includes(dayOfWeek) && employee.status === 'active') {
-        stats[dept].available++;
-      }
-    }
+const getAvailabilityStats = (employees, dayOfWeek, department) => {
+  const deptEmployees = employees.filter(emp => emp.workInfo?.department === department);
+  const available = deptEmployees.filter(emp => {
+    const workDays = emp.workInfo?.schedule?.workDays || [];
+    return workDays.includes(dayOfWeek) && emp.status === 'active';
   });
   
-  return stats;
-};
-
-const validateShiftCoverage = (assignedEmployees, timeSlot) => {
-  const coverage = {
-    FOH: {
-      servers: assignedEmployees.filter(emp => emp.role === 'server').length,
-      bartenders: assignedEmployees.filter(emp => emp.role === 'bartender').length,
-      hosts: assignedEmployees.filter(emp => emp.role === 'host').length,
-      managers: assignedEmployees.filter(emp => emp.role === 'floor_manager').length
-    },
-    BOH: {
-      chefs: assignedEmployees.filter(emp => emp.role === 'chef').length,
-      cooks: assignedEmployees.filter(emp => emp.role === 'cook').length,
-      dishwashers: assignedEmployees.filter(emp => emp.role === 'dishwasher').length
-    }
+  return {
+    total: deptEmployees.length,
+    available: available.length
   };
-
-  // Requerimientos mínimos según horario
-  const hour = parseInt(timeSlot.split(':')[0]);
-  let shiftType = 'afternoon';
-  if (hour >= 6 && hour < 14) shiftType = 'morning';
-  else if (hour >= 22 || hour < 6) shiftType = 'night';
-
-  const requirements = {
-    morning: { FOH: { servers: 1, hosts: 1 }, BOH: { cooks: 1, dishwashers: 1 } },
-    afternoon: { FOH: { servers: 2, bartenders: 1, hosts: 1 }, BOH: { chefs: 1, cooks: 1, dishwashers: 1 } },
-    night: { FOH: { servers: 3, bartenders: 1, managers: 1 }, BOH: { chefs: 1, cooks: 2, dishwashers: 1 } }
-  }[shiftType];
-
-  const errors = [];
-  Object.entries(requirements.FOH || {}).forEach(([role, minCount]) => {
-    const currentCount = coverage.FOH[role] || 0;
-    if (currentCount < minCount) errors.push(`Faltan ${minCount - currentCount} ${role} en FOH`);
-  });
-
-  Object.entries(requirements.BOH || {}).forEach(([role, minCount]) => {
-    const currentCount = coverage.BOH[role] || 0;
-    if (currentCount < minCount) errors.push(`Faltan ${minCount - currentCount} ${role} en BOH`);
-  });
-
-  return { isValid: errors.length === 0, coverage, errors, shiftType };
 };
 
-const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
+const SeparatedShiftManagement = ({ onBack, user, userRole }) => {
   // Estados principales
   const [shifts, setShifts] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -111,13 +67,12 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
   const [success, setSuccess] = useState('');
 
   // Estados de vista
-  const [currentView, setCurrentView] = useState('calendar');
+  const [activeTab, setActiveTab] = useState('foh'); // 'foh' o 'boh'
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [editingShift, setEditingShift] = useState(null);
 
   // Estados de filtros
-  const [filterDepartment, setFilterDepartment] = useState('all');
   const [filterRole, setFilterRole] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -127,10 +82,19 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
     date: '',
     start_time: '',
     end_time: '',
-    position: '',
+    department: 'FOH',
     notes: '',
     status: 'scheduled'
   });
+
+  // Verificar permisos
+  const canManageFOH = () => {
+    return ['admin', 'manager'].includes(userRole);
+  };
+
+  const canManageBOH = () => {
+    return ['admin', 'chef'].includes(userRole);
+  };
 
   // Cargar datos
   useEffect(() => {
@@ -184,15 +148,18 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
     return employee ? (employee.displayName || `${employee.firstName} ${employee.lastName}`) : 'Empleado no encontrado';
   };
 
-  const getShiftsByDate = (date) => {
+  const getShiftsByDate = (date, department) => {
     const dateStr = date.toISOString().split('T')[0];
-    return shifts.filter(shift => shift.date === dateStr);
+    return shifts.filter(shift => 
+      shift.date === dateStr && 
+      shift.department === department
+    );
   };
 
-  // Obtener empleados disponibles para una fecha
-  const getAvailableEmployeesForDate = (date) => {
+  // Obtener empleados disponibles para una fecha y departamento
+  const getAvailableEmployeesForDate = (date, department) => {
     const dayOfWeek = getDayValue(date);
-    return getAvailableEmployees(employees, dayOfWeek, filterDepartment === 'all' ? null : filterDepartment)
+    return getAvailableEmployees(employees, dayOfWeek, department)
       .filter(emp => {
         if (filterRole !== 'all' && emp.role !== filterRole) return false;
         if (searchTerm && !emp.displayName?.toLowerCase().includes(searchTerm.toLowerCase()) && 
@@ -227,6 +194,12 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
         return;
       }
 
+      // Verificar que el departamento coincida
+      if (employee.workInfo?.department !== shiftForm.department) {
+        setError(`${employee.displayName} pertenece al departamento ${employee.workInfo?.department}, no a ${shiftForm.department}.`);
+        return;
+      }
+
       await addDoc(collection(db, 'shifts'), {
         ...shiftForm,
         employee_name: employee.displayName || `${employee.firstName} ${employee.lastName}`,
@@ -236,8 +209,11 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
         created_by: user.email
       });
 
-      setSuccess('Turno creado exitosamente');
-      setShiftForm({ employee_id: '', date: '', start_time: '', end_time: '', position: '', notes: '', status: 'scheduled' });
+      setSuccess(`Turno ${shiftForm.department} creado exitosamente`);
+      setShiftForm({ 
+        employee_id: '', date: '', start_time: '', end_time: '', 
+        department: activeTab.toUpperCase(), notes: '', status: 'scheduled' 
+      });
       setShowShiftModal(false);
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
@@ -245,26 +221,19 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
     }
   };
 
-  // Componente de disponibilidad para una fecha
-  const AvailabilityCard = ({ date }) => {
+  // Componente de disponibilidad para una fecha y departamento
+  const AvailabilityCard = ({ date, department }) => {
     const dayOfWeek = getDayValue(date);
-    const stats = getAvailabilityStats(employees, dayOfWeek);
-    const assignedToday = getShiftsByDate(date);
-    const assignedEmployees = assignedToday.map(shift => 
-      employees.find(emp => emp.id === shift.employee_id)
-    ).filter(Boolean);
+    const stats = getAvailabilityStats(employees, dayOfWeek, department);
+    const assignedToday = getShiftsByDate(date, department);
     
-    const validation = assignedEmployees.length > 0 ? 
-      validateShiftCoverage(assignedEmployees, assignedToday[0]?.start_time || '14:00') : 
-      { isValid: false, errors: ['Sin turnos asignados'], coverage: {} };
-
     return (
       <Card className="mb-3 border-0 shadow-sm">
-        <Card.Header className="bg-light">
+        <Card.Header className={`bg-${department === 'FOH' ? 'warning' : 'info'} text-white`}>
           <div className="d-flex justify-content-between align-items-center">
             <h6 className="mb-0">{getDayName(dayOfWeek)} - {date.toLocaleDateString()}</h6>
-            <Badge bg={validation.isValid ? 'success' : 'warning'}>
-              {validation.isValid ? 'Cobertura OK' : 'Revisar'}
+            <Badge bg="light" text="dark">
+              {department}
             </Badge>
           </div>
         </Card.Header>
@@ -273,30 +242,30 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
             <Col md={4}>
               <div className="text-primary">
                 <FaUsers className="mb-1" />
-                <div><strong>{stats.FOH.available}/{stats.FOH.total}</strong></div>
-                <small>FOH Disponibles</small>
-              </div>
-            </Col>
-            <Col md={4}>
-              <div className="text-info">
-                <FaUserClock className="mb-1" />
-                <div><strong>{stats.BOH.available}/{stats.BOH.total}</strong></div>
-                <small>BOH Disponibles</small>
+                <div><strong>{stats.available}/{stats.total}</strong></div>
+                <small>Disponibles</small>
               </div>
             </Col>
             <Col md={4}>
               <div className="text-success">
                 <FaCalendarCheck className="mb-1" />
                 <div><strong>{assignedToday.length}</strong></div>
-                <small>Turnos Asignados</small>
+                <small>Asignados</small>
+              </div>
+            </Col>
+            <Col md={4}>
+              <div className="text-info">
+                <FaClock className="mb-1" />
+                <div><strong>{stats.total - stats.available}</strong></div>
+                <small>No Disponibles</small>
               </div>
             </Col>
           </Row>
           
-          {!validation.isValid && validation.errors.length > 0 && (
+          {stats.available === 0 && stats.total > 0 && (
             <Alert variant="warning" className="mt-2 mb-0">
               <FaExclamationTriangle className="me-2" />
-              <small>{validation.errors.join(', ')}</small>
+              <small>Sin personal disponible este día</small>
             </Alert>
           )}
         </Card.Body>
@@ -304,22 +273,44 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
     );
   };
 
-  // Componente principal del calendario
-  const WeeklyCalendar = () => {
+  // Componente principal del calendario por departamento
+  const DepartmentCalendar = ({ department }) => {
     const weekDates = getWeekDates(selectedDate);
+    const canManage = department === 'FOH' ? canManageFOH() : canManageBOH();
 
     return (
       <div>
         <div className="d-flex justify-content-between align-items-center mb-4">
           <div>
+            <h4>
+              {department === 'FOH' ? (
+                <>
+                  <FaConciergeBell className="me-2 text-warning" />
+                  Front of House
+                </>
+              ) : (
+                <>
+                  <FaChefHat className="me-2 text-info" />
+                  Back of House
+                </>
+              )}
+            </h4>
+            <p className="text-muted mb-0">
+              {department === 'FOH' 
+                ? 'Gestión de horarios del salón (Manager)' 
+                : 'Gestión de horarios de cocina (Chef)'}
+            </p>
+          </div>
+          
+          <div className="d-flex gap-2">
             <Button variant="outline-secondary" onClick={() => {
               const newDate = new Date(selectedDate);
               newDate.setDate(newDate.getDate() - 7);
               setSelectedDate(newDate);
             }}>
-              ← Semana Anterior
+              ← Anterior
             </Button>
-            <Button variant="outline-secondary" className="mx-2" onClick={() => setSelectedDate(new Date())}>
+            <Button variant="outline-secondary" onClick={() => setSelectedDate(new Date())}>
               Hoy
             </Button>
             <Button variant="outline-secondary" onClick={() => {
@@ -327,47 +318,31 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
               newDate.setDate(newDate.getDate() + 7);
               setSelectedDate(newDate);
             }}>
-              Siguiente Semana →
+              Siguiente →
             </Button>
           </div>
-          
-          <div className="d-flex gap-2">
-            <Form.Select 
-              size="sm" 
-              value={filterDepartment} 
-              onChange={(e) => setFilterDepartment(e.target.value)}
-              style={{ width: 'auto' }}
-            >
-              <option value="all">Todos los Departamentos</option>
-              <option value="FOH">FOH - Front of House</option>
-              <option value="BOH">BOH - Back of House</option>
-              <option value="ADMIN">ADMIN - Administración</option>
-            </Form.Select>
-            
-            <InputGroup style={{ width: '200px' }}>
-              <InputGroup.Text><FaSearch /></InputGroup.Text>
-              <Form.Control
-                placeholder="Buscar empleado..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                size="sm"
-              />
-            </InputGroup>
-          </div>
         </div>
+
+        {!canManage && (
+          <Alert variant="info" className="mb-4">
+            <FaExclamationTriangle className="me-2" />
+            Solo puedes ver los horarios de {department}. 
+            {department === 'FOH' ? ' Los managers pueden editarlos.' : ' Los chefs pueden editarlos.'}
+          </Alert>
+        )}
 
         <Row>
           {weekDates.map((date, index) => (
             <Col key={index} className="mb-4">
-              <AvailabilityCard date={date} />
+              <AvailabilityCard date={date} department={department} />
               
               <Card className="border-0 shadow-sm">
-                <Card.Header className="d-flex justify-content-between align-items-center">
+                <Card.Header className={`d-flex justify-content-between align-items-center bg-${department === 'FOH' ? 'warning' : 'info'} text-white`}>
                   <small className="fw-bold">{getDayName(getDayValue(date))}</small>
-                  <small className="text-muted">{date.getDate()}</small>
+                  <small>{date.getDate()}</small>
                 </Card.Header>
                 <Card.Body className="p-2" style={{ minHeight: '200px' }}>
-                  {getShiftsByDate(date).map(shift => {
+                  {getShiftsByDate(date, department).map(shift => {
                     const employee = employees.find(emp => emp.id === shift.employee_id);
                     const shiftClass = shift.start_time && parseInt(shift.start_time.split(':')[0]) >= 18 ? 'bg-dark text-white' :
                                      shift.start_time && parseInt(shift.start_time.split(':')[0]) >= 14 ? 'bg-warning' : 'bg-primary text-white';
@@ -378,24 +353,55 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
                         <div>{formatTime(shift.start_time)} - {formatTime(shift.end_time)}</div>
                         <div>
                           <Badge bg="light" text="dark" className="me-1">{employee?.role}</Badge>
-                          <Badge bg="light" text="dark">{employee?.workInfo?.department}</Badge>
                         </div>
                         {shift.notes && <div className="mt-1"><small>{shift.notes}</small></div>}
+                        
+                        {canManage && (
+                          <div className="mt-1">
+                            <Button size="sm" variant="outline-light" className="me-1" onClick={() => {
+                              setEditingShift(shift);
+                              setShiftForm({...shift, department});
+                              setShowShiftModal(true);
+                            }}>
+                              <FaEdit />
+                            </Button>
+                            <Button size="sm" variant="outline-danger" onClick={async () => {
+                              if (window.confirm('¿Eliminar este turno?')) {
+                                try {
+                                  await deleteDoc(doc(db, 'shifts', shift.id));
+                                  setSuccess('Turno eliminado exitosamente');
+                                  setTimeout(() => setSuccess(''), 3000);
+                                } catch (err) {
+                                  setError('Error al eliminar turno');
+                                }
+                              }
+                            }}>
+                              <FaTrash />
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                   
-                  <Button
-                    size="sm"
-                    variant="outline-primary"
-                    className="w-100 mt-2"
-                    onClick={() => {
-                      setShiftForm(prev => ({ ...prev, date: date.toISOString().split('T')[0] }));
-                      setShowShiftModal(true);
-                    }}
-                  >
-                    <FaPlus /> Agregar Turno
-                  </Button>
+                  {canManage && (
+                    <Button
+                      size="sm"
+                      variant={`outline-${department === 'FOH' ? 'warning' : 'info'}`}
+                      className="w-100 mt-2"
+                      onClick={() => {
+                        setShiftForm(prev => ({ 
+                          ...prev, 
+                          date: date.toISOString().split('T')[0],
+                          department: department
+                        }));
+                        setEditingShift(null);
+                        setShowShiftModal(true);
+                      }}
+                    >
+                      <FaPlus /> Agregar Turno {department}
+                    </Button>
+                  )}
                 </Card.Body>
               </Card>
             </Col>
@@ -421,16 +427,18 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
         <Col>
           <div className="d-flex justify-content-between align-items-center">
             <div>
-              <h2><FaCalendarAlt className="me-2" />Sistema de Horarios FOH/BOH</h2>
-              <p className="text-muted mb-0">Gestión inteligente con disponibilidad automática</p>
-            </div>
-            <div>
-              <Button variant="outline-secondary" onClick={onBack} className="me-2">
+              <Button 
+                variant="link" 
+                onClick={onBack}
+                className="p-0 mb-2"
+              >
+                <FaArrowLeft className="me-2" />
                 Volver al Dashboard
               </Button>
-              <Button variant="primary" onClick={() => setShowShiftModal(true)}>
-                <FaPlus className="me-1" />Nuevo Turno
-              </Button>
+              <h2><FaCalendarAlt className="me-2" />Horarios Separados FOH/BOH</h2>
+              <p className="text-muted mb-0">
+                Gestión independiente: Manager → FOH | Chef → BOH
+              </p>
             </div>
           </div>
         </Col>
@@ -439,6 +447,30 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
       {/* Alertas */}
       {error && <Alert variant="danger" onClose={() => setError('')} dismissible>{error}</Alert>}
       {success && <Alert variant="success" onClose={() => setSuccess('')} dismissible>{success}</Alert>}
+
+      {/* Información de permisos */}
+      <Row className="mb-4">
+        <Col>
+          <Alert variant="info">
+            <Row>
+              <Col md={6}>
+                <h6><FaConciergeBell className="me-2" />Front of House (FOH)</h6>
+                <p className="mb-0">
+                  <strong>Gestión:</strong> Manager • 
+                  <strong> Incluye:</strong> Meseros, Bartenders, Hosts, Cajeros
+                </p>
+              </Col>
+              <Col md={6}>
+                <h6><FaChefHat className="me-2" />Back of House (BOH)</h6>
+                <p className="mb-0">
+                  <strong>Gestión:</strong> Chef • 
+                  <strong> Incluye:</strong> Cocineros, Ayudantes, Dishwashers
+                </p>
+              </Col>
+            </Row>
+          </Alert>
+        </Col>
+      </Row>
 
       {/* Estadísticas Generales */}
       <Row className="mb-4">
@@ -454,16 +486,7 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
         <Col md={3}>
           <Card className="border-0 shadow-sm">
             <Card.Body className="text-center">
-              <FaCalendarCheck className="text-success mb-2" size={24} />
-              <h4 className="text-success">{shifts.length}</h4>
-              <small className="text-muted">Turnos Programados</small>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={3}>
-          <Card className="border-0 shadow-sm">
-            <Card.Body className="text-center">
-              <FaUserClock className="text-warning mb-2" size={24} />
+              <FaConciergeBell className="text-warning mb-2" size={24} />
               <h4 className="text-warning">{employees.filter(emp => emp.workInfo?.department === 'FOH').length}</h4>
               <small className="text-muted">Personal FOH</small>
             </Card.Body>
@@ -472,56 +495,60 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
         <Col md={3}>
           <Card className="border-0 shadow-sm">
             <Card.Body className="text-center">
-              <FaChartBar className="text-info mb-2" size={24} />
+              <FaUtensils className="text-info mb-2" size={24} />
               <h4 className="text-info">{employees.filter(emp => emp.workInfo?.department === 'BOH').length}</h4>
               <small className="text-muted">Personal BOH</small>
             </Card.Body>
           </Card>
         </Col>
-      </Row>
-
-      {/* Contenido Principal */}
-      <Tabs activeKey={currentView} onSelect={(k) => setCurrentView(k)} className="mb-4">
-        <Tab eventKey="calendar" title={<><FaCalendarAlt className="me-1" />Calendario Semanal</>}>
-          <WeeklyCalendar />
-        </Tab>
-        
-        <Tab eventKey="availability" title={<><FaUsers className="me-1" />Disponibilidad</>}>
+        <Col md={3}>
           <Card className="border-0 shadow-sm">
-            <Card.Header>
-              <h5 className="mb-0">Disponibilidad de Personal por Día</h5>
-            </Card.Header>
-            <Card.Body>
-              {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => {
-                const stats = getAvailabilityStats(employees, day);
-                const availableEmployees = getAvailableEmployees(employees, day);
-                
-                return (
-                  <Row key={day} className="mb-3 p-3 border rounded">
-                    <Col md={2}>
-                      <h6 className="text-primary">{getDayName(day)}</h6>
-                    </Col>
-                    <Col md={3}>
-                      <div>FOH: <Badge bg="primary">{stats.FOH.available}/{stats.FOH.total}</Badge></div>
-                      <div>BOH: <Badge bg="info">{stats.BOH.available}/{stats.BOH.total}</Badge></div>
-                    </Col>
-                    <Col md={7}>
-                      <div className="d-flex flex-wrap gap-1">
-                        {availableEmployees.slice(0, 6).map(emp => (
-                          <Badge key={emp.id} bg="outline-secondary" className="text-dark">
-                            {emp.firstName} ({emp.role})
-                          </Badge>
-                        ))}
-                        {availableEmployees.length > 6 && (
-                          <Badge bg="light" text="dark">+{availableEmployees.length - 6} más</Badge>
-                        )}
-                      </div>
-                    </Col>
-                  </Row>
-                );
-              })}
+            <Card.Body className="text-center">
+              <FaCalendarCheck className="text-success mb-2" size={24} />
+              <h4 className="text-success">{shifts.length}</h4>
+              <small className="text-muted">Turnos Programados</small>
             </Card.Body>
           </Card>
+        </Col>
+      </Row>
+
+      {/* Tabs por Departamento */}
+      <Tabs 
+        activeKey={activeTab} 
+        onSelect={(k) => setActiveTab(k)} 
+        className="mb-4"
+        variant="pills"
+      >
+        <Tab 
+          eventKey="foh" 
+          title={
+            <span className="d-flex align-items-center">
+              <FaConciergeBell className="me-2" />
+              FOH - Front of House
+              <Badge bg="warning" className="ms-2">
+                {employees.filter(emp => emp.workInfo?.department === 'FOH').length}
+              </Badge>
+            </span>
+          }
+          disabled={!canManageFOH() && userRole !== 'admin'}
+        >
+          <DepartmentCalendar department="FOH" />
+        </Tab>
+        
+        <Tab 
+          eventKey="boh" 
+          title={
+            <span className="d-flex align-items-center">
+              <FaChefHat className="me-2" />
+              BOH - Back of House
+              <Badge bg="info" className="ms-2">
+                {employees.filter(emp => emp.workInfo?.department === 'BOH').length}
+              </Badge>
+            </span>
+          }
+          disabled={!canManageBOH() && userRole !== 'admin'}
+        >
+          <DepartmentCalendar department="BOH" />
         </Tab>
       </Tabs>
 
@@ -530,11 +557,15 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
         <Modal.Header closeButton>
           <Modal.Title>
             <FaClock className="me-2" />
-            {editingShift ? 'Editar Turno' : 'Crear Nuevo Turno'}
+            {editingShift ? 'Editar' : 'Crear'} Turno {shiftForm.department}
           </Modal.Title>
         </Modal.Header>
         <Form onSubmit={handleCreateShift}>
           <Modal.Body>
+            <Alert variant={shiftForm.department === 'FOH' ? 'warning' : 'info'}>
+              <strong>Departamento:</strong> {shiftForm.department === 'FOH' ? 'Front of House (Salón)' : 'Back of House (Cocina)'}
+            </Alert>
+
             <Row>
               <Col md={6}>
                 <Form.Group className="mb-3">
@@ -546,15 +577,15 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
                     required
                   >
                     <option value="">Seleccionar empleado...</option>
-                    {shiftForm.date && getAvailableEmployeesForDate(new Date(shiftForm.date)).map(emp => (
+                    {shiftForm.date && getAvailableEmployeesForDate(new Date(shiftForm.date), shiftForm.department).map(emp => (
                       <option key={emp.id} value={emp.id}>
-                        {emp.displayName || `${emp.firstName} ${emp.lastName}`} - {emp.role} ({emp.workInfo?.department})
+                        {emp.displayName || `${emp.firstName} ${emp.lastName}`} - {emp.role}
                       </option>
                     ))}
                   </Form.Select>
                   {shiftForm.date && (
                     <Form.Text className="text-success">
-                      ✅ Mostrando solo empleados disponibles para {getDayName(getDayValue(new Date(shiftForm.date)))}
+                      ✅ Solo empleados {shiftForm.department} disponibles para {getDayName(getDayValue(new Date(shiftForm.date)))}
                     </Form.Text>
                   )}
                 </Form.Group>
@@ -627,4 +658,4 @@ const EnhancedShiftManagement = ({ onBack, user, userRole }) => {
   );
 };
 
-export default EnhancedShiftManagement;
+export default SeparatedShiftManagement;

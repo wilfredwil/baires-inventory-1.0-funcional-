@@ -1,4 +1,4 @@
-// src/App.js - VERSIÓN COMPLETA CON ESTRUCTURA FOH/BOH CORREGIDA
+// src/App.js - VERSIÓN COMPLETA CON ESTRUCTURA FOH/BOH CORREGIDA Y HORARIOS SEPARADOS
 import React, { useState, useEffect } from 'react';
 import { 
   Container, 
@@ -89,7 +89,7 @@ import InventoryItemForm from './components/InventoryItemForm';
 import AdvancedUserManagement from './components/AdvancedUserManagement';
 import ProviderManagement from './components/ProviderManagement';
 import KitchenInventory from './components/KitchenInventory';
-import EnhancedShiftManagement from './components/EnhancedShiftManagement';
+import SeparatedShiftManagement from './components/SeparatedShiftManagement'; // CAMBIO: Importar el nuevo componente
 import UserProfile from './components/UserProfile';
 import EmployeeDirectory from './components/EmployeeDirectory';
 import DashboardWidgets from './components/DashboardWidgets';
@@ -429,7 +429,7 @@ function App() {
     );
   };
 
-  // Función para verificar permisos de módulos
+  // CAMBIO: Función para verificar permisos de módulos actualizada
   const canAccessModule = (moduleId) => {
     switch (moduleId) {
       case 'users':
@@ -441,7 +441,7 @@ function App() {
       case 'kitchen':
         return ['admin', 'manager', 'chef', 'sous_chef', 'line_cook', 'prep_cook'].includes(userRole);
       case 'shifts':
-        return ['admin', 'manager'].includes(userRole);
+        return ['admin', 'manager', 'chef'].includes(userRole); // CAMBIO: Agregado 'chef'
       case 'directory':
         return true;
       case 'reports':
@@ -537,10 +537,10 @@ function App() {
         id: 'shifts',
         title: 'Horarios / Turnos',
         icon: FaCalendarAlt,
-        description: 'Gestión de turnos y horarios FOH/BOH',
+        description: 'Sistema separado FOH (Manager) y BOH (Chef)', // CAMBIO: Nueva descripción
         color: '#10B981',
         colorDark: '#059669',
-        stats: 'Calendario',
+        stats: 'Horarios Separados', // CAMBIO: Nueva estadística
         available: canAccessModule('shifts')
       },
       {
@@ -809,15 +809,14 @@ function App() {
           />
         );
       
+      // CAMBIO: Caso actualizado para usar SeparatedShiftManagement
       case 'shifts':
         return (
-          <div className="shift-management">
-            <EnhancedShiftManagement 
-              user={user}
-              userRole={userRole}
-              onBack={handleBackToDashboard}
-            />
-          </div>
+          <SeparatedShiftManagement 
+            user={user}
+            userRole={userRole}
+            onBack={handleBackToDashboard}
+          />
         );
       
       case 'personal':
