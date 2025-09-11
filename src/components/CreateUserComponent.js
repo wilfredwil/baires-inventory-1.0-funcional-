@@ -177,9 +177,9 @@ const CreateUserComponent = ({ show, onHide, currentUser, onSuccess, onError }) 
         lastName: '',
         email: '',
         phone: '',
-        role: 'employee',
+        role: 'server',
+        department: 'FOH',
         position: '',
-        department: '',
         password: ''
       });
 

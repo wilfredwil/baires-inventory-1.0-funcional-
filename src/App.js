@@ -1,4 +1,4 @@
-// src/App.js - VERSIÓN COMPLETA CON COMPONENTE DE CREAR USUARIO INDEPENDIENTE
+// src/App.js - VERSIÓN COMPLETA CON ESTRUCTURA FOH/BOH CORREGIDA
 import React, { useState, useEffect } from 'react';
 import { 
   Container, 
@@ -405,7 +405,18 @@ function App() {
       'employee': 'Empleado',
       'bartender': 'Bartender',
       'cocinero': 'Cocinero',
-      'waiter': 'Mesero'
+      'waiter': 'Mesero',
+      'server': 'Server',
+      'chef': 'Chef',
+      'sous_chef': 'Sous Chef',
+      'line_cook': 'Line Cook',
+      'prep_cook': 'Prep Cook',
+      'dishwasher': 'Dishwasher',
+      'busser': 'Busser',
+      'runner': 'Food Runner',
+      'expo': 'Expo',
+      'barback': 'Barback',
+      'host': 'Host'
     };
 
     const badgeClass = userRole === 'admin' ? 'admin-badge' : 
@@ -426,9 +437,9 @@ function App() {
       case 'personal':
         return ['admin', 'manager'].includes(userRole);
       case 'bar':
-        return ['admin', 'manager', 'bartender'].includes(userRole);
+        return ['admin', 'manager', 'bartender', 'barback'].includes(userRole);
       case 'kitchen':
-        return ['admin', 'manager', 'cocinero'].includes(userRole);
+        return ['admin', 'manager', 'chef', 'sous_chef', 'line_cook', 'prep_cook'].includes(userRole);
       case 'shifts':
         return ['admin', 'manager'].includes(userRole);
       case 'directory':
@@ -505,7 +516,7 @@ function App() {
         id: 'personal',
         title: 'Personal',
         icon: FaUsers,
-        description: 'Ver y gestionar información de empleados',
+        description: 'Ver y gestionar información de empleados FOH/BOH',
         color: '#8B5CF6',
         colorDark: '#7C3AED',
         stats: `${users.length} empleados`,
@@ -515,7 +526,7 @@ function App() {
         id: 'users',
         title: 'Gestión de Usuarios',
         icon: FaCog,
-        description: 'Sistema completo de administración de usuarios con todos los campos',
+        description: 'Sistema completo de administración de usuarios con estructura FOH/BOH',
         color: '#DC2626',
         colorDark: '#B91C1C',
         stats: 'Formulario Completo',
@@ -526,7 +537,7 @@ function App() {
         id: 'shifts',
         title: 'Horarios / Turnos',
         icon: FaCalendarAlt,
-        description: 'Gestión de turnos y horarios de trabajo',
+        description: 'Gestión de turnos y horarios FOH/BOH',
         color: '#10B981',
         colorDark: '#059669',
         stats: 'Calendario',
@@ -546,7 +557,7 @@ function App() {
         id: 'reports',
         title: 'Reportes / Analytics',
         icon: FaChartBar,
-        description: 'Análisis y reportes del restaurante',
+        description: 'Análisis y reportes del restaurante por departamento',
         color: '#6B7280',
         colorDark: '#4B5563',
         stats: 'Ver estadísticas',
@@ -836,9 +847,9 @@ function App() {
                 </Button>
                 <h2>
                   <FaUsers className="me-2" />
-                  Gestión de Personal
+                  Gestión de Personal FOH/BOH
                 </h2>
-                <p className="text-muted mb-0">Administración de empleados y su información</p>
+                <p className="text-muted mb-0">Administración de empleados Front of House y Back of House</p>
               </div>
               <div className="d-flex gap-2">
                 {userRole === 'admin' && (
@@ -847,7 +858,7 @@ function App() {
                     onClick={() => setShowCreateUserModal(true)}
                   >
                     <FaPlus className="me-1" />
-                    Crear Usuario Completo
+                    Crear Usuario FOH/BOH
                   </Button>
                 )}
                 <Button 
@@ -861,16 +872,19 @@ function App() {
             </div>
 
             <Alert variant="success" className="mb-4">
-              <h5><FaDatabase className="me-2" />Módulo Personal Funcionando</h5>
+              <h5><FaDatabase className="me-2" />Sistema FOH/BOH Funcionando</h5>
               <div className="row mb-3">
                 <div className="col-md-3">
                   <strong>Total empleados:</strong> {users.length}
                 </div>
                 <div className="col-md-3">
-                  <strong>Usuario actual:</strong> {user?.email}
+                  <strong>FOH:</strong> {users.filter(u => u.workInfo?.department === 'FOH').length}
                 </div>
                 <div className="col-md-3">
-                  <strong>Rol:</strong> {userRole}
+                  <strong>BOH:</strong> {users.filter(u => u.workInfo?.department === 'BOH').length}
+                </div>
+                <div className="col-md-3">
+                  <strong>Usuario actual:</strong> {user?.email}
                 </div>
               </div>
             </Alert>
@@ -880,7 +894,7 @@ function App() {
                 <Col>
                   <Alert variant="warning">
                     <h5><FaUsers className="me-2" />No hay empleados registrados</h5>
-                    <p>Los empleados aparecerán automáticamente cuando se registren en el sistema.</p>
+                    <p>Los empleados aparecerán organizados por departamentos FOH/BOH cuando se registren.</p>
                     {userRole === 'admin' && (
                       <div className="mt-3">
                         <Button 
@@ -888,7 +902,7 @@ function App() {
                           onClick={() => setShowCreateUserModal(true)}
                         >
                           <FaPlus className="me-2" />
-                          Crear Primer Usuario
+                          Crear Primer Empleado
                         </Button>
                       </div>
                     )}
@@ -897,23 +911,48 @@ function App() {
               ) : (
                 users.map((employee, index) => {
                   const roleNames = {
-                    'admin': 'Administrador',
-                    'manager': 'Gerente',
+                    // FOH Roles
+                    'server': 'Server/Mesero',
+                    'busser': 'Busser',
+                    'runner': 'Food Runner',
+                    'expo': 'Expo',
+                    'barback': 'Barback',
                     'bartender': 'Bartender',
+                    'host': 'Host/Hostess',
+                    
+                    // BOH Roles
+                    'chef': 'Chef Ejecutivo',
+                    'sous_chef': 'Sous Chef',
+                    'line_cook': 'Line Cook',
+                    'prep_cook': 'Prep Cook',
+                    'dishwasher': 'Dishwasher',
+                    
+                    // Admin Roles
+                    'manager': 'Gerente',
+                    'admin': 'Administrador',
+                    
+                    // Legacy roles (mantener compatibilidad)
                     'cocinero': 'Cocinero',
                     'waiter': 'Mesero',
                     'employee': 'Empleado'
                   };
 
                   const getRoleColor = (role) => {
-                    switch(role) {
-                      case 'admin': return 'danger';
-                      case 'manager': return 'primary';
-                      case 'bartender': return 'success';
-                      case 'cocinero': return 'info';
-                      case 'waiter': return 'warning';
-                      default: return 'secondary';
-                    }
+                    // FOH roles - colores cálidos
+                    if (['server', 'busser', 'runner', 'host', 'waiter'].includes(role)) return 'warning';
+                    if (['bartender', 'barback'].includes(role)) return 'success';
+                    if (['expo'].includes(role)) return 'info';
+                    
+                    // BOH roles - colores fríos
+                    if (['chef', 'sous_chef'].includes(role)) return 'primary';
+                    if (['line_cook', 'prep_cook', 'cocinero'].includes(role)) return 'info';
+                    if (['dishwasher'].includes(role)) return 'secondary';
+                    
+                    // Admin roles
+                    if (role === 'admin') return 'danger';
+                    if (role === 'manager') return 'primary';
+                    
+                    return 'secondary';
                   };
 
                   return (
@@ -949,6 +988,26 @@ function App() {
                             >
                               {roleNames[employee.role] || employee.role || 'Sin rol'}
                             </Badge>
+                            
+                            {/* Badge de departamento - lógica inline */}
+                            <Badge 
+                              bg={
+                                employee.workInfo?.department === 'FOH' ? 'warning' :
+                                employee.workInfo?.department === 'BOH' ? 'info' :
+                                employee.workInfo?.department === 'ADMIN' ? 'primary' :
+                                'secondary'
+                              } 
+                              className="me-2" 
+                              title={
+                                employee.workInfo?.department === 'FOH' ? 'Front of House' :
+                                employee.workInfo?.department === 'BOH' ? 'Back of House' :
+                                employee.workInfo?.department === 'ADMIN' ? 'Administración' :
+                                employee.workInfo?.department || 'No especificado'
+                              }
+                            >
+                              {employee.workInfo?.department || 'N/A'}
+                            </Badge>
+                            
                             {employee.status === 'pending_registration' ? (
                               <Badge bg="warning">Pendiente Registro</Badge>
                             ) : employee.active !== false ? (
@@ -966,8 +1025,8 @@ function App() {
                             {employee.workInfo?.employeeId && (
                               <div><strong>ID:</strong> {employee.workInfo.employeeId}</div>
                             )}
-                            {employee.workInfo?.department && (
-                              <div><strong>Departamento:</strong> {employee.workInfo.department}</div>
+                            {employee.workInfo?.departmentFull && (
+                              <div><strong>Departamento:</strong> {employee.workInfo.departmentFull}</div>
                             )}
                             {employee.created_at && (
                               <div>
@@ -1025,32 +1084,44 @@ function App() {
                     <Card.Header>
                       <h5 className="mb-0">
                         <FaChartBar className="me-2" />
-                        Estadísticas de Personal
+                        Estadísticas de Personal FOH/BOH
                       </h5>
                     </Card.Header>
                     <Card.Body>
                       <Row>
-                        <Col md={3} className="text-center">
+                        <Col md={2} className="text-center">
                           <h3 className="text-primary">{users.length}</h3>
                           <p className="mb-0">Total Empleados</p>
                         </Col>
-                        <Col md={3} className="text-center">
+                        <Col md={2} className="text-center">
+                          <h3 className="text-warning">
+                            {users.filter(u => u.workInfo?.department === 'FOH').length}
+                          </h3>
+                          <p className="mb-0">FOH</p>
+                        </Col>
+                        <Col md={2} className="text-center">
+                          <h3 className="text-info">
+                            {users.filter(u => u.workInfo?.department === 'BOH').length}
+                          </h3>
+                          <p className="mb-0">BOH</p>
+                        </Col>
+                        <Col md={2} className="text-center">
+                          <h3 className="text-primary">
+                            {users.filter(u => u.workInfo?.department === 'ADMIN').length}
+                          </h3>
+                          <p className="mb-0">Admin</p>
+                        </Col>
+                        <Col md={2} className="text-center">
                           <h3 className="text-success">
                             {users.filter(u => u.active !== false && u.status !== 'pending_registration').length}
                           </h3>
-                          <p className="mb-0">Empleados Activos</p>
+                          <p className="mb-0">Activos</p>
                         </Col>
-                        <Col md={3} className="text-center">
-                          <h3 className="text-info">
-                            {users.filter(u => u.role === 'admin').length}
-                          </h3>
-                          <p className="mb-0">Administradores</p>
-                        </Col>
-                        <Col md={3} className="text-center">
+                        <Col md={2} className="text-center">
                           <h3 className="text-warning">
                             {users.filter(u => u.status === 'pending_registration').length}
                           </h3>
-                          <p className="mb-0">Pendientes Registro</p>
+                          <p className="mb-0">Pendientes</p>
                         </Col>
                       </Row>
                     </Card.Body>
@@ -1266,25 +1337,26 @@ function App() {
                 </Button>
                 <h2>
                   <FaCog className="me-2" />
-                  Gestión de Usuarios Avanzada
+                  Gestión de Usuarios Avanzada FOH/BOH
                 </h2>
                 <p className="text-muted mb-0">
-                  Administración completa de usuarios con todos los campos
+                  Administración completa de usuarios con estructura Front of House / Back of House
                 </p>
               </div>
             </div>
 
             <Alert variant="info" className="mb-4">
-              <h5>Sistema de Gestión Completa</h5>
+              <h5>Sistema de Gestión FOH/BOH Profesional</h5>
               <p className="mb-2">
-                Este módulo permite crear usuarios con toda la información completa:
-                información personal, laboral, dirección, preferencias, etc.
+                Este módulo permite crear usuarios con la estructura organizacional completa del restaurante:
+                Front of House (FOH) y Back of House (BOH) con todos los roles específicos.
               </p>
               <ul className="mb-0">
-                <li>Formulario completo con todos los campos</li>
+                <li>Formulario completo con roles específicos por departamento</li>
                 <li>Compatible con la estructura existente en Firebase</li>
                 <li>Generación automática de ID de empleado</li>
-                <li>Contraseñas temporales seguras</li>
+                <li>Organización profesional FOH/BOH</li>
+                <li>Facilita la gestión de horarios por departamento</li>
               </ul>
             </Alert>
 
@@ -1326,8 +1398,8 @@ function App() {
         }
         return (
           <Alert variant="info">
-            <h4>Módulo de Reportes</h4>
-            <p>Esta sección está en desarrollo. Pronto tendrás acceso a análisis detallados y reportes.</p>
+            <h4>Módulo de Reportes FOH/BOH</h4>
+            <p>Esta sección está en desarrollo. Pronto tendrás acceso a análisis detallados y reportes organizados por departamentos Front of House y Back of House.</p>
             <Button variant="secondary" onClick={handleBackToDashboard}>
               Volver al Dashboard
             </Button>
@@ -1379,7 +1451,7 @@ function App() {
                   </AppLayout>
                 )}
 
-                {/* MODAL PARA CREAR USUARIO MEJORADO */}
+                {/* MODAL PARA CREAR USUARIO FOH/BOH */}
                 {showCreateUserModal && (
                   <CreateUserComponent
                     show={showCreateUserModal}
