@@ -7,7 +7,7 @@ import {
   FaCalendarAlt, FaPlus, FaClock, FaUsers, FaExclamationTriangle,
   FaCheck, FaTimes, FaEdit, FaTrash, FaEye, FaFilter, FaSearch,
   FaUserClock, FaCalendarCheck, FaChartBar, FaUtensils, FaConciergeBell,
-  FaUserTie, FaChefHat, FaArrowLeft
+  FaUserTie, FaArrowLeft
 } from 'react-icons/fa';
 import { 
   collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, 
@@ -290,7 +290,7 @@ const SeparatedShiftManagement = ({ onBack, user, userRole }) => {
                 </>
               ) : (
                 <>
-                  <FaChefHat className="me-2 text-info" />
+                  <FaUtensils className="me-2 text-info" />
                   Back of House
                 </>
               )}
@@ -345,39 +345,59 @@ const SeparatedShiftManagement = ({ onBack, user, userRole }) => {
                   {getShiftsByDate(date, department).map(shift => {
                     const employee = employees.find(emp => emp.id === shift.employee_id);
                     const shiftClass = shift.start_time && parseInt(shift.start_time.split(':')[0]) >= 18 ? 'bg-dark text-white' :
-                                     shift.start_time && parseInt(shift.start_time.split(':')[0]) >= 14 ? 'bg-warning' : 'bg-primary text-white';
-                    
+                                     shift.start_time && parseInt(shift.start_time.split(':')[0]) >= 14 ? 'bg-warning text-dark' : 'bg-light';
+
                     return (
-                      <div key={shift.id} className={`p-2 mb-2 rounded ${shiftClass}`} style={{ fontSize: '0.75rem' }}>
-                        <div className="fw-bold">{getEmployeeName(shift.employee_id)}</div>
-                        <div>{formatTime(shift.start_time)} - {formatTime(shift.end_time)}</div>
-                        <div>
-                          <Badge bg="light" text="dark" className="me-1">{employee?.role}</Badge>
+                      <div key={shift.id} className={`p-2 mb-2 rounded ${shiftClass}`}>
+                        <div className="d-flex justify-content-between align-items-start">
+                          <div className="flex-grow-1">
+                            <strong>{employee?.displayName || shift.employee_name}</strong>
+                            <br />
+                            <small>{employee?.role}</small>
+                            <br />
+                            <small>
+                              {formatTime(shift.start_time)} - {formatTime(shift.end_time)}
+                            </small>
+                          </div>
+                          {canManage && (
+                            <div className="d-flex gap-1">
+                              <Button 
+                                variant="outline-primary" 
+                                size="sm"
+                                onClick={() => {
+                                  setEditingShift(shift);
+                                  setShiftForm({
+                                    ...shift,
+                                    department: shift.department || department
+                                  });
+                                  setShowShiftModal(true);
+                                }}
+                              >
+                                <FaEdit />
+                              </Button>
+                              <Button 
+                                variant="outline-danger" 
+                                size="sm"
+                                onClick={async () => {
+                                  if (window.confirm('¿Eliminar este turno?')) {
+                                    try {
+                                      await deleteDoc(doc(db, 'shifts', shift.id));
+                                      setSuccess('Turno eliminado');
+                                      setTimeout(() => setSuccess(''), 2000);
+                                    } catch (err) {
+                                      setError('Error al eliminar turno');
+                                    }
+                                  }
+                                }}
+                              >
+                                <FaTrash />
+                              </Button>
+                            </div>
+                          )}
                         </div>
-                        {shift.notes && <div className="mt-1"><small>{shift.notes}</small></div>}
-                        
-                        {canManage && (
-                          <div className="mt-1">
-                            <Button size="sm" variant="outline-light" className="me-1" onClick={() => {
-                              setEditingShift(shift);
-                              setShiftForm({...shift, department});
-                              setShowShiftModal(true);
-                            }}>
-                              <FaEdit />
-                            </Button>
-                            <Button size="sm" variant="outline-danger" onClick={async () => {
-                              if (window.confirm('¿Eliminar este turno?')) {
-                                try {
-                                  await deleteDoc(doc(db, 'shifts', shift.id));
-                                  setSuccess('Turno eliminado exitosamente');
-                                  setTimeout(() => setSuccess(''), 3000);
-                                } catch (err) {
-                                  setError('Error al eliminar turno');
-                                }
-                              }
-                            }}>
-                              <FaTrash />
-                            </Button>
+                        {shift.notes && (
+                          <div className="mt-2">
+                            <small className="text-muted">📝 {shift.notes}</small>
                           </div>
                         )}
                       </div>
@@ -385,8 +405,7 @@ const SeparatedShiftManagement = ({ onBack, user, userRole }) => {
                   })}
                   
                   {canManage && (
-                    <Button
-                      size="sm"
+                    <Button 
                       variant={`outline-${department === 'FOH' ? 'warning' : 'info'}`}
                       className="w-100 mt-2"
                       onClick={() => {
@@ -461,7 +480,7 @@ const SeparatedShiftManagement = ({ onBack, user, userRole }) => {
                 </p>
               </Col>
               <Col md={6}>
-                <h6><FaChefHat className="me-2" />Back of House (BOH)</h6>
+                <h6><FaUtensils className="me-2" />Back of House (BOH)</h6>
                 <p className="mb-0">
                   <strong>Gestión:</strong> Chef • 
                   <strong> Incluye:</strong> Cocineros, Ayudantes, Dishwashers
@@ -539,7 +558,7 @@ const SeparatedShiftManagement = ({ onBack, user, userRole }) => {
           eventKey="boh" 
           title={
             <span className="d-flex align-items-center">
-              <FaChefHat className="me-2" />
+              <FaUtensils className="me-2" />
               BOH - Back of House
               <Badge bg="info" className="ms-2">
                 {employees.filter(emp => emp.workInfo?.department === 'BOH').length}

@@ -1,6 +1,6 @@
-// src/components/AppLayout.js - VERSIÓN CORREGIDA BASADA EN TU REPO
+// src/components/AppLayout.js - CON BOTÓN DE LOGOUT
 import React, { useState, useEffect } from 'react';
-import { Alert } from 'react-bootstrap';
+import { Alert, Dropdown } from 'react-bootstrap';
 import { 
   FaHome, 
   FaComments, 
@@ -17,7 +17,10 @@ import {
   FaEnvelope,
   FaChevronDown,
   FaSearch,
-  FaBars
+  FaBars,
+  FaSignOutAlt,
+  FaUser,
+  FaUserCircle
 } from 'react-icons/fa';
 
 const AppLayout = ({ 
@@ -30,7 +33,8 @@ const AppLayout = ({
   error,
   success,
   onClearError,
-  onClearSuccess 
+  onClearSuccess,
+  onLogout // ← Prop para logout
 }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -111,10 +115,10 @@ const AppLayout = ({
       title: 'Gestión',
       items: [
         {
-          id: 'personal',          // ← CORREGIDO: era 'users', ahora es 'personal'
+          id: 'personal',
           label: 'Personal',
           icon: FaUsers,
-          active: currentView === 'personal',  // ← CORREGIDO: era 'users', ahora es 'personal'
+          active: currentView === 'personal',
           adminOnly: true
         },
         {
@@ -218,7 +222,7 @@ const AppLayout = ({
         </div>
 
         {/* Menú de Navegación */}
-        <div style={{ padding: '20px 0' }}>
+        <div style={{ padding: '20px 0', flex: 1 }}>
           {navigationSections.map((section, sectionIndex) => (
             <div key={sectionIndex} style={{ marginBottom: '30px' }}>
               <div style={{
@@ -298,6 +302,37 @@ const AppLayout = ({
             </div>
           ))}
         </div>
+
+        {/* Footer del Sidebar con Logout */}
+        <div style={{
+          padding: '20px',
+          borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+          marginTop: 'auto'
+        }}>
+          <div 
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '12px',
+              color: 'rgba(255, 255, 255, 0.8)',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              borderRadius: '8px'
+            }}
+            onClick={onLogout}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = '#ef4444';
+              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            <FaSignOutAlt style={{ marginRight: '12px', width: '20px' }} />
+            <span>Cerrar Sesión</span>
+          </div>
+        </div>
       </nav>
 
       {/* Área Principal */}
@@ -347,9 +382,9 @@ const AppLayout = ({
                  currentView === 'kitchen' ? 'Cocina & Ingredientes' :
                  currentView === 'shifts' ? 'Turnos & Horarios' :
                  currentView === 'messages' ? 'Sistema de Mensajes' :
-                 currentView === 'personal' ? 'Gestión de Personal' :  // ← CORREGIDO
+                 currentView === 'personal' ? 'Gestión de Personal' :
                  currentView === 'providers' ? 'Proveedores' :
-                 currentView === 'directory' ? 'Directorio de Personal' :
+                 currentView === 'directory' ? 'Directorio' :
                  currentView}
               </span>
             </div>
@@ -358,7 +393,7 @@ const AppLayout = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             {/* Notificaciones */}
             <div style={{ position: 'relative' }}>
-              <button 
+              <button
                 onClick={handleNotificationClick}
                 style={{
                   background: 'none',
@@ -366,25 +401,15 @@ const AppLayout = ({
                   fontSize: '1.2rem',
                   color: '#64748b',
                   cursor: 'pointer',
-                  padding: '8px',
-                  borderRadius: '50%',
-                  transition: 'all 0.2s ease'
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.background = '#f1f5f9';
-                  e.target.style.color = '#374151';
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.background = 'none';
-                  e.target.style.color = '#64748b';
+                  position: 'relative'
                 }}
               >
                 <FaBell />
                 {notifications.length > 0 && (
                   <span style={{
                     position: 'absolute',
-                    top: '2px',
-                    right: '2px',
+                    top: '-5px',
+                    right: '-5px',
                     background: '#ef4444',
                     color: 'white',
                     borderRadius: '50%',
@@ -399,153 +424,100 @@ const AppLayout = ({
                   </span>
                 )}
               </button>
-
-              {/* Dropdown de Notificaciones */}
-              {showNotifications && (
-                <div style={{
-                  position: 'absolute',
-                  top: '100%',
-                  right: 0,
-                  background: 'white',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  boxShadow: '0 10px 40px rgba(0, 0, 0, 0.1)',
-                  width: '300px',
-                  zIndex: 1000,
-                  marginTop: '8px'
-                }}>
-                  <div style={{
-                    padding: '15px 20px',
-                    borderBottom: '1px solid #e2e8f0',
-                    fontWeight: 600,
-                    color: '#374151'
-                  }}>
-                    Notificaciones
-                  </div>
-                  <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                    {notifications.length === 0 ? (
-                      <div style={{
-                        padding: '20px',
-                        textAlign: 'center',
-                        color: '#64748b',
-                        fontSize: '0.9rem'
-                      }}>
-                        No hay notificaciones
-                      </div>
-                    ) : (
-                      notifications.map((notification, index) => (
-                        <div key={index} style={{
-                          padding: '15px 20px',
-                          borderBottom: '1px solid #f1f5f9',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px'
-                        }}>
-                          <div style={{
-                            width: '8px',
-                            height: '8px',
-                            borderRadius: '50%',
-                            background: notification.type === 'inventory' ? '#f59e0b' : '#3b82f6'
-                          }} />
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: '0.85rem', color: '#374151' }}>
-                              {notification.message}
-                            </div>
-                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
-                              {notification.type === 'inventory' ? '📦 Inventario' : '💬 Mensaje'}
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Mensajes */}
-            <button 
+            <button
               onClick={handleMessagesClick}
               style={{
                 background: 'none',
                 border: 'none',
                 fontSize: '1.2rem',
                 color: '#64748b',
-                cursor: 'pointer',
-                padding: '8px',
-                borderRadius: '50%',
-                transition: 'all 0.2s ease'
-              }}
-              onMouseEnter={(e) => {
-                e.target.style.background = '#f1f5f9';
-                e.target.style.color = '#374151';
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.background = 'none';
-                e.target.style.color = '#64748b';
+                cursor: 'pointer'
               }}
             >
               <FaEnvelope />
-              <span style={{
-                position: 'absolute',
-                top: '2px',
-                right: '2px',
-                background: '#ef4444',
-                color: 'white',
-                borderRadius: '50%',
-                width: '18px',
-                height: '18px',
-                fontSize: '0.7rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                2
-              </span>
             </button>
 
-            {/* Perfil de Usuario */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              padding: '8px 12px',
-              background: '#f8fafc',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}>
-              <div style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                background: '#3b82f6',
-                color: 'white',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 600,
-                fontSize: '0.9rem'
-              }}>
-                {(user?.displayName || user?.email)?.[0]?.toUpperCase() || 'U'}
-              </div>
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                fontSize: '0.85rem'
-              }}>
-                <div style={{ fontWeight: 600, color: '#1e293b' }}>
-                  {user?.displayName || user?.email?.split('@')[0] || 'Usuario'}
+            {/* Perfil de Usuario con Dropdown */}
+            <Dropdown align="end">
+              <Dropdown.Toggle
+                variant="link"
+                id="dropdown-user"
+                style={{
+                  border: 'none',
+                  background: 'none',
+                  textDecoration: 'none'
+                }}
+              >
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '8px 12px',
+                  borderRadius: '12px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  cursor: 'pointer'
+                }}>
+                  <div style={{
+                    width: '35px',
+                    height: '35px',
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+                    color: 'white',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 600,
+                    fontSize: '0.9rem'
+                  }}>
+                    {user?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
+                  </div>
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    fontSize: '0.85rem'
+                  }}>
+                    <div style={{ fontWeight: 600, color: '#1e293b' }}>
+                      {user?.displayName || user?.email?.split('@')[0] || 'Usuario'}
+                    </div>
+                    <div style={{ color: '#64748b', textTransform: 'capitalize' }}>
+                      {userRole === 'admin' ? 'Administrador' :
+                       userRole === 'manager' ? 'Gerente' :
+                       userRole === 'bartender' ? 'Bartender' :
+                       userRole === 'cocinero' ? 'Cocinero' :
+                       userRole}
+                    </div>
+                  </div>
+                  <FaChevronDown style={{ fontSize: '0.8rem', color: '#64748b' }} />
                 </div>
-                <div style={{ color: '#64748b', textTransform: 'capitalize' }}>
-                  {userRole === 'admin' ? 'Administrador' :
-                   userRole === 'manager' ? 'Gerente' :
-                   userRole === 'bartender' ? 'Bartender' :
-                   userRole === 'cocinero' ? 'Cocinero' :
-                   userRole}
-                </div>
-              </div>
-              <FaChevronDown style={{ fontSize: '0.8rem', color: '#64748b' }} />
-            </div>
+              </Dropdown.Toggle>
+
+              <Dropdown.Menu>
+                <Dropdown.Item href="#" onClick={(e) => e.preventDefault()}>
+                  <FaUser className="me-2" />
+                  Mi Perfil
+                </Dropdown.Item>
+                <Dropdown.Item href="#" onClick={(e) => e.preventDefault()}>
+                  <FaCog className="me-2" />
+                  Configuración
+                </Dropdown.Item>
+                <Dropdown.Divider />
+                <Dropdown.Item 
+                  href="#" 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onLogout();
+                  }}
+                  style={{ color: '#ef4444' }}
+                >
+                  <FaSignOutAlt className="me-2" />
+                  Cerrar Sesión
+                </Dropdown.Item>
+              </Dropdown.Menu>
+            </Dropdown>
           </div>
         </header>
 

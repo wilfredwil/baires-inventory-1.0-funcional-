@@ -1,162 +1,201 @@
-// SOLUCIÓN 1: Cloud Function (Recomendado)
-// Crea un archivo functions/index.js en tu proyecto
-
+// functions/index.js
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 
+// Inicializar Admin SDK
 admin.initializeApp();
 
+// Cloud Function para crear usuarios (solo admins pueden llamarla)
 exports.createUser = functions.https.onCall(async (data, context) => {
-  // Verificar que quien llama es admin
-  if (!context.auth || !context.auth.token.admin) {
-    throw new functions.https.HttpsError('permission-denied', 'Solo admins pueden crear usuarios');
+  // Verificar autenticación
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      'unauthenticated', 
+      'Debes estar autenticado para crear usuarios'
+    );
   }
 
   try {
-    // Crear usuario en Authentication
+    // Verificar si el usuario que llama es admin
+    const callerDoc = await admin.firestore()
+      .collection('users')
+      .doc(context.auth.uid)
+      .get();
+
+    if (!callerDoc.exists || callerDoc.data().role !== 'admin') {
+      throw new functions.https.HttpsError(
+        'permission-denied', 
+        'Solo los administradores pueden crear usuarios'
+      );
+    }
+
+    // Validar datos requeridos
+    const { email, password, firstName, lastName, role, workInfo } = data;
+    
+    if (!email || !password || !firstName || !lastName || !role) {
+      throw new functions.https.HttpsError(
+        'invalid-argument', 
+        'Faltan campos obligatorios: email, password, firstName, lastName, role'
+      );
+    }
+
+    // Crear usuario en Firebase Authentication
     const userRecord = await admin.auth().createUser({
-      email: data.email,
-      password: data.password,
-      displayName: data.name,
+      email: email,
+      password: password,
+      displayName: `${firstName} ${lastName}`,
       disabled: false
     });
 
-    // Crear documento en Firestore
-    await admin.firestore().collection('users').doc(userRecord.uid).set({
-      email: data.email,
-      name: data.name,
-      role: data.role,
-      active: true,
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
-      created_by: context.auth.token.email,
-      uid: userRecord.uid
-    });
+    console.log('Usuario creado en Authentication:', userRecord.uid);
 
-    return { success: true, uid: userRecord.uid };
+    // Crear documento en Firestore
+    const userData = {
+      uid: userRecord.uid,
+      email: email,
+      firstName: firstName,
+      lastName: lastName,
+      displayName: `${firstName} ${lastName}`,
+      role: role,
+      active: true,
+      workInfo: workInfo || {},
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdBy: context.auth.token.email || context.auth.uid,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    // Agregar ID de empleado si no existe
+    if (!userData.workInfo.employeeId) {
+      userData.workInfo.employeeId = `EMP${Date.now().toString().slice(-6)}`;
+    }
+
+    await admin.firestore()
+      .collection('users')
+      .doc(userRecord.uid)
+      .set(userData);
+
+    console.log('Documento creado en Firestore:', userRecord.uid);
+
+    // Retornar resultado exitoso
+    return {
+      success: true,
+      uid: userRecord.uid,
+      email: email,
+      employeeId: userData.workInfo.employeeId,
+      message: `Usuario ${email} creado exitosamente`
+    };
+
   } catch (error) {
+    console.error('Error en createUser:', error);
+    
+    // Manejar errores específicos
+    if (error.code === 'auth/email-already-in-use') {
+      throw new functions.https.HttpsError(
+        'already-exists', 
+        'Este email ya está registrado'
+      );
+    } else if (error.code === 'auth/weak-password') {
+      throw new functions.https.HttpsError(
+        'invalid-argument', 
+        'La contraseña es demasiado débil'
+      );
+    } else if (error.code === 'auth/invalid-email') {
+      throw new functions.https.HttpsError(
+        'invalid-argument', 
+        'El formato del email es inválido'
+      );
+    }
+    
+    // Error genérico
+    throw new functions.https.HttpsError(
+      'internal', 
+      `Error interno: ${error.message}`
+    );
+  }
+});
+
+// Cloud Function para eliminar usuarios (solo admins)
+exports.deleteUser = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes estar autenticado');
+  }
+
+  try {
+    // Verificar permisos de admin
+    const callerDoc = await admin.firestore()
+      .collection('users')
+      .doc(context.auth.uid)
+      .get();
+
+    if (!callerDoc.exists || callerDoc.data().role !== 'admin') {
+      throw new functions.https.HttpsError('permission-denied', 'Solo admins pueden eliminar usuarios');
+    }
+
+    const { uid } = data;
+    
+    if (!uid) {
+      throw new functions.https.HttpsError('invalid-argument', 'UID es requerido');
+    }
+
+    // Evitar que el admin se elimine a sí mismo
+    if (uid === context.auth.uid) {
+      throw new functions.https.HttpsError('permission-denied', 'No puedes eliminarte a ti mismo');
+    }
+
+    // Eliminar de Authentication
+    await admin.auth().deleteUser(uid);
+    
+    // Eliminar documento de Firestore
+    await admin.firestore().collection('users').doc(uid).delete();
+
+    return {
+      success: true,
+      message: 'Usuario eliminado exitosamente'
+    };
+
+  } catch (error) {
+    console.error('Error eliminando usuario:', error);
     throw new functions.https.HttpsError('internal', error.message);
   }
 });
 
-// SOLUCIÓN 2: Modificar tu componente para usar la Cloud Function
-// En tu AdvancedUserManagement.js o donde crees usuarios:
-
-import { getFunctions, httpsCallable } from 'firebase/functions';
-
-const functions = getFunctions();
-const createUserFunction = httpsCallable(functions, 'createUser');
-
-const handleCreateUser = async (userData) => {
-  try {
-    setLoading(true);
-    
-    // Llamar a la Cloud Function en lugar de createUserWithEmailAndPassword
-    const result = await createUserFunction({
-      email: userData.email,
-      password: userData.password,
-      name: userData.name,
-      role: userData.role
-    });
-
-    if (result.data.success) {
-      setSuccess(`Usuario ${userData.email} creado exitosamente`);
-      // El admin sigue logueado
-    }
-  } catch (error) {
-    console.error('Error creando usuario:', error);
-    setError('Error al crear usuario: ' + error.message);
-  } finally {
-    setLoading(false);
+// Cloud Function para actualizar roles (solo admins)
+exports.updateUserRole = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes estar autenticado');
   }
-};
 
-// SOLUCIÓN 3: Workaround temporal (mientras configuras Cloud Functions)
-// Modificar tu función actual para re-autenticar al admin
-
-const handleCreateUserWithReauth = async (userData) => {
   try {
-    setLoading(true);
-    
-    // Guardar info del admin actual
-    const currentUser = auth.currentUser;
-    const adminEmail = currentUser.email;
-    
-    // Crear nuevo usuario (esto deslogea al admin)
-    const userCredential = await createUserWithEmailAndPassword(
-      auth, 
-      userData.email, 
-      userData.password
-    );
+    // Verificar permisos de admin
+    const callerDoc = await admin.firestore()
+      .collection('users')
+      .doc(context.auth.uid)
+      .get();
 
-    // Crear documento en Firestore para el nuevo usuario
-    await addDoc(collection(db, 'users'), {
-      email: userData.email,
-      name: userData.name,
-      role: userData.role,
-      active: true,
-      created_at: serverTimestamp(),
-      uid: userCredential.user.uid
-    });
-
-    // IMPORTANTE: Deslogear al nuevo usuario
-    await signOut(auth);
-
-    // Re-autenticar al admin
-    // NOTA: Necesitarás pedirle la contraseña al admin
-    const adminPassword = prompt('Por seguridad, ingresa tu contraseña de admin para continuar:');
-    if (adminPassword) {
-      await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
-      setSuccess(`Usuario ${userData.email} creado exitosamente. Has sido re-autenticado.`);
-    } else {
-      // Si no proporciona contraseña, redirigir al login
-      window.location.reload();
+    if (!callerDoc.exists || callerDoc.data().role !== 'admin') {
+      throw new functions.https.HttpsError('permission-denied', 'Solo admins pueden actualizar roles');
     }
 
-  } catch (error) {
-    console.error('Error:', error);
-    setError('Error al crear usuario: ' + error.message);
-  } finally {
-    setLoading(false);
-  }
-};
+    const { uid, newRole } = data;
+    
+    if (!uid || !newRole) {
+      throw new functions.https.HttpsError('invalid-argument', 'UID y newRole son requeridos');
+    }
 
-// SOLUCIÓN 4: Usar una instancia secundaria de Firebase (Más complejo)
-// Para uso avanzado - requiere configuración adicional
-
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-
-// Crear una segunda instancia de Firebase solo para crear usuarios
-const secondaryApp = initializeApp(firebaseConfig, 'secondary');
-const secondaryAuth = getAuth(secondaryApp);
-
-const handleCreateUserSecondary = async (userData) => {
-  try {
-    // Usar la instancia secundaria para crear el usuario
-    const userCredential = await createUserWithEmailAndPassword(
-      secondaryAuth, // Usar auth secundario
-      userData.email,
-      userData.password
-    );
-
-    // Crear documento en Firestore
-    await addDoc(collection(db, 'users'), {
-      email: userData.email,
-      name: userData.name,
-      role: userData.role,
-      active: true,
-      created_at: serverTimestamp(),
-      uid: userCredential.user.uid
+    // Actualizar en Firestore
+    await admin.firestore().collection('users').doc(uid).update({
+      role: newRole,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: context.auth.token.email || context.auth.uid
     });
 
-    // Deslogear de la instancia secundaria
-    await signOut(secondaryAuth);
-    
-    setSuccess(`Usuario ${userData.email} creado exitosamente`);
-    // El admin principal sigue logueado
-    
+    return {
+      success: true,
+      message: `Rol actualizado a ${newRole} exitosamente`
+    };
+
   } catch (error) {
-    console.error('Error:', error);
-    setError('Error al crear usuario: ' + error.message);
+    console.error('Error actualizando rol:', error);
+    throw new functions.https.HttpsError('internal', error.message);
   }
-};
+});

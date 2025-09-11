@@ -27,8 +27,7 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       
       // Creación: solo Cloud Functions (no permitir desde cliente)
-      // Las Cloud Functions tienen privilegios especiales de admin
-      allow create: if false; // Forzar uso de Cloud Functions
+      allow create: if false;
       
       // Actualización: admin desde DB o el propio usuario para sus datos básicos
       allow update: if isAuthenticated() && 
@@ -77,7 +76,7 @@ service cloud.firestore {
 
     // Reglas para horarios publicados (enlaces públicos)
     match /published_schedules/{scheduleId} {
-      allow read: if true; // Acceso público para enlaces compartidos
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
