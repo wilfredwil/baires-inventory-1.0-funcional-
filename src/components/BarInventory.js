@@ -1,4 +1,4 @@
-// src/components/BarInventory.js - CORREGIDO para evitar error de índice
+// src/components/BarInventory.js - VERSIÓN LIMPIA SIN ERRORES
 import React, { useState, useEffect } from 'react';
 import {
   Container, Row, Col, Card, Button, Form, Modal, Alert, Badge,
@@ -30,6 +30,8 @@ ChartJS.register(
 );
 
 const BarInventory = ({ onBack, user, userRole }) => {
+  console.log('🚀 BarInventory component iniciado con:', { user: user?.email, userRole });
+
   // Estados principales
   const [inventory, setInventory] = useState([]);
   const [providers, setProviders] = useState([]);
@@ -38,7 +40,7 @@ const BarInventory = ({ onBack, user, userRole }) => {
   const [success, setSuccess] = useState('');
 
   // Estados de vista
-  const [viewMode, setViewMode] = useState('cards'); // 'cards' | 'table'
+  const [viewMode, setViewMode] = useState('cards');
   const [showItemModal, setShowItemModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [showMetrics, setShowMetrics] = useState(true);
@@ -50,9 +52,10 @@ const BarInventory = ({ onBack, user, userRole }) => {
   const [sortBy, setSortBy] = useState('nombre');
   const [sortOrder, setSortOrder] = useState('asc');
 
-  // Categorías de bebidas
+  // Categorías estáticas - incluye variaciones comunes
   const categories = [
     { value: 'all', label: 'Todas las bebidas', icon: FaWineGlass, color: '#6c757d' },
+    { value: 'whiskey', label: 'Whiskey', icon: FaGlassWhiskey, color: '#8B4513' },
     { value: 'whisky', label: 'Whisky', icon: FaGlassWhiskey, color: '#8B4513' },
     { value: 'vodka', label: 'Vodka', icon: FaWineBottle, color: '#E6E6FA' },
     { value: 'ron', label: 'Ron', icon: FaWineBottle, color: '#CD853F' },
@@ -61,28 +64,45 @@ const BarInventory = ({ onBack, user, userRole }) => {
     { value: 'cerveza', label: 'Cerveza', icon: FaBeer, color: '#FFD700' },
     { value: 'vino', label: 'Vino', icon: FaWineGlass, color: '#800080' },
     { value: 'licor', label: 'Licores', icon: FaCocktail, color: '#FF69B4' },
-    { value: 'mixers', label: 'Mixers', icon: FaCocktail, color: '#20B2AA' }
+    { value: 'mixers', label: 'Mixers', icon: FaCocktail, color: '#20B2AA' },
+    { value: 'champagne', label: 'Champagne', icon: FaWineGlass, color: '#FFD700' },
+    { value: 'aperitivo', label: 'Aperitivo', icon: FaCocktail, color: '#FFA500' },
   ];
 
-  // Cargar datos del inventario - CORREGIDO
+  // Cargar datos del inventario - SIN INDICES COMPUESTOS
   useEffect(() => {
-    if (!user) return;
+    console.log('🔍 useEffect ejecutado - User:', user?.email);
+    
+    if (!user?.email) {
+      console.log('⚠️ Usuario no está listo aún, esperando...');
+      return;
+    }
 
-    // CAMBIO: Usar solo el filtro where para tipo_inventario, sin orderBy para evitar índice compuesto
-    const unsubscribeInventory = onSnapshot(
-      query(
-        collection(db, 'inventario'),
-        where('tipo_inventario', '==', 'bar')
-        // REMOVIDO: orderBy('nombre') para evitar error de índice
-      ),
-      (snapshot) => {
-        const items = snapshot.docs.map(doc => ({
+    const loadData = async () => {
+      console.log('🔄 Cargando inventario del bar automáticamente...');
+      setLoading(true);
+      setError('');
+      
+      try {
+        const snapshot = await getDocs(collection(db, 'inventario'));
+        console.log('📦 Documentos encontrados:', snapshot.size);
+        
+        const barTypes = ['licor', 'whisky', 'whiskey', 'vodka', 'ron', 'gin', 'tequila', 'cerveza', 'vino', 'champagne', 'mixers', 'aperitivo'];
+        
+        const allItems = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
         
-        // Ordenar en el cliente en lugar de en la consulta
-        const sortedItems = items.sort((a, b) => {
+        const barItems = allItems.filter(item => {
+          const itemType = (item.tipo || '').toLowerCase();
+          const itemSubType = (item.subTipo || '').toLowerCase();
+          return barTypes.includes(itemType) || barTypes.includes(itemSubType);
+        });
+        
+        console.log('🍺 Productos del bar encontrados:', barItems.length);
+        
+        const sortedItems = barItems.sort((a, b) => {
           const aName = (a.nombre || '').toLowerCase();
           const bName = (b.nombre || '').toLowerCase();
           return aName.localeCompare(bName);
@@ -90,27 +110,42 @@ const BarInventory = ({ onBack, user, userRole }) => {
         
         setInventory(sortedItems);
         setLoading(false);
-        setError(''); // Limpiar error si la carga es exitosa
-      },
-      (error) => {
-        console.error('Error cargando inventario del bar:', error);
-        setError('Error cargando inventario del bar. Verifica la conexión a Firebase.');
-        setLoading(false);
         
-        // Si hay error, mostrar los datos cacheados si existen
+        if (sortedItems.length > 0) {
+          setSuccess(`✅ Cargados ${sortedItems.length} productos del bar automáticamente`);
+          setTimeout(() => setSuccess(''), 3000);
+        }
+        
+      } catch (error) {
+        console.error('❌ Error cargando inventario:', error);
+        setError('Error cargando inventario: ' + error.message);
+        setLoading(false);
         setInventory([]);
       }
-    );
+    };
+
+    const timer = setTimeout(() => {
+      console.log('🔍 Iniciando carga automática tras delay');
+      loadData();
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [user?.email]);
+
+  // Cargar proveedores
+  useEffect(() => {
+    if (!user) return;
 
     const unsubscribeProviders = onSnapshot(
-      query(collection(db, 'providers')), // Sin orderBy para evitar problemas
+      collection(db, 'providers'),
       (snapshot) => {
         const providerData = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
         
-        // Filtrar y ordenar en el cliente
         const filteredProviders = providerData
           .filter(p => p.tipo === 'bar' || p.tipo === 'ambos')
           .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
@@ -119,12 +154,10 @@ const BarInventory = ({ onBack, user, userRole }) => {
       },
       (error) => {
         console.error('Error cargando proveedores:', error);
-        // No mostrar error para proveedores ya que no es crítico
       }
     );
 
     return () => {
-      unsubscribeInventory();
       unsubscribeProviders();
     };
   }, [user]);
@@ -134,8 +167,13 @@ const BarInventory = ({ onBack, user, userRole }) => {
     .filter(item => {
       const matchesSearch = item.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            item.marca?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const itemType = (item.tipo || '').toLowerCase();
+      const itemSubType = (item.subTipo || '').toLowerCase();
       const matchesCategory = categoryFilter === 'all' || 
-                             item.tipo?.toLowerCase() === categoryFilter;
+                             itemType === categoryFilter ||
+                             itemSubType === categoryFilter;
+                             
       const matchesStock = stockFilter === 'all' ||
                           (stockFilter === 'low' && item.stock <= (item.umbral_low || 5)) ||
                           (stockFilter === 'normal' && item.stock > (item.umbral_low || 5));
@@ -166,47 +204,11 @@ const BarInventory = ({ onBack, user, userRole }) => {
     averageStock: inventory.length ? inventory.reduce((sum, item) => sum + (item.stock || 0), 0) / inventory.length : 0,
     topCategories: categories.slice(1).map(cat => ({
       ...cat,
-      count: inventory.filter(item => item.tipo?.toLowerCase() === cat.value).length,
+      count: inventory.filter(item => (item.tipo?.toLowerCase() === cat.value) || (item.subTipo?.toLowerCase() === cat.value)).length,
       value: inventory
-        .filter(item => item.tipo?.toLowerCase() === cat.value)
+        .filter(item => (item.tipo?.toLowerCase() === cat.value) || (item.subTipo?.toLowerCase() === cat.value))
         .reduce((sum, item) => sum + ((item.precio_venta || 0) * (item.stock || 0)), 0)
     })).sort((a, b) => b.count - a.count).slice(0, 5)
-  };
-
-  // Datos para gráficos
-  const chartData = {
-    categories: {
-      labels: metrics.topCategories.map(cat => cat.label),
-      datasets: [{
-        data: metrics.topCategories.map(cat => cat.count),
-        backgroundColor: metrics.topCategories.map(cat => cat.color),
-        borderWidth: 2,
-        borderColor: '#fff'
-      }]
-    },
-    stockLevels: {
-      labels: ['Stock Normal', 'Stock Bajo', 'Sin Stock'],
-      datasets: [{
-        data: [
-          inventory.filter(item => item.stock > (item.umbral_low || 5)).length,
-          inventory.filter(item => item.stock <= (item.umbral_low || 5) && item.stock > 0).length,
-          inventory.filter(item => item.stock === 0).length
-        ],
-        backgroundColor: ['#28a745', '#ffc107', '#dc3545'],
-        borderWidth: 2,
-        borderColor: '#fff'
-      }]
-    },
-    valueByCategory: {
-      labels: metrics.topCategories.map(cat => cat.label),
-      datasets: [{
-        label: 'Valor en Stock ($)',
-        data: metrics.topCategories.map(cat => cat.value),
-        backgroundColor: metrics.topCategories.map(cat => cat.color + '80'),
-        borderColor: metrics.topCategories.map(cat => cat.color),
-        borderWidth: 2
-      }]
-    }
   };
 
   // Funciones de manejo
@@ -226,7 +228,6 @@ const BarInventory = ({ onBack, user, userRole }) => {
     try {
       await deleteDoc(doc(db, 'inventario', item.id));
       
-      // Registrar en historial
       await addDoc(collection(db, 'historial'), {
         item_nombre: item.nombre,
         usuario: user.email,
@@ -245,36 +246,26 @@ const BarInventory = ({ onBack, user, userRole }) => {
     }
   };
 
+  const handleQuickStockUpdate = async (item, newStock) => {
+    try {
+      await updateDoc(doc(db, 'inventario', item.id), {
+        stock: newStock,
+        updated_at: serverTimestamp()
+      });
+      setSuccess(`Stock de ${item.nombre} actualizado a ${newStock}`);
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (error) {
+      console.error('Error:', error);
+      setError('Error actualizando stock');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
   const handleItemSuccess = () => {
     setShowItemModal(false);
     setEditingItem(null);
     setSuccess(editingItem ? 'Producto actualizado correctamente' : 'Producto agregado correctamente');
     setTimeout(() => setSuccess(''), 3000);
-  };
-
-  // Funciones de exportación y utilidad
-  const exportToCSV = () => {
-    const headers = ['Nombre', 'Marca', 'Tipo', 'Stock', 'Unidad', 'Umbral Bajo', 'Precio', 'Estado'];
-    const csvContent = [
-      headers.join(','),
-      ...filteredInventory.map(item => [
-        item.nombre,
-        item.marca || '',
-        item.tipo || '',
-        item.stock || 0,
-        item.unidad || '',
-        item.umbral_low || 0,
-        item.precio || 0,
-        item.stock <= (item.umbral_low || 5) ? 'Stock Bajo' : 'Normal'
-      ].join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `inventario-bar-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
   };
 
   const getStockBadge = (item) => {
@@ -287,13 +278,17 @@ const BarInventory = ({ onBack, user, userRole }) => {
     }
   };
 
-  const getCategoryIcon = (tipo) => {
-    const category = categories.find(cat => cat.value === tipo?.toLowerCase());
+  const getCategoryIcon = (item) => {
+    const mainType = (item.tipo || '').toLowerCase();
+    const subType = (item.subTipo || '').toLowerCase();
+    
+    const typeToCheck = categories.find(cat => cat.value === subType) ? subType : mainType;
+    
+    const category = categories.find(cat => cat.value === typeToCheck);
     const IconComponent = category?.icon || FaWineGlass;
     return <IconComponent style={{ color: category?.color }} />;
   };
 
-  // Renderización condicional para loading y error
   if (loading) {
     return (
       <Container className="py-4">
@@ -332,7 +327,25 @@ const BarInventory = ({ onBack, user, userRole }) => {
             <div className="d-flex gap-2">
               <Button
                 variant="outline-primary"
-                onClick={exportToCSV}
+                onClick={() => {
+                  const csvContent = [
+                    ['Nombre', 'Marca', 'Tipo', 'Stock', 'Precio'].join(','),
+                    ...filteredInventory.map(item => [
+                      item.nombre,
+                      item.marca || '',
+                      item.tipo || '',
+                      item.stock || 0,
+                      item.precio || 0
+                    ].join(','))
+                  ].join('\n');
+
+                  const blob = new Blob([csvContent], { type: 'text/csv' });
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `inventario-bar-${new Date().toISOString().split('T')[0]}.csv`;
+                  a.click();
+                }}
                 disabled={filteredInventory.length === 0}
               >
                 <FaDownload /> Exportar
@@ -495,11 +508,11 @@ const BarInventory = ({ onBack, user, userRole }) => {
                   <div className="d-flex justify-content-between align-items-start">
                     <div>
                       <h6 className="mb-1">
-                        {getCategoryIcon(item.tipo)}
+                        {getCategoryIcon(item)}
                         <span className="ms-2">{item.nombre}</span>
                       </h6>
                       <p className="text-muted small mb-2">
-                        {item.marca} • {item.tipo}
+                        {item.marca} • {item.tipo}{item.subTipo && ` (${item.subTipo})`}
                       </p>
                     </div>
                     {getStockBadge(item)}
@@ -522,23 +535,39 @@ const BarInventory = ({ onBack, user, userRole }) => {
                     />
                   </div>
 
-                  <div className="d-flex justify-content-end gap-1">
-                    <Button
-                      variant="outline-primary"
-                      size="sm"
-                      onClick={() => handleEditItem(item)}
-                    >
-                      <FaEdit />
-                    </Button>
-                    {(userRole === 'admin' || userRole === 'manager') && (
+                  <div className="d-flex justify-content-between">
+                    <InputGroup size="sm" style={{ maxWidth: '100px' }}>
+                      <Form.Control
+                        type="number"
+                        min="0"
+                        defaultValue={item.stock || 0}
+                        onBlur={(e) => {
+                          const newStock = parseInt(e.target.value) || 0;
+                          if (newStock !== item.stock) {
+                            handleQuickStockUpdate(item, newStock);
+                          }
+                        }}
+                      />
+                    </InputGroup>
+                    
+                    <div className="d-flex gap-1">
                       <Button
-                        variant="outline-danger"
+                        variant="outline-primary"
                         size="sm"
-                        onClick={() => handleDeleteItem(item)}
+                        onClick={() => handleEditItem(item)}
                       >
-                        <FaTrash />
+                        <FaEdit />
                       </Button>
-                    )}
+                      {(userRole === 'admin' || userRole === 'manager') && (
+                        <Button
+                          variant="outline-danger"
+                          size="sm"
+                          onClick={() => handleDeleteItem(item)}
+                        >
+                          <FaTrash />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </Card.Body>
               </Card>
@@ -569,7 +598,21 @@ const BarInventory = ({ onBack, user, userRole }) => {
                     </td>
                     <td>{item.marca}</td>
                     <td>{item.tipo}{item.subTipo && ` (${item.subTipo})`}</td>
-                    <td>{item.stock} {item.unidad}</td>
+                    <td>
+                      <InputGroup size="sm" style={{ maxWidth: '100px' }}>
+                        <Form.Control
+                          type="number"
+                          min="0"
+                          defaultValue={item.stock || 0}
+                          onBlur={(e) => {
+                            const newStock = parseInt(e.target.value) || 0;
+                            if (newStock !== item.stock) {
+                              handleQuickStockUpdate(item, newStock);
+                            }
+                          }}
+                        />
+                      </InputGroup>
+                    </td>
                     <td>${item.precio}</td>
                     <td>{getStockBadge(item)}</td>
                     <td>
@@ -619,65 +662,6 @@ const BarInventory = ({ onBack, user, userRole }) => {
                   : 'Todos los productos están ocultos por los filtros actuales'
               }
             </p>
-            
-            {/* Información de debug */}
-            <div className="mt-3 p-3 bg-light rounded">
-              <small className="text-muted">
-                <strong>Debug:</strong><br/>
-                Total en inventario: {inventory.length}<br/>
-                Filtros: búsqueda="{searchTerm}", categoría="{categoryFilter}", stock="{stockFilter}"<br/>
-                Productos después de filtros: {filteredInventory.length}<br/>
-                Usuario: {user?.email}<br/>
-                Loading: {loading ? 'Sí' : 'No'}<br/>
-                Error: {error || 'Ninguno'}
-              </small>
-              
-              <div className="mt-2">
-                <Button
-                  variant="outline-success"
-                  size="sm"
-                  className="me-2"
-                  onClick={loadInventoryData}
-                  disabled={loading}
-                >
-                  {loading ? '🔄 Cargando...' : '🔄 Cargar Productos Manualmente'}
-                </Button>
-                
-                <Button
-                  variant="outline-info"
-                  size="sm"
-                  onClick={async () => {
-                    console.log('🔬 TEST: Verificando conexión a Firebase...');
-                    try {
-                      const snapshot = await getDocs(collection(db, 'inventario'));
-                      console.log('🔬 TEST: Documentos encontrados:', snapshot.size);
-                      
-                      const barTypes = ['licor', 'whisky', 'vodka', 'ron', 'gin', 'tequila', 'cerveza', 'vino', 'champagne', 'mixers'];
-                      let barCount = 0;
-                      
-                      snapshot.docs.forEach(doc => {
-                        const data = doc.data();
-                        const itemType = (data.tipo || '').toLowerCase();
-                        const itemSubType = (data.subTipo || '').toLowerCase();
-                        const isBarItem = barTypes.includes(itemType) || barTypes.includes(itemSubType);
-                        
-                        if (isBarItem) barCount++;
-                        
-                        console.log('🔬 TEST:', data.nombre, '| Tipo:', data.tipo, '| SubTipo:', data.subTipo, '| Es del bar:', isBarItem);
-                      });
-                      
-                      console.log('🔬 TEST: Total productos del bar:', barCount);
-                      alert(`Encontrados ${snapshot.size} productos, ${barCount} son del bar`);
-                    } catch (error) {
-                      console.error('🔬 TEST ERROR:', error);
-                      alert('Error: ' + error.message);
-                    }
-                  }}
-                >
-                  🔍 Test Manual de Base de Datos
-                </Button>
-              </div>
-            </div>
             
             {(userRole === 'admin' || userRole === 'manager') && inventory.length === 0 && (
               <Button variant="primary" onClick={handleAddItem} className="mt-3">
