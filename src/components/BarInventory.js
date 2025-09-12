@@ -1,4 +1,4 @@
-// src/components/BarInventory.js - CON BOTONES PDF
+// src/components/BarInventory.js - VERSIÓN COMPLETA CON DROPDOWN PDF
 import React, { useState, useEffect } from 'react';
 import {
   Container, Row, Col, Card, Button, Form, Modal, Alert, Badge,
@@ -69,8 +69,8 @@ const BarInventory = ({ onBack, user, userRole }) => {
     { value: 'aperitivo', label: 'Aperitivo', icon: FaCocktail, color: '#FFA500' },
   ];
 
-  // Función para generar PDFs usando window.print
-  const generatePDF = (type, categoryValue = null) => {
+  // Función para generar PDFs usando window.print con agrupación
+  const generatePDF = (type, filterValue = null) => {
     let itemsToInclude = [];
     let reportTitle = '';
     let reportSubtitle = '';
@@ -79,7 +79,7 @@ const BarInventory = ({ onBack, user, userRole }) => {
       case 'complete':
         itemsToInclude = inventory;
         reportTitle = 'Reporte Completo de Inventario del Bar';
-        reportSubtitle = `${inventory.length} productos en total`;
+        reportSubtitle = `${inventory.length} productos agrupados por categoría`;
         break;
       
       case 'low-stock':
@@ -96,12 +96,19 @@ const BarInventory = ({ onBack, user, userRole }) => {
       
       case 'category':
         itemsToInclude = inventory.filter(item => 
-          (item.tipo?.toLowerCase() === categoryValue) || 
-          (item.subTipo?.toLowerCase() === categoryValue)
+          (item.tipo?.toLowerCase() === filterValue) || 
+          (item.subTipo?.toLowerCase() === filterValue)
         );
-        const categoryInfo = categories.find(cat => cat.value === categoryValue);
-        reportTitle = `Reporte de ${categoryInfo?.label || categoryValue}`;
+        const categoryInfo = categories.find(cat => cat.value === filterValue);
+        reportTitle = `Reporte de ${categoryInfo?.label || filterValue}`;
         reportSubtitle = `${itemsToInclude.length} productos en esta categoría`;
+        break;
+      
+      case 'provider':
+        itemsToInclude = inventory.filter(item => item.proveedor_id === filterValue);
+        const providerInfo = providers.find(p => p.id === filterValue);
+        reportTitle = `Reporte por Proveedor: ${providerInfo?.nombre || 'Proveedor'}`;
+        reportSubtitle = `${itemsToInclude.length} productos - Orden de compra sugerida`;
         break;
     }
 
@@ -110,7 +117,41 @@ const BarInventory = ({ onBack, user, userRole }) => {
       return;
     }
 
-    // Crear ventana nueva para imprimir
+    // Función para agrupar productos
+    const groupItems = (items, groupBy) => {
+      const grouped = {};
+      items.forEach(item => {
+        let groupKey;
+        if (groupBy === 'category') {
+          groupKey = item.tipo || 'Sin Categoría';
+        } else if (groupBy === 'provider') {
+          const provider = providers.find(p => p.id === item.proveedor_id);
+          groupKey = provider?.nombre || 'Sin Proveedor';
+        }
+        
+        if (!grouped[groupKey]) {
+          grouped[groupKey] = [];
+        }
+        grouped[groupKey].push(item);
+      });
+      
+      // Ordenar cada grupo alfabéticamente
+      Object.keys(grouped).forEach(key => {
+        grouped[key].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+      });
+      
+      return grouped;
+    };
+
+    // Determinar si agrupar y cómo
+    let groupedItems = null;
+    let shouldGroup = false;
+    
+    if (type === 'complete' || type === 'low-stock' || type === 'out-of-stock') {
+      groupedItems = groupItems(itemsToInclude, 'category');
+      shouldGroup = true;
+    }
+
     const printWindow = window.open('', '_blank');
     const currentDate = new Date().toLocaleDateString('es-ES');
     const currentTime = new Date().toLocaleTimeString('es-ES');
@@ -118,6 +159,91 @@ const BarInventory = ({ onBack, user, userRole }) => {
     const totalValue = itemsToInclude.reduce((sum, item) => sum + ((item.precio || 0) * (item.stock || 0)), 0);
     const lowStockCount = itemsToInclude.filter(item => item.stock <= (item.umbral_low || 5) && item.stock > 0).length;
     const outOfStockCount = itemsToInclude.filter(item => item.stock === 0).length;
+
+    // Generar contenido de la tabla
+    let tableContent = '';
+    
+    if (shouldGroup && groupedItems) {
+      // Mostrar agrupado por categorías
+      const sortedGroups = Object.keys(groupedItems).sort();
+      
+      sortedGroups.forEach(groupName => {
+        const groupItems = groupedItems[groupName];
+        const groupTotal = groupItems.reduce((sum, item) => sum + ((item.precio || 0) * (item.stock || 0)), 0);
+        
+        // Header del grupo
+        tableContent += `
+          <tr style="background-color: #007bff; color: white;">
+            <td colspan="7" style="font-weight: bold; font-size: 14px; padding: 12px 8px;">
+              🍷 ${groupName.toUpperCase()} (${groupItems.length} productos - $${groupTotal.toLocaleString()})
+            </td>
+          </tr>
+        `;
+        
+        // Productos del grupo
+        groupItems.forEach(item => {
+          const stockClass = item.stock === 0 ? 'stock-out' : 
+                           item.stock <= (item.umbral_low || 5) ? 'stock-low' : 'stock-normal';
+          const stockStatus = item.stock === 0 ? 'Sin Stock' : 
+                            item.stock <= (item.umbral_low || 5) ? 'Stock Bajo' : 'Normal';
+          
+          tableContent += `
+            <tr>
+              <td style="padding-left: 20px;"><strong>${item.nombre}</strong></td>
+              <td>${item.marca || '-'}</td>
+              <td>${item.subTipo ? item.subTipo : '-'}</td>
+              <td class="${stockClass}"><strong>${item.stock || 0} ${item.unidad || ''}</strong></td>
+              <td>${item.umbral_low || 5}</td>
+              <td>$${(item.precio || 0).toLocaleString()}</td>
+              <td class="${stockClass}"><strong>${stockStatus}</strong></td>
+            </tr>
+          `;
+        });
+        
+        // Espacio entre grupos
+        tableContent += `<tr><td colspan="7" style="height: 10px; border: none;"></td></tr>`;
+      });
+    } else {
+      // Mostrar normal sin agrupar
+      itemsToInclude.forEach(item => {
+        const stockClass = item.stock === 0 ? 'stock-out' : 
+                         item.stock <= (item.umbral_low || 5) ? 'stock-low' : 'stock-normal';
+        const stockStatus = item.stock === 0 ? 'Sin Stock' : 
+                          item.stock <= (item.umbral_low || 5) ? 'Stock Bajo' : 'Normal';
+        
+        tableContent += `
+          <tr>
+            <td><strong>${item.nombre}</strong></td>
+            <td>${item.marca || '-'}</td>
+            <td>${item.tipo}${item.subTipo ? ` (${item.subTipo})` : ''}</td>
+            <td class="${stockClass}"><strong>${item.stock || 0} ${item.unidad || ''}</strong></td>
+            <td>${item.umbral_low || 5}</td>
+            <td>$${(item.precio || 0).toLocaleString()}</td>
+            <td class="${stockClass}"><strong>${stockStatus}</strong></td>
+          </tr>
+        `;
+      });
+    }
+
+    // Agregar información adicional para reportes de proveedor
+    let providerInfo = '';
+    if (type === 'provider') {
+      const provider = providers.find(p => p.id === filterValue);
+      if (provider) {
+        providerInfo = `
+          <div style="background: #f8f9fa; padding: 20px; margin-bottom: 20px; border-radius: 8px; border-left: 4px solid #007bff;">
+            <h3 style="margin: 0 0 10px 0; color: #007bff;">📞 Información del Proveedor</h3>
+            <p><strong>Empresa:</strong> ${provider.nombre}</p>
+            ${provider.contacto ? `<p><strong>Contacto:</strong> ${provider.contacto}</p>` : ''}
+            ${provider.telefono ? `<p><strong>Teléfono:</strong> ${provider.telefono}</p>` : ''}
+            ${provider.email ? `<p><strong>Email:</strong> ${provider.email}</p>` : ''}
+            <p style="margin-top: 15px; padding: 10px; background: #e3f2fd; border-radius: 4px; color: #1976d2;">
+              💡 <strong>Sugerencia:</strong> Este reporte puede ser usado como base para generar una orden de compra.
+            </p>
+          </div>
+        `;
+      }
+    }
 
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -222,6 +348,8 @@ const BarInventory = ({ onBack, user, userRole }) => {
             <p>Generado el ${currentDate} a las ${currentTime}</p>
           </div>
 
+          ${providerInfo}
+
           <div class="summary">
             <div class="summary-card">
               <h3>${itemsToInclude.length}</h3>
@@ -246,7 +374,7 @@ const BarInventory = ({ onBack, user, userRole }) => {
               <tr>
                 <th style="width: 25%;">Producto</th>
                 <th style="width: 15%;">Marca</th>
-                <th style="width: 15%;">Tipo</th>
+                <th style="width: 15%;">Subtipo</th>
                 <th style="width: 10%;">Stock</th>
                 <th style="width: 10%;">Umbral</th>
                 <th style="width: 10%;">Precio</th>
@@ -254,30 +382,14 @@ const BarInventory = ({ onBack, user, userRole }) => {
               </tr>
             </thead>
             <tbody>
-              ${itemsToInclude.map(item => {
-                const stockClass = item.stock === 0 ? 'stock-out' : 
-                                 item.stock <= (item.umbral_low || 5) ? 'stock-low' : 'stock-normal';
-                const stockStatus = item.stock === 0 ? 'Sin Stock' : 
-                                  item.stock <= (item.umbral_low || 5) ? 'Stock Bajo' : 'Normal';
-                
-                return `
-                  <tr>
-                    <td><strong>${item.nombre}</strong></td>
-                    <td>${item.marca || '-'}</td>
-                    <td>${item.tipo}${item.subTipo ? ` (${item.subTipo})` : ''}</td>
-                    <td class="${stockClass}"><strong>${item.stock || 0} ${item.unidad || ''}</strong></td>
-                    <td>${item.umbral_low || 5}</td>
-                    <td>$${(item.precio || 0).toLocaleString()}</td>
-                    <td class="${stockClass}"><strong>${stockStatus}</strong></td>
-                  </tr>
-                `;
-              }).join('')}
+              ${tableContent}
             </tbody>
           </table>
 
           <div class="footer">
             <p><strong>Sistema de Inventario del Bar</strong></p>
             <p>Usuario: ${user?.email} | Fecha: ${currentDate} ${currentTime}</p>
+            ${type === 'provider' ? '<p style="margin-top: 10px;"><strong>📋 Reporte de Orden de Compra</strong></p>' : ''}
           </div>
 
           <script>
@@ -556,21 +668,55 @@ const BarInventory = ({ onBack, user, userRole }) => {
               </div>
             </div>
             <div className="d-flex gap-2">
-              <Button
-                variant="outline-danger"
-                disabled={inventory.length === 0}
-                onClick={() => generatePDF('complete')}
-              >
-                📄 PDF Completo
-              </Button>
-              
-              <Button
-                variant="outline-warning"
-                disabled={inventory.filter(item => item.stock <= (item.umbral_low || 5) && item.stock > 0).length === 0}
-                onClick={() => generatePDF('low-stock')}
-              >
-                ⚠️ PDF Stock Bajo
-              </Button>
+              <Dropdown>
+                <Dropdown.Toggle variant="outline-danger" disabled={inventory.length === 0}>
+                  📄 Reportes PDF
+                </Dropdown.Toggle>
+                <Dropdown.Menu>
+                  <Dropdown.Header>Reportes Generales</Dropdown.Header>
+                  <Dropdown.Item onClick={() => generatePDF('complete')}>
+                    📊 Reporte Completo (Agrupado)
+                  </Dropdown.Item>
+                  <Dropdown.Item onClick={() => generatePDF('low-stock')}>
+                    ⚠️ Solo Stock Bajo
+                  </Dropdown.Item>
+                  <Dropdown.Item onClick={() => generatePDF('out-of-stock')}>
+                    🚫 Solo Sin Stock
+                  </Dropdown.Item>
+                  <Dropdown.Divider />
+                  <Dropdown.Header>Por Categorías</Dropdown.Header>
+                  {categories.slice(1).map(cat => {
+                    const count = inventory.filter(item => 
+                      (item.tipo?.toLowerCase() === cat.value) || 
+                      (item.subTipo?.toLowerCase() === cat.value)
+                    ).length;
+                    if (count === 0) return null;
+                    return (
+                      <Dropdown.Item 
+                        key={cat.value} 
+                        onClick={() => generatePDF('category', cat.value)}
+                      >
+                        <cat.icon style={{ color: cat.color }} className="me-2" />
+                        {cat.label} ({count})
+                      </Dropdown.Item>
+                    );
+                  })}
+                  <Dropdown.Divider />
+                  <Dropdown.Header>Por Proveedor</Dropdown.Header>
+                  {providers.map(provider => {
+                    const count = inventory.filter(item => item.proveedor_id === provider.id).length;
+                    if (count === 0) return null;
+                    return (
+                      <Dropdown.Item
+                        key={provider.id}
+                        onClick={() => generatePDF('provider', provider.id)}
+                      >
+                        🏪 {provider.nombre} ({count})
+                      </Dropdown.Item>
+                    );
+                  })}
+                </Dropdown.Menu>
+              </Dropdown>
               
               <Button
                 variant="outline-primary"
