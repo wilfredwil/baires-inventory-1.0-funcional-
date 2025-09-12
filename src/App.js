@@ -140,71 +140,37 @@ function App() {
 
   // Efectos principales
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log('onAuthStateChanged ejecutado:', user ? 'Usuario autenticado' : 'Usuario no autenticado');
+  const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    console.log('onAuthStateChanged ejecutado:', user ? user.email : 'No user');
+    
+    if (user) {
+      setUser(user);
       
-      if (user) {
-        console.log('Usuario autenticado:', user.email, user.uid);
-        setUser(user);
+      try {
+        const userSnapshot = await getDocs(query(collection(db, 'users'), where('email', '==', user.email)));
         
-        // Cargar rol del usuario con mejor manejo de errores
-        try {
-          // Buscar por UID y también por email como fallback
-          let userData = null;
-          
-          // Primero intentar por UID
-          try {
-            const userDocByUID = await getDocs(query(
-              collection(db, 'users'), 
-              where('uid', '==', user.uid)
-            ));
-            
-            if (!userDocByUID.empty) {
-              userData = userDocByUID.docs[0].data();
-              console.log('Usuario encontrado por UID:', userData);
-            }
-          } catch (uidError) {
-            console.log('Error buscando por UID:', uidError);
-          }
-          
-          // Si no se encuentra por UID, buscar por email
-          if (!userData) {
-            const userDocByEmail = await getDocs(query(
-              collection(db, 'users'), 
-              where('email', '==', user.email)
-            ));
-            
-            if (!userDocByEmail.empty) {
-              userData = userDocByEmail.docs[0].data();
-              console.log('Usuario encontrado por email:', userData);
-            }
-          }
-          
-          if (userData) {
-            const role = userData.role || 'employee';
-            setUserRole(role);
-            console.log('Rol del usuario cargado:', role);
-          } else {
-            console.log('No se encontró documento de usuario, usando rol por defecto');
-            setUserRole('employee');
-          }
-        } catch (error) {
-          console.error('Error loading user role:', error);
+        if (!userSnapshot.empty) {
+          const userData = userSnapshot.docs[0].data();
+          setUserRole(userData.role || 'employee');
+          console.log('Rol de usuario cargado:', userData.role);
+        } else {
+          console.log('No se encontró información del usuario en Firestore');
           setUserRole('employee');
         }
-      } else {
-        console.log('No hay usuario autenticado, ejecutando createDefaultAdmin...');
-        setUser(null);
+      } catch (error) {
+        console.error('Error obteniendo datos del usuario:', error);
         setUserRole('employee');
-        
-        // Crear usuario admin por defecto solo cuando NO hay usuario autenticado
-        await createDefaultAdmin();
       }
-      setLoading(false);
-    });
+    } else {
+      setUser(null);
+      setUserRole('employee');
+    }
+    
+    setLoading(false);
+  });
 
-    return () => unsubscribe();
-  }, []);
+  return () => unsubscribe();
+}, []);
 
   // Crear usuario admin por defecto
   const createDefaultAdmin = async () => {
@@ -699,100 +665,179 @@ function App() {
     };
 
     return (
-      <div className="login-container">
-        <Container>
-          <Row className="justify-content-center align-items-center min-vh-100">
-            <Col md={6} lg={4}>
-              <Card className="shadow-lg">
-                <Card.Body className="p-5">
-                  <div className="text-center mb-4">
-                    <FaWineGlass size={48} className="text-primary mb-3" />
-                    <h2>Baires Inventory</h2>
-                    <p className="text-muted">Sistema de gestión integral</p>
-                  </div>
+  <div className="login-container">
+    <Container fluid className="p-0">
+      <Row className="min-vh-100 g-0">
+        {/* Columna izquierda - Imagen/Brand */}
+        <Col lg={7} className="d-none d-lg-block position-relative">
+          <div 
+            className="h-100 d-flex align-items-center justify-content-center"
+            style={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              position: 'relative'
+            }}
+          >
+            {/* Overlay decorativo */}
+            <div 
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23ffffff" fill-opacity="0.1"%3E%3Ccircle cx="30" cy="30" r="4"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
+                opacity: 0.3
+              }}
+            />
+            
+            {/* Contenido de la marca */}
+            <div className="text-center text-white position-relative z-index-1">
+              <FaWineGlass size={80} className="mb-4" style={{ filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.3))' }} />
+              <h1 className="display-4 fw-bold mb-3">Baires Inventory</h1>
+              <p className="fs-5 mb-4" style={{ opacity: 0.9 }}>
+                Sistema integral de gestión para restaurantes
+              </p>
+              <div className="d-flex justify-content-center gap-4 mt-5">
+                <div className="text-center">
+                  <FaUtensils size={24} className="mb-2" />
+                  <small className="d-block">Cocina</small>
+                </div>
+                <div className="text-center">
+                  <FaWineGlass size={24} className="mb-2" />
+                  <small className="d-block">Bar</small>
+                </div>
+                <div className="text-center">
+                  <FaUsers size={24} className="mb-2" />
+                  <small className="d-block">Personal</small>
+                </div>
+                <div className="text-center">
+                  <FaChartBar size={24} className="mb-2" />
+                  <small className="d-block">Reportes</small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Col>
 
-                  {error && <Alert variant="danger">{error}</Alert>}
+        {/* Columna derecha - Formulario de login */}
+        <Col lg={5} className="d-flex align-items-center">
+          <Container>
+            <Row className="justify-content-center">
+              <Col md={8} lg={10} xl={8}>
+                {/* Logo móvil */}
+                <div className="text-center mb-4 d-lg-none">
+                  <FaWineGlass size={48} className="text-primary mb-3" />
+                  <h2 className="text-primary">Baires Inventory</h2>
+                </div>
 
-                  <Form onSubmit={handleLogin}>
-                    <Form.Group className="mb-3">
-                      <Form.Label>Email</Form.Label>
-                      <Form.Control
-                        type="email"
-                        value={loginEmail}
-                        onChange={(e) => setLoginEmail(e.target.value)}
-                        required
-                        placeholder="admin@baires.com"
-                      />
-                    </Form.Group>
+                <Card className="border-0 shadow-lg">
+                  <Card.Body className="p-5">
+                    <div className="text-center mb-4">
+                      <h3 className="fw-bold text-dark mb-2">Bienvenido</h3>
+                      <p className="text-muted">Ingresa tus credenciales para acceder al sistema</p>
+                    </div>
 
-                    <Form.Group className="mb-4">
-                      <Form.Label>Contraseña</Form.Label>
-                      <Form.Control
-                        type="password"
-                        value={loginPassword}
-                        onChange={(e) => setLoginPassword(e.target.value)}
-                        required
-                        placeholder="admin123456"
-                      />
-                    </Form.Group>
+                    {error && (
+                      <Alert variant="danger" className="d-flex align-items-center">
+                        <FaExclamationTriangle className="me-2" />
+                        {error}
+                      </Alert>
+                    )}
 
-                    <Button 
-                      type="submit" 
-                      variant="primary" 
-                      className="w-100 mb-3"
-                      disabled={loginLoading}
-                    >
-                      {loginLoading ? <Spinner animation="border" size="sm" /> : 'Ingresar'}
-                    </Button>
-                  </Form>
+                    <Form onSubmit={handleLogin}>
+                      <Form.Group className="mb-4">
+                        <Form.Label className="fw-semibold text-dark">
+                          Correo Electrónico
+                        </Form.Label>
+                        <InputGroup>
+                          <InputGroup.Text>
+                            <FaEnvelope className="text-muted" />
+                          </InputGroup.Text>
+                          <Form.Control
+                            type="email"
+                            value={loginEmail}
+                            onChange={(e) => setLoginEmail(e.target.value)}
+                            required
+                            placeholder="tu@email.com"
+                            className="border-start-0"
+                            style={{ 
+                              fontSize: '16px',
+                              padding: '12px 16px'
+                            }}
+                          />
+                        </InputGroup>
+                      </Form.Group>
 
-                  {/* BOTÓN DE EMERGENCIA PARA CREAR ADMIN */}
-                  <div className="text-center">
-                    <small className="text-muted d-block mb-2">
-                      ¿No tienes credenciales de admin?
-                    </small>
-                    
-                    {!showCreateAdmin ? (
-                      <Button 
-                        variant="outline-warning" 
-                        size="sm"
-                        onClick={() => setShowCreateAdmin(true)}
-                      >
-                        Crear Usuario Admin
-                      </Button>
-                    ) : (
-                      <div>
-                        <Alert variant="warning" className="small">
-                          <strong>¡Atención!</strong> Esto creará un usuario admin por defecto.
-                          <br />Email: admin@baires.com
-                          <br />Contraseña: admin123456
-                        </Alert>
+                      <Form.Group className="mb-4">
+                        <Form.Label className="fw-semibold text-dark">
+                          Contraseña
+                        </Form.Label>
+                        <InputGroup>
+                          <InputGroup.Text>
+                            <FaEye className="text-muted" />
+                          </InputGroup.Text>
+                          <Form.Control
+                            type="password"
+                            value={loginPassword}
+                            onChange={(e) => setLoginPassword(e.target.value)}
+                            required
+                            placeholder="••••••••"
+                            className="border-start-0"
+                            style={{ 
+                              fontSize: '16px',
+                              padding: '12px 16px'
+                            }}
+                          />
+                        </InputGroup>
+                      </Form.Group>
+
+                      <div className="d-grid mb-4">
                         <Button 
-                          variant="success" 
-                          size="sm" 
-                          className="me-2"
-                          onClick={createAdminManually}
-                          disabled={adminCreating}
+                          type="submit" 
+                          variant="primary" 
+                          size="lg"
+                          disabled={loginLoading}
+                          style={{
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            border: 'none',
+                            padding: '12px',
+                            fontWeight: '600'
+                          }}
                         >
-                          {adminCreating ? <Spinner size="sm" /> : 'Crear Admin'}
-                        </Button>
-                        <Button 
-                          variant="secondary" 
-                          size="sm"
-                          onClick={() => setShowCreateAdmin(false)}
-                        >
-                          Cancelar
+                          {loginLoading ? (
+                            <>
+                              <Spinner animation="border" size="sm" className="me-2" />
+                              Ingresando...
+                            </>
+                          ) : (
+                            'Ingresar al Sistema'
+                          )}
                         </Button>
                       </div>
-                    )}
-                  </div>
-                </Card.Body>
-              </Card>
-            </Col>
-          </Row>
-        </Container>
-      </div>
-    );
+                    </Form>
+
+                    <div className="text-center">
+                      <small className="text-muted">
+                        © 2025 Baires Inventory. Sistema de gestión integral.
+                      </small>
+                    </div>
+                  </Card.Body>
+                </Card>
+
+                {/* Información adicional */}
+                <div className="text-center mt-4">
+                  <small className="text-muted">
+                    ¿Problemas para acceder? Contacta al administrador del sistema
+                  </small>
+                </div>
+              </Col>
+            </Row>
+          </Container>
+        </Col>
+      </Row>
+    </Container>
+  </div>
+);
   };
 
   // Función para renderizar la vista actual
