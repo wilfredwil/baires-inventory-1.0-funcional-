@@ -95,6 +95,7 @@ import EmployeeDirectory from './components/EmployeeDirectory';
 import DashboardWidgets from './components/DashboardWidgets';
 import PublicScheduleViewer from './components/PublicScheduleViewer';
 import CreateUserComponent from './components/CreateUserComponent';
+import BarInventory from './components/BarInventory';
 
 // Styles
 import './styles/improvements.css';
@@ -1132,17 +1133,24 @@ function App() {
         );
       
       case 'bar':
-        if (!canAccessModule('bar')) {
-          return (
-            <Alert variant="warning">
-              <h4>Acceso Restringido</h4>
-              <p>No tienes permisos para acceder al módulo de bar.</p>
-              <Button variant="secondary" onClick={handleBackToDashboard}>
-                Volver al Dashboard
-              </Button>
-            </Alert>
-          );
-        }
+  if (!canAccessModule('bar')) {
+    return (
+      <Alert variant="warning">
+        <h4>Acceso Restringido</h4>
+        <p>No tienes permisos para acceder al inventario del bar.</p>
+        <Button variant="secondary" onClick={handleBackToDashboard}>
+          Volver al Dashboard
+        </Button>
+      </Alert>
+    );
+  }
+  return (
+    <BarInventory
+      onBack={handleBackToDashboard}
+      user={user}
+      userRole={userRole}
+    />
+  );
 
         const barProducts = inventory.filter(item => 
           item.tipo === 'licor' || 
