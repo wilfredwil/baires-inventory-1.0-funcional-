@@ -1,8 +1,8 @@
-// src/components/BarInventory.js - Sistema completo renovado
+// src/components/BarInventory.js - CORREGIDO para evitar error de índice
 import React, { useState, useEffect } from 'react';
 import {
   Container, Row, Col, Card, Button, Form, Modal, Alert, Badge,
-  Table, InputGroup, Dropdown, ProgressBar, OverlayTrigger, Tooltip
+  Table, InputGroup, Dropdown, ProgressBar, OverlayTrigger, Tooltip, Spinner
 } from 'react-bootstrap';
 import {
   FaWineGlass, FaPlus, FaSearch, FaFilter, FaDownload, FaChartBar,
@@ -13,7 +13,7 @@ import {
 } from 'react-icons/fa';
 import {
   collection, onSnapshot, query, orderBy, where, updateDoc, doc,
-  deleteDoc, addDoc, serverTimestamp
+  deleteDoc, addDoc, serverTimestamp, getDocs
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Pie, Bar, Line } from 'react-chartjs-2';
@@ -64,39 +64,62 @@ const BarInventory = ({ onBack, user, userRole }) => {
     { value: 'mixers', label: 'Mixers', icon: FaCocktail, color: '#20B2AA' }
   ];
 
-  // Cargar datos del inventario
+  // Cargar datos del inventario - CORREGIDO
   useEffect(() => {
     if (!user) return;
 
+    // CAMBIO: Usar solo el filtro where para tipo_inventario, sin orderBy para evitar índice compuesto
     const unsubscribeInventory = onSnapshot(
       query(
         collection(db, 'inventario'),
-        where('tipo_inventario', '==', 'bar'),
-        orderBy('nombre')
+        where('tipo_inventario', '==', 'bar')
+        // REMOVIDO: orderBy('nombre') para evitar error de índice
       ),
       (snapshot) => {
         const items = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
-        setInventory(items);
+        
+        // Ordenar en el cliente en lugar de en la consulta
+        const sortedItems = items.sort((a, b) => {
+          const aName = (a.nombre || '').toLowerCase();
+          const bName = (b.nombre || '').toLowerCase();
+          return aName.localeCompare(bName);
+        });
+        
+        setInventory(sortedItems);
         setLoading(false);
+        setError(''); // Limpiar error si la carga es exitosa
       },
       (error) => {
-        console.error('Error cargando inventario:', error);
-        setError('Error cargando inventario del bar');
+        console.error('Error cargando inventario del bar:', error);
+        setError('Error cargando inventario del bar. Verifica la conexión a Firebase.');
         setLoading(false);
+        
+        // Si hay error, mostrar los datos cacheados si existen
+        setInventory([]);
       }
     );
 
     const unsubscribeProviders = onSnapshot(
-      query(collection(db, 'providers'), orderBy('nombre')),
+      query(collection(db, 'providers')), // Sin orderBy para evitar problemas
       (snapshot) => {
         const providerData = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
-        setProviders(providerData.filter(p => p.tipo === 'bar' || p.tipo === 'ambos'));
+        
+        // Filtrar y ordenar en el cliente
+        const filteredProviders = providerData
+          .filter(p => p.tipo === 'bar' || p.tipo === 'ambos')
+          .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+          
+        setProviders(filteredProviders);
+      },
+      (error) => {
+        console.error('Error cargando proveedores:', error);
+        // No mostrar error para proveedores ya que no es crítico
       }
     );
 
@@ -187,517 +210,497 @@ const BarInventory = ({ onBack, user, userRole }) => {
   };
 
   // Funciones de manejo
-  const handleAddProduct = () => {
+  const handleAddItem = () => {
     setEditingItem(null);
     setShowItemModal(true);
   };
 
-  const handleEditProduct = (item) => {
+  const handleEditItem = (item) => {
     setEditingItem(item);
     setShowItemModal(true);
   };
 
   const handleDeleteItem = async (item) => {
-    if (window.confirm(`¿Estás seguro de eliminar "${item.nombre}"?`)) {
-      try {
-        await deleteDoc(doc(db, 'inventario', item.id));
-        setSuccess('Producto eliminado exitosamente');
-        setTimeout(() => setSuccess(''), 3000);
-      } catch (error) {
-        console.error('Error:', error);
-        setError('Error al eliminar producto');
-        setTimeout(() => setError(''), 3000);
-      }
-    }
-  };
+    if (!window.confirm(`¿Estás seguro de eliminar "${item.nombre}"?`)) return;
 
-  const handleQuickStockUpdate = async (item, newStock) => {
     try {
-      await updateDoc(doc(db, 'inventario', item.id), {
-        stock: newStock,
-        updated_at: serverTimestamp()
+      await deleteDoc(doc(db, 'inventario', item.id));
+      
+      // Registrar en historial
+      await addDoc(collection(db, 'historial'), {
+        item_nombre: item.nombre,
+        usuario: user.email,
+        tipo: 'eliminacion',
+        fecha: serverTimestamp(),
+        detalles: `Producto eliminado del inventario del bar`,
+        tipo_inventario: 'bar'
       });
-      setSuccess(`Stock de ${item.nombre} actualizado a ${newStock}`);
-      setTimeout(() => setSuccess(''), 2000);
+
+      setSuccess(`"${item.nombre}" eliminado correctamente`);
+      setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
-      console.error('Error:', error);
-      setError('Error actualizando stock');
+      console.error('Error eliminando producto:', error);
+      setError('Error al eliminar el producto');
       setTimeout(() => setError(''), 3000);
     }
   };
 
-  const getStockStatus = (item) => {
-    const stock = item.stock || 0;
-    const umbral = item.umbral_low || 5;
-    
-    if (stock === 0) {
-      return { status: 'out', label: 'Sin Stock', color: 'danger', progress: 0 };
-    } else if (stock <= umbral) {
-      return { status: 'low', label: 'Stock Bajo', color: 'warning', progress: 25 };
+  const handleItemSuccess = () => {
+    setShowItemModal(false);
+    setEditingItem(null);
+    setSuccess(editingItem ? 'Producto actualizado correctamente' : 'Producto agregado correctamente');
+    setTimeout(() => setSuccess(''), 3000);
+  };
+
+  // Funciones de exportación y utilidad
+  const exportToCSV = () => {
+    const headers = ['Nombre', 'Marca', 'Tipo', 'Stock', 'Unidad', 'Umbral Bajo', 'Precio', 'Estado'];
+    const csvContent = [
+      headers.join(','),
+      ...filteredInventory.map(item => [
+        item.nombre,
+        item.marca || '',
+        item.tipo || '',
+        item.stock || 0,
+        item.unidad || '',
+        item.umbral_low || 0,
+        item.precio || 0,
+        item.stock <= (item.umbral_low || 5) ? 'Stock Bajo' : 'Normal'
+      ].join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `inventario-bar-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+  };
+
+  const getStockBadge = (item) => {
+    if (item.stock === 0) {
+      return <Badge bg="danger">Sin Stock</Badge>;
+    } else if (item.stock <= (item.umbral_low || 5)) {
+      return <Badge bg="warning">Stock Bajo</Badge>;
     } else {
-      return { status: 'normal', label: 'Stock Normal', color: 'success', progress: 100 };
+      return <Badge bg="success">Normal</Badge>;
     }
   };
 
-  const renderProductCard = (item) => {
-    const category = categories.find(cat => cat.value === item.tipo?.toLowerCase()) || categories[0];
-    const stockStatus = getStockStatus(item);
-    const totalValue = (item.precio_venta || 0) * (item.stock || 0);
-
-    return (
-      <Card key={item.id} className="h-100 shadow-sm border-0">
-        <Card.Header 
-          className="border-0 pb-2"
-          style={{ 
-            background: `linear-gradient(135deg, ${category.color}15, ${category.color}05)`,
-            borderBottom: `3px solid ${category.color}`
-          }}
-        >
-          <div className="d-flex justify-content-between align-items-center">
-            <Badge 
-              style={{ 
-                backgroundColor: category.color + '20',
-                color: category.color,
-                border: `1px solid ${category.color}`
-              }}
-            >
-              <category.icon className="me-1" size={14} />
-              {category.label}
-            </Badge>
-            <Badge bg={stockStatus.color} className="ms-2">
-              {stockStatus.label}
-            </Badge>
-          </div>
-        </Card.Header>
-
-        <Card.Body>
-          <h6 className="fw-bold mb-1">{item.nombre}</h6>
-          {item.marca && (
-            <small className="text-muted d-block mb-2">{item.marca}</small>
-          )}
-
-          <div className="mb-3">
-            <div className="d-flex justify-content-between mb-1">
-              <small className="text-muted">Stock</small>
-              <small className={`fw-bold text-${stockStatus.color}`}>
-                {item.stock || 0} {item.unidad || 'und'}
-              </small>
-            </div>
-            <ProgressBar 
-              now={stockStatus.progress}
-              variant={stockStatus.status === 'out' ? 
-                      'danger' : 
-                      stockStatus.status === 'low' ? 'warning' : 'success'}
-              style={{ height: '6px' }}
-            />
-          </div>
-
-          <div className="d-flex gap-1">
-            <InputGroup size="sm">
-              <Form.Control
-                type="number"
-                min="0"
-                defaultValue={item.stock || 0}
-                onBlur={(e) => {
-                  const newStock = parseInt(e.target.value) || 0;
-                  if (newStock !== item.stock) {
-                    handleQuickStockUpdate(item, newStock);
-                  }
-                }}
-                style={{ maxWidth: '70px' }}
-              />
-              <Button 
-                variant="outline-primary" 
-                size="sm"
-                onClick={() => {
-                  setEditingItem(item);
-                  setShowItemModal(true);
-                }}
-              >
-                <FaEdit />
-              </Button>
-              {userRole === 'admin' && (
-                <Button 
-                  variant="outline-danger" 
-                  size="sm"
-                  onClick={() => handleDeleteItem(item)}
-                >
-                  <FaTrash />
-                </Button>
-              )}
-            </InputGroup>
-          </div>
-
-          {item.proveedor && (
-            <small className="text-muted mt-2 d-block">
-              Proveedor: {providers.find(p => p.id === item.proveedor_id)?.nombre || item.proveedor}
-            </small>
-          )}
-        </Card.Body>
-      </Card>
-    );
+  const getCategoryIcon = (tipo) => {
+    const category = categories.find(cat => cat.value === tipo?.toLowerCase());
+    const IconComponent = category?.icon || FaWineGlass;
+    return <IconComponent style={{ color: category?.color }} />;
   };
 
+  // Renderización condicional para loading y error
   if (loading) {
     return (
-      <Container className="text-center py-5">
-        <div className="spinner-border text-primary mb-3" />
-        <p>Cargando inventario del bar...</p>
+      <Container className="py-4">
+        <div className="text-center">
+          <Spinner animation="border" role="status" variant="primary" />
+          <p className="mt-2">Cargando inventario del bar...</p>
+        </div>
       </Container>
     );
   }
 
   return (
-    <Container fluid className="py-4">
+    <Container fluid className="py-3">
       {/* Header */}
       <Row className="mb-4">
         <Col>
           <div className="d-flex justify-content-between align-items-center">
-            <div>
+            <div className="d-flex align-items-center">
               <Button 
-                variant="link" 
+                variant="outline-secondary" 
                 onClick={onBack}
-                className="p-0 mb-2"
+                className="me-3"
               >
-                <FaArrowLeft className="me-2" />
-                Volver al Dashboard
+                <FaArrowLeft /> Volver
               </Button>
-              <h2 className="mb-1">
-                <FaWineGlass className="me-2 text-primary" />
-                Inventario del Bar
-              </h2>
-              <p className="text-muted mb-0">
-                Gestión completa de bebidas y productos del bar
-              </p>
+              <div>
+                <h2 className="mb-0">
+                  <FaWineGlass className="me-2 text-primary" />
+                  Inventario del Bar
+                </h2>
+                <small className="text-muted">
+                  Gestiona las bebidas y productos del bar
+                </small>
+              </div>
             </div>
             <div className="d-flex gap-2">
-              <Button 
-                variant="outline-secondary"
-                onClick={() => setShowMetrics(!showMetrics)}
+              <Button
+                variant="outline-primary"
+                onClick={exportToCSV}
+                disabled={filteredInventory.length === 0}
               >
-                <FaChartBar className="me-2" />
-                {showMetrics ? 'Ocultar' : 'Mostrar'} Métricas
+                <FaDownload /> Exportar
               </Button>
-              <Button variant="primary" onClick={handleAddProduct}>
-                <FaPlus className="me-2" />
-                Agregar Producto
-              </Button>
+              {(userRole === 'admin' || userRole === 'manager') && (
+                <Button 
+                  variant="primary" 
+                  onClick={handleAddItem}
+                >
+                  <FaPlus /> Nuevo Producto
+                </Button>
+              )}
             </div>
           </div>
         </Col>
       </Row>
 
       {/* Alertas */}
-      {error && <Alert variant="danger" dismissible onClose={() => setError('')}>{error}</Alert>}
-      {success && <Alert variant="success" dismissible onClose={() => setSuccess('')}>{success}</Alert>}
+      {error && (
+        <Alert variant="danger" dismissible onClose={() => setError('')}>
+          <FaExclamationTriangle className="me-2" />
+          {error}
+        </Alert>
+      )}
+      {success && (
+        <Alert variant="success" dismissible onClose={() => setSuccess('')}>
+          {success}
+        </Alert>
+      )}
 
       {/* Métricas */}
       {showMetrics && (
         <Row className="mb-4">
-          <Col lg={8}>
-            <Row>
-              <Col md={3} className="mb-3">
-                <Card className="text-center bg-primary text-white">
-                  <Card.Body>
-                    <FaBoxes size={32} className="mb-2" />
-                    <h3>{metrics.totalProducts}</h3>
-                    <p className="mb-0">Productos</p>
-                  </Card.Body>
-                </Card>
-              </Col>
-              <Col md={3} className="mb-3">
-                <Card className="text-center bg-success text-white">
-                  <Card.Body>
-                    <FaDollarSign size={32} className="mb-2" />
-                    <h3>${metrics.totalValue.toLocaleString()}</h3>
-                    <p className="mb-0">Valor Total</p>
-                  </Card.Body>
-                </Card>
-              </Col>
-              <Col md={3} className="mb-3">
-                <Card className="text-center bg-warning text-white">
-                  <Card.Body>
-                    <FaExclamationTriangle size={32} className="mb-2" />
-                    <h3>{metrics.lowStock}</h3>
-                    <p className="mb-0">Stock Bajo</p>
-                  </Card.Body>
-                </Card>
-              </Col>
-              <Col md={3} className="mb-3">
-                <Card className="text-center bg-info text-white">
-                  <Card.Body>
-                    <FaChartBar size={32} className="mb-2" />
-                    <h3>{Math.round(metrics.averageStock)}</h3>
-                    <p className="mb-0">Stock Promedio</p>
-                  </Card.Body>
-                </Card>
-              </Col>
-            </Row>
-          </Col>
-          <Col lg={4}>
-            <Card>
-              <Card.Header>
-                <h6 className="mb-0">Distribución por Categoría</h6>
-              </Card.Header>
+          <Col md={3}>
+            <Card className="text-center h-100">
               <Card.Body>
-                <div style={{ height: '200px' }}>
-                  <Pie 
-                    data={chartData.categories}
-                    options={{
-                      responsive: true,
-                      maintainAspectRatio: false,
-                      plugins: {
-                        legend: {
-                          position: 'bottom',
-                          labels: { fontSize: 12 }
-                        }
-                      }
-                    }}
-                  />
-                </div>
+                <FaBoxes className="mb-2 text-primary" size={24} />
+                <h4>{metrics.totalProducts}</h4>
+                <small className="text-muted">Total Productos</small>
+              </Card.Body>
+            </Card>
+          </Col>
+          <Col md={3}>
+            <Card className="text-center h-100">
+              <Card.Body>
+                <FaDollarSign className="mb-2 text-success" size={24} />
+                <h4>${metrics.totalValue.toLocaleString()}</h4>
+                <small className="text-muted">Valor Total</small>
+              </Card.Body>
+            </Card>
+          </Col>
+          <Col md={3}>
+            <Card className="text-center h-100">
+              <Card.Body>
+                <FaExclamationTriangle className="mb-2 text-warning" size={24} />
+                <h4>{metrics.lowStock}</h4>
+                <small className="text-muted">Stock Bajo</small>
+              </Card.Body>
+            </Card>
+          </Col>
+          <Col md={3}>
+            <Card className="text-center h-100">
+              <Card.Body>
+                <FaArrowDown className="mb-2 text-danger" size={24} />
+                <h4>{metrics.outOfStock}</h4>
+                <small className="text-muted">Sin Stock</small>
               </Card.Body>
             </Card>
           </Col>
         </Row>
       )}
 
-      {/* Filtros */}
-      <Row className="mb-4">
-        <Col>
-          <Card>
-            <Card.Body>
-              <Row className="align-items-end">
-                <Col md={3}>
-                  <Form.Group>
-                    <Form.Label>Buscar</Form.Label>
-                    <InputGroup>
-                      <InputGroup.Text><FaSearch /></InputGroup.Text>
-                      <Form.Control
-                        type="text"
-                        placeholder="Nombre o marca..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                      />
-                    </InputGroup>
-                  </Form.Group>
-                </Col>
-                <Col md={2}>
-                  <Form.Group>
-                    <Form.Label>Categoría</Form.Label>
-                    <Form.Select 
-                      value={categoryFilter} 
-                      onChange={(e) => setCategoryFilter(e.target.value)}
-                    >
-                      {categories.map(cat => (
-                        <option key={cat.value} value={cat.value}>{cat.label}</option>
-                      ))}
-                    </Form.Select>
-                  </Form.Group>
-                </Col>
-                <Col md={2}>
-                  <Form.Group>
-                    <Form.Label>Stock</Form.Label>
-                    <Form.Select 
-                      value={stockFilter} 
-                      onChange={(e) => setStockFilter(e.target.value)}
-                    >
-                      <option value="all">Todos</option>
-                      <option value="normal">Stock Normal</option>
-                      <option value="low">Stock Bajo</option>
-                    </Form.Select>
-                  </Form.Group>
-                </Col>
-                <Col md={2}>
-                  <Form.Group>
-                    <Form.Label>Ordenar</Form.Label>
-                    <Dropdown>
-                      <Dropdown.Toggle variant="outline-secondary" className="w-100">
-                        <FaSort className="me-1" />
-                        Orden
-                      </Dropdown.Toggle>
-                      <Dropdown.Menu>
-                        <Dropdown.Item onClick={() => { setSortBy('nombre'); setSortOrder('asc'); }}>
-                          <FaSortUp className="me-2" />Nombre A-Z
-                        </Dropdown.Item>
-                        <Dropdown.Item onClick={() => { setSortBy('nombre'); setSortOrder('desc'); }}>
-                          <FaSortDown className="me-2" />Nombre Z-A
-                        </Dropdown.Item>
-                        <Dropdown.Item onClick={() => { setSortBy('stock'); setSortOrder('asc'); }}>
-                          <FaSortAmountDown className="me-2" />Stock Menor
-                        </Dropdown.Item>
-                        <Dropdown.Item onClick={() => { setSortBy('stock'); setSortOrder('desc'); }}>
-                          <FaSortAmountUp className="me-2" />Stock Mayor
-                        </Dropdown.Item>
-                      </Dropdown.Menu>
-                    </Dropdown>
-                  </Form.Group>
-                </Col>
-                <Col md={2}>
-                  <Form.Group>
-                    <Form.Label>Vista</Form.Label>
-                    <div className="d-flex gap-1">
-                      <Button
-                        variant={viewMode === 'cards' ? 'primary' : 'outline-secondary'}
-                        onClick={() => setViewMode('cards')}
-                        className="flex-fill"
-                      >
-                        <FaTh />
-                      </Button>
-                      <Button
-                        variant={viewMode === 'table' ? 'primary' : 'outline-secondary'}
-                        onClick={() => setViewMode('table')}
-                        className="flex-fill"
-                      >
-                        <FaList />
-                      </Button>
-                    </div>
-                  </Form.Group>
-                </Col>
-              </Row>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
+      {/* Controles de filtro y búsqueda */}
+      <Card className="mb-4">
+        <Card.Body>
+          <Row>
+            <Col md={4}>
+              <InputGroup>
+                <InputGroup.Text>
+                  <FaSearch />
+                </InputGroup.Text>
+                <Form.Control
+                  type="text"
+                  placeholder="Buscar por nombre o marca..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </InputGroup>
+            </Col>
+            <Col md={2}>
+              <Form.Select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+              >
+                {categories.map(cat => (
+                  <option key={cat.value} value={cat.value}>
+                    {cat.label}
+                  </option>
+                ))}
+              </Form.Select>
+            </Col>
+            <Col md={2}>
+              <Form.Select
+                value={stockFilter}
+                onChange={(e) => setStockFilter(e.target.value)}
+              >
+                <option value="all">Todos los stocks</option>
+                <option value="normal">Stock normal</option>
+                <option value="low">Stock bajo</option>
+              </Form.Select>
+            </Col>
+            <Col md={2}>
+              <Form.Select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+              >
+                <option value="nombre">Nombre</option>
+                <option value="marca">Marca</option>
+                <option value="tipo">Tipo</option>
+                <option value="stock">Stock</option>
+                <option value="precio">Precio</option>
+              </Form.Select>
+            </Col>
+            <Col md={2}>
+              <div className="d-flex gap-1">
+                <Button
+                  variant={viewMode === 'cards' ? 'primary' : 'outline-primary'}
+                  size="sm"
+                  onClick={() => setViewMode('cards')}
+                >
+                  <FaTh />
+                </Button>
+                <Button
+                  variant={viewMode === 'table' ? 'primary' : 'outline-primary'}
+                  size="sm"
+                  onClick={() => setViewMode('table')}
+                >
+                  <FaList />
+                </Button>
+                <Button
+                  variant="outline-secondary"
+                  size="sm"
+                  onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                >
+                  {sortOrder === 'asc' ? <FaSortUp /> : <FaSortDown />}
+                </Button>
+              </div>
+            </Col>
+          </Row>
+        </Card.Body>
+      </Card>
 
-      {/* Contenido del inventario */}
-      {filteredInventory.length === 0 ? (
-        <Card className="text-center py-5">
-          <Card.Body>
-            <FaWineGlass size={64} className="text-muted mb-3" />
-            <h4>No hay productos</h4>
-            <p className="text-muted mb-4">
-              {searchTerm || categoryFilter !== 'all' || stockFilter !== 'all' 
-                ? 'No se encontraron productos con los filtros aplicados.'
-                : 'Comienza agregando productos al inventario del bar.'}
-            </p>
-            <Button variant="primary" onClick={handleAddProduct}>
-              <FaPlus className="me-2" />
-              Agregar Primer Producto
-            </Button>
+      {/* Lista de productos */}
+      {viewMode === 'cards' ? (
+        <Row>
+          {filteredInventory.map(item => (
+            <Col key={item.id} lg={4} md={6} className="mb-3">
+              <Card className={`h-100 ${item.stock <= (item.umbral_low || 5) ? 'border-warning' : ''}`}>
+                <Card.Body>
+                  <div className="d-flex justify-content-between align-items-start">
+                    <div>
+                      <h6 className="mb-1">
+                        {getCategoryIcon(item.tipo)}
+                        <span className="ms-2">{item.nombre}</span>
+                      </h6>
+                      <p className="text-muted small mb-2">
+                        {item.marca} • {item.tipo}
+                      </p>
+                    </div>
+                    {getStockBadge(item)}
+                  </div>
+
+                  <div className="mb-3">
+                    <div className="d-flex justify-content-between">
+                      <span>Stock:</span>
+                      <strong>{item.stock} {item.unidad}</strong>
+                    </div>
+                    <div className="d-flex justify-content-between">
+                      <span>Precio:</span>
+                      <strong>${item.precio}</strong>
+                    </div>
+                    <ProgressBar
+                      now={Math.min((item.stock / Math.max(item.umbral_low * 3, 1)) * 100, 100)}
+                      variant={item.stock <= (item.umbral_low || 5) ? 'warning' : 'success'}
+                      size="sm"
+                      className="mt-2"
+                    />
+                  </div>
+
+                  <div className="d-flex justify-content-end gap-1">
+                    <Button
+                      variant="outline-primary"
+                      size="sm"
+                      onClick={() => handleEditItem(item)}
+                    >
+                      <FaEdit />
+                    </Button>
+                    {(userRole === 'admin' || userRole === 'manager') && (
+                      <Button
+                        variant="outline-danger"
+                        size="sm"
+                        onClick={() => handleDeleteItem(item)}
+                      >
+                        <FaTrash />
+                      </Button>
+                    )}
+                  </div>
+                </Card.Body>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+      ) : (
+        <Card>
+          <Card.Body className="p-0">
+            <Table striped hover responsive>
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Marca</th>
+                  <th>Tipo</th>
+                  <th>Stock</th>
+                  <th>Precio</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredInventory.map(item => (
+                  <tr key={item.id}>
+                    <td>
+                      {getCategoryIcon(item)}
+                      <span className="ms-2">{item.nombre}</span>
+                    </td>
+                    <td>{item.marca}</td>
+                    <td>{item.tipo}{item.subTipo && ` (${item.subTipo})`}</td>
+                    <td>{item.stock} {item.unidad}</td>
+                    <td>${item.precio}</td>
+                    <td>{getStockBadge(item)}</td>
+                    <td>
+                      <div className="d-flex gap-1">
+                        <Button
+                          variant="outline-primary"
+                          size="sm"
+                          onClick={() => handleEditItem(item)}
+                        >
+                          <FaEdit />
+                        </Button>
+                        {(userRole === 'admin' || userRole === 'manager') && (
+                          <Button
+                            variant="outline-danger"
+                            size="sm"
+                            onClick={() => handleDeleteItem(item)}
+                          >
+                            <FaTrash />
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
           </Card.Body>
         </Card>
-      ) : (
-        <>
-          {viewMode === 'cards' ? (
-            <Row>
-              {filteredInventory.map(item => (
-                <Col key={item.id} xl={3} lg={4} md={6} className="mb-4">
-                  {renderProductCard(item)}
-                </Col>
-              ))}
-            </Row>
-          ) : (
-            <Card>
-              <Card.Body>
-                <Table responsive hover>
-                  <thead>
-                    <tr>
-                      <th>Producto</th>
-                      <th>Categoría</th>
-                      <th>Stock</th>
-                      <th>Precio</th>
-                      <th>Valor Total</th>
-                      <th>Estado</th>
-                      <th>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredInventory.map(item => {
-                      const category = categories.find(cat => cat.value === item.tipo?.toLowerCase()) || categories[0];
-                      const stockStatus = getStockStatus(item);
-                      
-                      return (
-                        <tr key={item.id}>
-                          <td>
-                            <div>
-                              <div className="fw-medium">{item.nombre}</div>
-                              {item.marca && <small className="text-muted">{item.marca}</small>}
-                            </div>
-                          </td>
-                          <td>
-                            <Badge 
-                              style={{ 
-                                backgroundColor: category.color + '20',
-                                color: category.color,
-                                border: `1px solid ${category.color}`
-                              }}
-                            >
-                              <category.icon className="me-1" size={12} />
-                              {category.label}
-                            </Badge>
-                          </td>
-                          <td>
-                            <span className={`text-${stockStatus.color} fw-bold`}>
-                              {item.stock || 0} {item.unidad || 'und'}
-                            </span>
-                          </td>
-                          <td>${item.precio_venta || 0}</td>
-                          <td>${((item.precio_venta || 0) * (item.stock || 0)).toFixed(2)}</td>
-                          <td>
-                            <Badge bg={stockStatus.color}>
-                              {stockStatus.label}
-                            </Badge>
-                          </td>
-                          <td>
-                            <div className="d-flex gap-1">
-                              <Button 
-                                variant="outline-primary" 
-                                size="sm"
-                                onClick={() => handleEditProduct(item)}
-                              >
-                                <FaEdit />
-                              </Button>
-                              {userRole === 'admin' && (
-                                <Button 
-                                  variant="outline-danger" 
-                                  size="sm"
-                                  onClick={() => handleDeleteItem(item)}
-                                >
-                                  <FaTrash />
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </Table>
-              </Card.Body>
-            </Card>
-          )}
-        </>
       )}
 
-      {/* Modal para agregar/editar productos */}
-      <Modal show={showItemModal} onHide={() => setShowItemModal(false)} size="lg">
-        <Modal.Header closeButton>
-          <Modal.Title>
-            <FaWineGlass className="me-2" />
-            {editingItem ? 'Editar Producto' : 'Agregar Producto'}
-          </Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <InventoryItemForm
-            editingItem={editingItem}
-            onSuccess={() => {
-              setShowItemModal(false);
-              setEditingItem(null);
-              setSuccess(editingItem ? 'Producto actualizado' : 'Producto agregado');
-              setTimeout(() => setSuccess(''), 3000);
-            }}
-            onCancel={() => {
-              setShowItemModal(false);
-              setEditingItem(null);
-            }}
-            currentUser={user}
-            userRole={userRole}
-            providers={providers}
-            inventoryType="bar"
-            canEditAllFields={true}
-          />
-        </Modal.Body>
-      </Modal>
+      {/* Mensaje si no hay resultados */}
+      {filteredInventory.length === 0 && !loading && (
+        <Card>
+          <Card.Body className="text-center py-5">
+            <FaWineGlass size={48} className="text-muted mb-3" />
+            <h5>
+              {inventory.length === 0 
+                ? 'No hay productos en el inventario del bar' 
+                : 'No se encontraron productos con los filtros actuales'
+              }
+            </h5>
+            <p className="text-muted">
+              {inventory.length === 0 
+                ? 'Comienza agregando productos al inventario del bar'
+                : searchTerm || categoryFilter !== 'all' || stockFilter !== 'all' 
+                  ? 'Intenta ajustar los filtros de búsqueda'
+                  : 'Todos los productos están ocultos por los filtros actuales'
+              }
+            </p>
+            
+            {/* Información de debug */}
+            <div className="mt-3 p-3 bg-light rounded">
+              <small className="text-muted">
+                <strong>Debug:</strong><br/>
+                Total en inventario: {inventory.length}<br/>
+                Filtros: búsqueda="{searchTerm}", categoría="{categoryFilter}", stock="{stockFilter}"<br/>
+                Productos después de filtros: {filteredInventory.length}<br/>
+                Usuario: {user?.email}<br/>
+                Loading: {loading ? 'Sí' : 'No'}<br/>
+                Error: {error || 'Ninguno'}
+              </small>
+              
+              <div className="mt-2">
+                <Button
+                  variant="outline-success"
+                  size="sm"
+                  className="me-2"
+                  onClick={loadInventoryData}
+                  disabled={loading}
+                >
+                  {loading ? '🔄 Cargando...' : '🔄 Cargar Productos Manualmente'}
+                </Button>
+                
+                <Button
+                  variant="outline-info"
+                  size="sm"
+                  onClick={async () => {
+                    console.log('🔬 TEST: Verificando conexión a Firebase...');
+                    try {
+                      const snapshot = await getDocs(collection(db, 'inventario'));
+                      console.log('🔬 TEST: Documentos encontrados:', snapshot.size);
+                      
+                      const barTypes = ['licor', 'whisky', 'vodka', 'ron', 'gin', 'tequila', 'cerveza', 'vino', 'champagne', 'mixers'];
+                      let barCount = 0;
+                      
+                      snapshot.docs.forEach(doc => {
+                        const data = doc.data();
+                        const itemType = (data.tipo || '').toLowerCase();
+                        const itemSubType = (data.subTipo || '').toLowerCase();
+                        const isBarItem = barTypes.includes(itemType) || barTypes.includes(itemSubType);
+                        
+                        if (isBarItem) barCount++;
+                        
+                        console.log('🔬 TEST:', data.nombre, '| Tipo:', data.tipo, '| SubTipo:', data.subTipo, '| Es del bar:', isBarItem);
+                      });
+                      
+                      console.log('🔬 TEST: Total productos del bar:', barCount);
+                      alert(`Encontrados ${snapshot.size} productos, ${barCount} son del bar`);
+                    } catch (error) {
+                      console.error('🔬 TEST ERROR:', error);
+                      alert('Error: ' + error.message);
+                    }
+                  }}
+                >
+                  🔍 Test Manual de Base de Datos
+                </Button>
+              </div>
+            </div>
+            
+            {(userRole === 'admin' || userRole === 'manager') && inventory.length === 0 && (
+              <Button variant="primary" onClick={handleAddItem} className="mt-3">
+                <FaPlus /> Agregar Primer Producto del Bar
+              </Button>
+            )}
+          </Card.Body>
+        </Card>
+      )}
+
+      {/* Modal de formulario */}
+      <InventoryItemForm
+        show={showItemModal}
+        onHide={() => {
+          setShowItemModal(false);
+          setEditingItem(null);
+        }}
+        item={editingItem}
+        userRole={userRole}
+        user={user}
+        onSuccess={handleItemSuccess}
+        providers={providers}
+      />
     </Container>
   );
 };
