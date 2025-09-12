@@ -22,6 +22,7 @@ import {
   Tooltip as ChartTooltip, Legend, ArcElement, PointElement, LineElement
 } from 'chart.js';
 import InventoryItemForm from './InventoryItemForm';
+import { exportCriticalStockToPDF } from '../utils/pdfExport';
 
 // Registrar componentes de Chart.js
 ChartJS.register(
@@ -68,54 +69,60 @@ const BarInventory = ({ onBack, user, userRole }) => {
     { value: 'champagne', label: 'Champagne', icon: FaWineGlass, color: '#FFD700' },
     { value: 'aperitivo', label: 'Aperitivo', icon: FaCocktail, color: '#FFA500' },
   ];
+  
 
   // Función para generar PDFs usando window.print con agrupación
-  const generatePDF = (type, filterValue = null) => {
-    let itemsToInclude = [];
-    let reportTitle = '';
-    let reportSubtitle = '';
+const generatePDF = (type, filterValue = null) => {
+  let itemsToInclude = [];
+  let reportTitle = '';
+  let reportSubtitle = '';
 
-    switch (type) {
-      case 'complete':
-        itemsToInclude = inventory;
-        reportTitle = 'Reporte Completo de Inventario del Bar';
-        reportSubtitle = `${inventory.length} productos agrupados por categoría`;
-        break;
-      
-      case 'low-stock':
-        itemsToInclude = inventory.filter(item => item.stock <= (item.umbral_low || 5) && item.stock > 0);
-        reportTitle = 'Reporte de Stock Bajo';
-        reportSubtitle = `${itemsToInclude.length} productos con stock bajo`;
-        break;
-      
-      case 'out-of-stock':
-        itemsToInclude = inventory.filter(item => item.stock === 0);
-        reportTitle = 'Reporte de Productos Sin Stock';
-        reportSubtitle = `${itemsToInclude.length} productos agotados`;
-        break;
-      
-      case 'category':
-        itemsToInclude = inventory.filter(item => 
-          (item.tipo?.toLowerCase() === filterValue) || 
-          (item.subTipo?.toLowerCase() === filterValue)
-        );
-        const categoryInfo = categories.find(cat => cat.value === filterValue);
-        reportTitle = `Reporte de ${categoryInfo?.label || filterValue}`;
-        reportSubtitle = `${itemsToInclude.length} productos en esta categoría`;
-        break;
-      
-      case 'provider':
-        itemsToInclude = inventory.filter(item => item.proveedor_id === filterValue);
-        const providerInfo = providers.find(p => p.id === filterValue);
-        reportTitle = `Reporte por Proveedor: ${providerInfo?.nombre || 'Proveedor'}`;
-        reportSubtitle = `${itemsToInclude.length} productos - Orden de compra sugerida`;
-        break;
-    }
+  switch (type) {
+    case 'complete':
+      itemsToInclude = inventory;
+      reportTitle = 'Reporte Completo de Inventario del Bar';
+      reportSubtitle = `${inventory.length} productos agrupados por categoría`;
+      break;
+    
+    case 'low-stock':
+      itemsToInclude = inventory.filter(item => item.stock <= (item.umbral_low || 5) && item.stock > 0);
+      reportTitle = 'Reporte de Stock Bajo';
+      reportSubtitle = `${itemsToInclude.length} productos con stock bajo`;
+      break;
+    
+    case 'out-of-stock':
+      itemsToInclude = inventory.filter(item => item.stock === 0);
+      reportTitle = 'Reporte de Productos Sin Stock';
+      reportSubtitle = `${itemsToInclude.length} productos agotados`;
+      break;
+    
+    case 'critical-stock':
+      // Usar la nueva función para stock crítico que combina sin stock y stock bajo
+      exportCriticalStockToPDF(inventory);
+      return; // Salir aquí ya que la nueva función maneja todo
+    
+    case 'category':
+      itemsToInclude = inventory.filter(item => 
+        (item.tipo?.toLowerCase() === filterValue) || 
+        (item.subTipo?.toLowerCase() === filterValue)
+      );
+      const categoryInfo = categories.find(cat => cat.value === filterValue);
+      reportTitle = `Reporte de ${categoryInfo?.label || filterValue}`;
+      reportSubtitle = `${itemsToInclude.length} productos en esta categoría`;
+      break;
+    
+    case 'provider':
+      itemsToInclude = inventory.filter(item => item.proveedor_id === filterValue);
+      const providerInfo = providers.find(p => p.id === filterValue);
+      reportTitle = `Reporte por Proveedor: ${providerInfo?.nombre || 'Proveedor'}`;
+      reportSubtitle = `${itemsToInclude.length} productos - Orden de compra sugerida`;
+      break;
+  }
 
-    if (itemsToInclude.length === 0) {
-      alert('No hay productos para incluir en este reporte.');
-      return;
-    }
+  if (itemsToInclude.length === 0) {
+    alert('No hay productos para incluir en este reporte.');
+    return;
+  }
 
     // Función para agrupar productos
     const groupItems = (items, groupBy) => {
@@ -677,12 +684,9 @@ const BarInventory = ({ onBack, user, userRole }) => {
                   <Dropdown.Item onClick={() => generatePDF('complete')}>
                     📊 Reporte Completo (Agrupado)
                   </Dropdown.Item>
-                  <Dropdown.Item onClick={() => generatePDF('low-stock')}>
-                    ⚠️ Solo Stock Bajo
-                  </Dropdown.Item>
-                  <Dropdown.Item onClick={() => generatePDF('out-of-stock')}>
-                    🚫 Solo Sin Stock
-                  </Dropdown.Item>
+                  <Dropdown.Item onClick={() => generatePDF('critical-stock')}>
+  🚨 Stock Crítico (Sin Stock + Stock Bajo)
+</Dropdown.Item>
                   <Dropdown.Divider />
                   <Dropdown.Header>Por Categorías</Dropdown.Header>
                   {categories.slice(1).map(cat => {
