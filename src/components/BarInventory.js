@@ -9,7 +9,7 @@ import {
   FaExclamationTriangle, FaArrowUp, FaArrowDown, FaEye, FaEdit,
   FaTrash, FaTh, FaList, FaSort, FaSortUp, FaSortDown, FaWineBottle,
   FaBeer, FaCocktail, FaGlassWhiskey, FaBoxes, FaDollarSign,
-  FaArrowLeft, FaSync, FaBolt, FaTrendingUp, FaTrendingDown
+  FaArrowLeft, FaSync, FaBolt, FaSortAmountUp, FaSortAmountDown
 } from 'react-icons/fa';
 import {
   collection, onSnapshot, query, orderBy, where, updateDoc, doc,
@@ -64,7 +64,7 @@ const BarInventory = ({ onBack, user, userRole }) => {
     { value: 'mixers', label: 'Mixers', icon: FaCocktail, color: '#20B2AA' }
   ];
 
-  // Cargar datos
+  // Cargar datos del inventario
   useEffect(() => {
     if (!user) return;
 
@@ -179,119 +179,114 @@ const BarInventory = ({ onBack, user, userRole }) => {
       datasets: [{
         label: 'Valor en Stock ($)',
         data: metrics.topCategories.map(cat => cat.value),
-        backgroundColor: 'rgba(54, 162, 235, 0.6)',
-        borderColor: 'rgba(54, 162, 235, 1)',
+        backgroundColor: metrics.topCategories.map(cat => cat.color + '80'),
+        borderColor: metrics.topCategories.map(cat => cat.color),
         borderWidth: 2
       }]
     }
   };
 
-  // Handlers
+  // Funciones de manejo
+  const handleAddProduct = () => {
+    setEditingItem(null);
+    setShowItemModal(true);
+  };
+
+  const handleEditProduct = (item) => {
+    setEditingItem(item);
+    setShowItemModal(true);
+  };
+
+  const handleDeleteItem = async (item) => {
+    if (window.confirm(`¿Estás seguro de eliminar "${item.nombre}"?`)) {
+      try {
+        await deleteDoc(doc(db, 'inventario', item.id));
+        setSuccess('Producto eliminado exitosamente');
+        setTimeout(() => setSuccess(''), 3000);
+      } catch (error) {
+        console.error('Error:', error);
+        setError('Error al eliminar producto');
+        setTimeout(() => setError(''), 3000);
+      }
+    }
+  };
+
   const handleQuickStockUpdate = async (item, newStock) => {
     try {
       await updateDoc(doc(db, 'inventario', item.id), {
         stock: newStock,
-        ultima_actualizacion: serverTimestamp(),
-        actualizado_por: user.email
+        updated_at: serverTimestamp()
       });
-      
       setSuccess(`Stock de ${item.nombre} actualizado a ${newStock}`);
-      setTimeout(() => setSuccess(''), 3000);
+      setTimeout(() => setSuccess(''), 2000);
     } catch (error) {
+      console.error('Error:', error);
       setError('Error actualizando stock');
-      setTimeout(() => setError(''), 3000);
-    }
-  };
-
-  const handleDeleteItem = async (item) => {
-    if (!window.confirm(`¿Eliminar ${item.nombre} del inventario?`)) return;
-
-    try {
-      await deleteDoc(doc(db, 'inventario', item.id));
-      setSuccess(`${item.nombre} eliminado del inventario`);
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (error) {
-      setError('Error eliminando producto');
       setTimeout(() => setError(''), 3000);
     }
   };
 
   const getStockStatus = (item) => {
     const stock = item.stock || 0;
-    const threshold = item.umbral_low || 5;
+    const umbral = item.umbral_low || 5;
     
-    if (stock === 0) return { status: 'critical', color: '#dc3545', label: 'Sin Stock' };
-    if (stock <= threshold) return { status: 'low', color: '#ffc107', label: 'Stock Bajo' };
-    return { status: 'normal', color: '#28a745', label: 'Normal' };
+    if (stock === 0) {
+      return { status: 'out', label: 'Sin Stock', color: 'danger', progress: 0 };
+    } else if (stock <= umbral) {
+      return { status: 'low', label: 'Stock Bajo', color: 'warning', progress: 25 };
+    } else {
+      return { status: 'normal', label: 'Stock Normal', color: 'success', progress: 100 };
+    }
   };
 
-  const ProductCard = ({ item }) => {
-    const stockStatus = getStockStatus(item);
+  const renderProductCard = (item) => {
     const category = categories.find(cat => cat.value === item.tipo?.toLowerCase()) || categories[0];
-    
-    return (
-      <Card className="h-100 shadow-sm border-0 product-card" style={{ borderRadius: '15px' }}>
-        <div 
-          className="position-absolute w-100" 
-          style={{ 
-            top: 0, 
-            height: '4px', 
-            background: `linear-gradient(90deg, ${category.color}, ${category.color}99)`,
-            borderRadius: '15px 15px 0 0'
-          }} 
-        />
-        
-        <Card.Body className="p-3">
-          <div className="d-flex justify-content-between align-items-start mb-2">
-            <div className="flex-grow-1">
-              <h6 className="card-title mb-1 fw-bold">{item.nombre}</h6>
-              {item.marca && <small className="text-muted">{item.marca}</small>}
-            </div>
-            <div className="d-flex align-items-center gap-2">
-              <div 
-                className="rounded-circle" 
-                style={{ 
-                  width: '12px', 
-                  height: '12px', 
-                  backgroundColor: stockStatus.color,
-                  boxShadow: stockStatus.status === 'critical' ? `0 0 10px ${stockStatus.color}` : 'none'
-                }} 
-              />
-              <category.icon style={{ color: category.color, fontSize: '1.1rem' }} />
-            </div>
-          </div>
+    const stockStatus = getStockStatus(item);
+    const totalValue = (item.precio_venta || 0) * (item.stock || 0);
 
-          <div className="mb-3">
-            <Badge bg="light" text="dark" className="me-2">
-              {item.tipo || 'Sin categoría'}
+    return (
+      <Card key={item.id} className="h-100 shadow-sm border-0">
+        <Card.Header 
+          className="border-0 pb-2"
+          style={{ 
+            background: `linear-gradient(135deg, ${category.color}15, ${category.color}05)`,
+            borderBottom: `3px solid ${category.color}`
+          }}
+        >
+          <div className="d-flex justify-content-between align-items-center">
+            <Badge 
+              style={{ 
+                backgroundColor: category.color + '20',
+                color: category.color,
+                border: `1px solid ${category.color}`
+              }}
+            >
+              <category.icon className="me-1" size={14} />
+              {category.label}
             </Badge>
-            <Badge bg={stockStatus.status === 'critical' ? 'danger' : 
-                      stockStatus.status === 'low' ? 'warning' : 'success'}>
+            <Badge bg={stockStatus.color} className="ms-2">
               {stockStatus.label}
             </Badge>
           </div>
+        </Card.Header>
 
-          <div className="row g-2 mb-3">
-            <div className="col-6">
-              <small className="text-muted d-block">Stock</small>
-              <div className="d-flex align-items-center">
-                <strong className={`me-2 ${stockStatus.status === 'critical' ? 'text-danger' : ''}`}>
-                  {item.stock || 0}
-                </strong>
-                <small className="text-muted">{item.unidad || 'und'}</small>
-              </div>
-            </div>
-            <div className="col-6">
-              <small className="text-muted d-block">Precio</small>
-              <strong className="text-success">${item.precio_venta || 0}</strong>
-            </div>
-          </div>
+        <Card.Body>
+          <h6 className="fw-bold mb-1">{item.nombre}</h6>
+          {item.marca && (
+            <small className="text-muted d-block mb-2">{item.marca}</small>
+          )}
 
           <div className="mb-3">
-            <small className="text-muted">Umbral mínimo: {item.umbral_low || 5}</small>
+            <div className="d-flex justify-content-between mb-1">
+              <small className="text-muted">Stock</small>
+              <small className={`fw-bold text-${stockStatus.color}`}>
+                {item.stock || 0} {item.unidad || 'und'}
+              </small>
+            </div>
             <ProgressBar 
-              now={Math.min((item.stock / (item.umbral_low * 2 || 10)) * 100, 100)}
-              variant={stockStatus.status === 'critical' ? 'danger' : 
+              now={stockStatus.progress}
+              variant={stockStatus.status === 'out' ? 
+                      'danger' : 
                       stockStatus.status === 'low' ? 'warning' : 'success'}
               style={{ height: '6px' }}
             />
@@ -383,15 +378,9 @@ const BarInventory = ({ onBack, user, userRole }) => {
                 <FaChartBar className="me-2" />
                 {showMetrics ? 'Ocultar' : 'Mostrar'} Métricas
               </Button>
-              <Button 
-                variant="primary"
-                onClick={() => {
-                  setEditingItem(null);
-                  setShowItemModal(true);
-                }}
-              >
+              <Button variant="primary" onClick={handleAddProduct}>
                 <FaPlus className="me-2" />
-                Nuevo Producto
+                Agregar Producto
               </Button>
             </div>
           </div>
@@ -399,139 +388,72 @@ const BarInventory = ({ onBack, user, userRole }) => {
       </Row>
 
       {/* Alertas */}
-      {error && (
-        <Alert variant="danger" dismissible onClose={() => setError('')}>
-          {error}
-        </Alert>
-      )}
-      {success && (
-        <Alert variant="success" dismissible onClose={() => setSuccess('')}>
-          {success}
-        </Alert>
-      )}
+      {error && <Alert variant="danger" dismissible onClose={() => setError('')}>{error}</Alert>}
+      {success && <Alert variant="success" dismissible onClose={() => setSuccess('')}>{success}</Alert>}
 
-      {/* Métricas Dashboard */}
+      {/* Métricas */}
       {showMetrics && (
         <Row className="mb-4">
-          {/* Métricas principales */}
           <Col lg={8}>
-            <Row className="g-3 mb-4">
-              <Col md={3}>
-                <Card className="text-center border-0 shadow-sm h-100">
-                  <Card.Body className="py-3">
-                    <FaBoxes className="text-primary mb-2" size={24} />
-                    <h4 className="mb-1 text-primary">{metrics.totalProducts}</h4>
-                    <small className="text-muted">Total Productos</small>
-                  </Card.Body>
-                </Card>
-              </Col>
-              <Col md={3}>
-                <Card className="text-center border-0 shadow-sm h-100">
-                  <Card.Body className="py-3">
-                    <FaDollarSign className="text-success mb-2" size={24} />
-                    <h4 className="mb-1 text-success">${metrics.totalValue.toLocaleString()}</h4>
-                    <small className="text-muted">Valor Total</small>
-                  </Card.Body>
-                </Card>
-              </Col>
-              <Col md={3}>
-                <Card className="text-center border-0 shadow-sm h-100">
-                  <Card.Body className="py-3">
-                    <FaExclamationTriangle className="text-warning mb-2" size={24} />
-                    <h4 className="mb-1 text-warning">{metrics.lowStock}</h4>
-                    <small className="text-muted">Stock Bajo</small>
-                  </Card.Body>
-                </Card>
-              </Col>
-              <Col md={3}>
-                <Card className="text-center border-0 shadow-sm h-100">
-                  <Card.Body className="py-3">
-                    <FaBolt className="text-danger mb-2" size={24} />
-                    <h4 className="mb-1 text-danger">{metrics.outOfStock}</h4>
-                    <small className="text-muted">Sin Stock</small>
-                  </Card.Body>
-                </Card>
-              </Col>
-            </Row>
-
-            {/* Gráficos */}
-            <Row className="g-3">
-              <Col md={6}>
-                <Card className="border-0 shadow-sm h-100">
-                  <Card.Header className="bg-transparent border-0">
-                    <h6 className="mb-0">Distribución por Categoría</h6>
-                  </Card.Header>
+            <Row>
+              <Col md={3} className="mb-3">
+                <Card className="text-center bg-primary text-white">
                   <Card.Body>
-                    <Pie 
-                      data={chartData.categories}
-                      options={{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                          legend: {
-                            position: 'bottom',
-                            labels: { boxWidth: 12 }
-                          }
-                        }
-                      }}
-                      height={200}
-                    />
+                    <FaBoxes size={32} className="mb-2" />
+                    <h3>{metrics.totalProducts}</h3>
+                    <p className="mb-0">Productos</p>
                   </Card.Body>
                 </Card>
               </Col>
-              <Col md={6}>
-                <Card className="border-0 shadow-sm h-100">
-                  <Card.Header className="bg-transparent border-0">
-                    <h6 className="mb-0">Estado del Stock</h6>
-                  </Card.Header>
+              <Col md={3} className="mb-3">
+                <Card className="text-center bg-success text-white">
                   <Card.Body>
-                    <Pie 
-                      data={chartData.stockLevels}
-                      options={{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                          legend: {
-                            position: 'bottom',
-                            labels: { boxWidth: 12 }
-                          }
-                        }
-                      }}
-                      height={200}
-                    />
+                    <FaDollarSign size={32} className="mb-2" />
+                    <h3>${metrics.totalValue.toLocaleString()}</h3>
+                    <p className="mb-0">Valor Total</p>
+                  </Card.Body>
+                </Card>
+              </Col>
+              <Col md={3} className="mb-3">
+                <Card className="text-center bg-warning text-white">
+                  <Card.Body>
+                    <FaExclamationTriangle size={32} className="mb-2" />
+                    <h3>{metrics.lowStock}</h3>
+                    <p className="mb-0">Stock Bajo</p>
+                  </Card.Body>
+                </Card>
+              </Col>
+              <Col md={3} className="mb-3">
+                <Card className="text-center bg-info text-white">
+                  <Card.Body>
+                    <FaChartBar size={32} className="mb-2" />
+                    <h3>{Math.round(metrics.averageStock)}</h3>
+                    <p className="mb-0">Stock Promedio</p>
                   </Card.Body>
                 </Card>
               </Col>
             </Row>
           </Col>
-
-          {/* Panel lateral de métricas */}
           <Col lg={4}>
-            <Card className="border-0 shadow-sm h-100">
-              <Card.Header className="bg-transparent border-0">
-                <h6 className="mb-0">Top Categorías</h6>
+            <Card>
+              <Card.Header>
+                <h6 className="mb-0">Distribución por Categoría</h6>
               </Card.Header>
-              <Card.Body className="p-0">
-                <div className="list-group list-group-flush">
-                  {metrics.topCategories.slice(0, 5).map((category, index) => (
-                    <div key={category.value} className="list-group-item border-0">
-                      <div className="d-flex justify-content-between align-items-center">
-                        <div className="d-flex align-items-center">
-                          <category.icon 
-                            style={{ color: category.color, marginRight: '10px' }} 
-                            size={16}
-                          />
-                          <small>{category.label}</small>
-                        </div>
-                        <div className="text-end">
-                          <Badge bg="light" text="dark">{category.count}</Badge>
-                          <div style={{ fontSize: '0.75rem', color: '#6c757d' }}>
-                            ${category.value.toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+              <Card.Body>
+                <div style={{ height: '200px' }}>
+                  <Pie 
+                    data={chartData.categories}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: {
+                          position: 'bottom',
+                          labels: { fontSize: 12 }
+                        }
+                      }
+                    }}
+                  />
                 </div>
               </Card.Body>
             </Card>
@@ -539,84 +461,97 @@ const BarInventory = ({ onBack, user, userRole }) => {
         </Row>
       )}
 
-      {/* Filtros y controles */}
+      {/* Filtros */}
       <Row className="mb-4">
         <Col>
-          <Card className="border-0 shadow-sm">
-            <Card.Body className="py-3">
-              <Row className="g-3 align-items-center">
-                <Col md={4}>
-                  <InputGroup>
-                    <InputGroup.Text>
-                      <FaSearch />
-                    </InputGroup.Text>
-                    <Form.Control
-                      type="text"
-                      placeholder="Buscar productos..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                  </InputGroup>
+          <Card>
+            <Card.Body>
+              <Row className="align-items-end">
+                <Col md={3}>
+                  <Form.Group>
+                    <Form.Label>Buscar</Form.Label>
+                    <InputGroup>
+                      <InputGroup.Text><FaSearch /></InputGroup.Text>
+                      <Form.Control
+                        type="text"
+                        placeholder="Nombre o marca..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                    </InputGroup>
+                  </Form.Group>
                 </Col>
                 <Col md={2}>
-                  <Form.Select 
-                    value={categoryFilter} 
-                    onChange={(e) => setCategoryFilter(e.target.value)}
-                  >
-                    {categories.map(cat => (
-                      <option key={cat.value} value={cat.value}>{cat.label}</option>
-                    ))}
-                  </Form.Select>
-                </Col>
-                <Col md={2}>
-                  <Form.Select 
-                    value={stockFilter} 
-                    onChange={(e) => setStockFilter(e.target.value)}
-                  >
-                    <option value="all">Todos los stocks</option>
-                    <option value="normal">Stock normal</option>
-                    <option value="low">Stock bajo</option>
-                  </Form.Select>
-                </Col>
-                <Col md={2}>
-                  <Dropdown>
-                    <Dropdown.Toggle variant="outline-secondary" size="sm">
-                      <FaSort className="me-1" />
-                      Ordenar
-                    </Dropdown.Toggle>
-                    <Dropdown.Menu>
-                      <Dropdown.Item onClick={() => { setSortBy('nombre'); setSortOrder('asc'); }}>
-                        <FaSortUp className="me-2" />Nombre A-Z
-                      </Dropdown.Item>
-                      <Dropdown.Item onClick={() => { setSortBy('nombre'); setSortOrder('desc'); }}>
-                        <FaSortDown className="me-2" />Nombre Z-A
-                      </Dropdown.Item>
-                      <Dropdown.Item onClick={() => { setSortBy('stock'); setSortOrder('asc'); }}>
-                        <FaTrendingDown className="me-2" />Stock Menor
-                      </Dropdown.Item>
-                      <Dropdown.Item onClick={() => { setSortBy('stock'); setSortOrder('desc'); }}>
-                        <FaTrendingUp className="me-2" />Stock Mayor
-                      </Dropdown.Item>
-                    </Dropdown.Menu>
-                  </Dropdown>
-                </Col>
-                <Col md={2}>
-                  <div className="d-flex gap-1">
-                    <Button
-                      variant={viewMode === 'cards' ? 'primary' : 'outline-secondary'}
-                      size="sm"
-                      onClick={() => setViewMode('cards')}
+                  <Form.Group>
+                    <Form.Label>Categoría</Form.Label>
+                    <Form.Select 
+                      value={categoryFilter} 
+                      onChange={(e) => setCategoryFilter(e.target.value)}
                     >
-                      <FaTh />
-                    </Button>
-                    <Button
-                      variant={viewMode === 'table' ? 'primary' : 'outline-secondary'}
-                      size="sm"
-                      onClick={() => setViewMode('table')}
+                      {categories.map(cat => (
+                        <option key={cat.value} value={cat.value}>{cat.label}</option>
+                      ))}
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+                <Col md={2}>
+                  <Form.Group>
+                    <Form.Label>Stock</Form.Label>
+                    <Form.Select 
+                      value={stockFilter} 
+                      onChange={(e) => setStockFilter(e.target.value)}
                     >
-                      <FaList />
-                    </Button>
-                  </div>
+                      <option value="all">Todos</option>
+                      <option value="normal">Stock Normal</option>
+                      <option value="low">Stock Bajo</option>
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+                <Col md={2}>
+                  <Form.Group>
+                    <Form.Label>Ordenar</Form.Label>
+                    <Dropdown>
+                      <Dropdown.Toggle variant="outline-secondary" className="w-100">
+                        <FaSort className="me-1" />
+                        Orden
+                      </Dropdown.Toggle>
+                      <Dropdown.Menu>
+                        <Dropdown.Item onClick={() => { setSortBy('nombre'); setSortOrder('asc'); }}>
+                          <FaSortUp className="me-2" />Nombre A-Z
+                        </Dropdown.Item>
+                        <Dropdown.Item onClick={() => { setSortBy('nombre'); setSortOrder('desc'); }}>
+                          <FaSortDown className="me-2" />Nombre Z-A
+                        </Dropdown.Item>
+                        <Dropdown.Item onClick={() => { setSortBy('stock'); setSortOrder('asc'); }}>
+                          <FaSortAmountDown className="me-2" />Stock Menor
+                        </Dropdown.Item>
+                        <Dropdown.Item onClick={() => { setSortBy('stock'); setSortOrder('desc'); }}>
+                          <FaSortAmountUp className="me-2" />Stock Mayor
+                        </Dropdown.Item>
+                      </Dropdown.Menu>
+                    </Dropdown>
+                  </Form.Group>
+                </Col>
+                <Col md={2}>
+                  <Form.Group>
+                    <Form.Label>Vista</Form.Label>
+                    <div className="d-flex gap-1">
+                      <Button
+                        variant={viewMode === 'cards' ? 'primary' : 'outline-secondary'}
+                        onClick={() => setViewMode('cards')}
+                        className="flex-fill"
+                      >
+                        <FaTh />
+                      </Button>
+                      <Button
+                        variant={viewMode === 'table' ? 'primary' : 'outline-secondary'}
+                        onClick={() => setViewMode('table')}
+                        className="flex-fill"
+                      >
+                        <FaList />
+                      </Button>
+                    </div>
+                  </Form.Group>
                 </Col>
               </Row>
             </Card.Body>
@@ -624,159 +559,145 @@ const BarInventory = ({ onBack, user, userRole }) => {
         </Col>
       </Row>
 
-      {/* Inventario */}
+      {/* Contenido del inventario */}
       {filteredInventory.length === 0 ? (
-        <Card className="text-center py-5 border-0 shadow-sm">
+        <Card className="text-center py-5">
           <Card.Body>
-            <FaWineGlass size={48} className="text-muted mb-3" />
-            <h5>No hay productos</h5>
-            <p className="text-muted">
+            <FaWineGlass size={64} className="text-muted mb-3" />
+            <h4>No hay productos</h4>
+            <p className="text-muted mb-4">
               {searchTerm || categoryFilter !== 'all' || stockFilter !== 'all' 
                 ? 'No se encontraron productos con los filtros aplicados.'
                 : 'Comienza agregando productos al inventario del bar.'}
             </p>
-            <Button 
-              variant="primary"
-              onClick={() => {
-                setEditingItem(null);
-                setShowItemModal(true);
-              }}
-            >
+            <Button variant="primary" onClick={handleAddProduct}>
               <FaPlus className="me-2" />
               Agregar Primer Producto
             </Button>
           </Card.Body>
         </Card>
-      ) : viewMode === 'cards' ? (
-        <Row className="g-3">
-          {filteredInventory.map(item => (
-            <Col key={item.id} lg={3} md={4} sm={6}>
-              <ProductCard item={item} />
-            </Col>
-          ))}
-        </Row>
       ) : (
-        <Card className="border-0 shadow-sm">
-          <Card.Body className="p-0">
-            <Table responsive hover className="mb-0">
-              <thead className="bg-light">
-                <tr>
-                  <th>Producto</th>
-                  <th>Categoría</th>
-                  <th>Stock</th>
-                  <th>Precio</th>
-                  <th>Estado</th>
-                  <th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredInventory.map(item => {
-                  const stockStatus = getStockStatus(item);
-                  return (
-                    <tr key={item.id}>
-                      <td>
-                        <div>
-                          <strong>{item.nombre}</strong>
-                          {item.marca && <div className="small text-muted">{item.marca}</div>}
-                        </div>
-                      </td>
-                      <td>
-                        <Badge bg="light" text="dark">{item.tipo || 'Sin categoría'}</Badge>
-                      </td>
-                      <td>
-                        <div className="d-flex align-items-center">
-                          <Form.Control
-                            type="number"
-                            size="sm"
-                            style={{ width: '80px' }}
-                            defaultValue={item.stock || 0}
-                            onBlur={(e) => {
-                              const newStock = parseInt(e.target.value) || 0;
-                              if (newStock !== item.stock) {
-                                handleQuickStockUpdate(item, newStock);
-                              }
-                            }}
-                          />
-                          <span className="ms-2 small text-muted">{item.unidad || 'und'}</span>
-                        </div>
-                      </td>
-                      <td>${item.precio_venta || 0}</td>
-                      <td>
-                        <Badge bg={stockStatus.status === 'critical' ? 'danger' : 
-                                   stockStatus.status === 'low' ? 'warning' : 'success'}>
-                          {stockStatus.label}
-                        </Badge>
-                      </td>
-                      <td>
-                        <div className="d-flex gap-1">
-                          <Button 
-                            variant="outline-primary" 
-                            size="sm"
-                            onClick={() => {
-                              setEditingItem(item);
-                              setShowItemModal(true);
-                            }}
-                          >
-                            <FaEdit />
-                          </Button>
-                          {userRole === 'admin' && (
-                            <Button 
-                              variant="outline-danger" 
-                              size="sm"
-                              onClick={() => handleDeleteItem(item)}
-                            >
-                              <FaTrash />
-                            </Button>
-                          )}
-                        </div>
-                      </td>
+        <>
+          {viewMode === 'cards' ? (
+            <Row>
+              {filteredInventory.map(item => (
+                <Col key={item.id} xl={3} lg={4} md={6} className="mb-4">
+                  {renderProductCard(item)}
+                </Col>
+              ))}
+            </Row>
+          ) : (
+            <Card>
+              <Card.Body>
+                <Table responsive hover>
+                  <thead>
+                    <tr>
+                      <th>Producto</th>
+                      <th>Categoría</th>
+                      <th>Stock</th>
+                      <th>Precio</th>
+                      <th>Valor Total</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </Table>
-          </Card.Body>
-        </Card>
+                  </thead>
+                  <tbody>
+                    {filteredInventory.map(item => {
+                      const category = categories.find(cat => cat.value === item.tipo?.toLowerCase()) || categories[0];
+                      const stockStatus = getStockStatus(item);
+                      
+                      return (
+                        <tr key={item.id}>
+                          <td>
+                            <div>
+                              <div className="fw-medium">{item.nombre}</div>
+                              {item.marca && <small className="text-muted">{item.marca}</small>}
+                            </div>
+                          </td>
+                          <td>
+                            <Badge 
+                              style={{ 
+                                backgroundColor: category.color + '20',
+                                color: category.color,
+                                border: `1px solid ${category.color}`
+                              }}
+                            >
+                              <category.icon className="me-1" size={12} />
+                              {category.label}
+                            </Badge>
+                          </td>
+                          <td>
+                            <span className={`text-${stockStatus.color} fw-bold`}>
+                              {item.stock || 0} {item.unidad || 'und'}
+                            </span>
+                          </td>
+                          <td>${item.precio_venta || 0}</td>
+                          <td>${((item.precio_venta || 0) * (item.stock || 0)).toFixed(2)}</td>
+                          <td>
+                            <Badge bg={stockStatus.color}>
+                              {stockStatus.label}
+                            </Badge>
+                          </td>
+                          <td>
+                            <div className="d-flex gap-1">
+                              <Button 
+                                variant="outline-primary" 
+                                size="sm"
+                                onClick={() => handleEditProduct(item)}
+                              >
+                                <FaEdit />
+                              </Button>
+                              {userRole === 'admin' && (
+                                <Button 
+                                  variant="outline-danger" 
+                                  size="sm"
+                                  onClick={() => handleDeleteItem(item)}
+                                >
+                                  <FaTrash />
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
+              </Card.Body>
+            </Card>
+          )}
+        </>
       )}
 
-      {/* Modal para agregar/editar producto */}
+      {/* Modal para agregar/editar productos */}
       <Modal show={showItemModal} onHide={() => setShowItemModal(false)} size="lg">
         <Modal.Header closeButton>
           <Modal.Title>
             <FaWineGlass className="me-2" />
-            {editingItem ? 'Editar' : 'Nuevo'} Producto del Bar
+            {editingItem ? 'Editar Producto' : 'Agregar Producto'}
           </Modal.Title>
         </Modal.Header>
-        <Modal.Body className="p-0">
+        <Modal.Body>
           <InventoryItemForm
             editingItem={editingItem}
-            inventoryType="bar"
-            providers={providers}
-            currentUser={user}
-            userRole={userRole}
             onSuccess={() => {
               setShowItemModal(false);
               setEditingItem(null);
               setSuccess(editingItem ? 'Producto actualizado' : 'Producto agregado');
               setTimeout(() => setSuccess(''), 3000);
             }}
-            onCancel={() => setShowItemModal(false)}
+            onCancel={() => {
+              setShowItemModal(false);
+              setEditingItem(null);
+            }}
+            currentUser={user}
+            userRole={userRole}
+            providers={providers}
+            inventoryType="bar"
+            canEditAllFields={true}
           />
         </Modal.Body>
       </Modal>
-
-      <style jsx>{`
-        .product-card {
-          transition: all 0.3s ease;
-        }
-        .product-card:hover {
-          transform: translateY(-5px);
-          box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important;
-        }
-        .list-group-item:hover {
-          background-color: #f8f9fa;
-        }
-      `}</style>
     </Container>
   );
 };

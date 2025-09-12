@@ -81,7 +81,7 @@ import {
 } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
 
-// Local imports
+// Local imports - CORREGIDO: ../firebase a ./firebase
 import { auth, db } from './firebase';
 import AppLayout from './components/AppLayout';
 import MessagingSystem from './components/MessagingSystem';
@@ -1137,7 +1137,7 @@ function App() {
     return (
       <Alert variant="warning">
         <h4>Acceso Restringido</h4>
-        <p>No tienes permisos para acceder al inventario del bar.</p>
+        <p>No tienes permisos para acceder al módulo de bar.</p>
         <Button variant="secondary" onClick={handleBackToDashboard}>
           Volver al Dashboard
         </Button>
@@ -1145,7 +1145,7 @@ function App() {
     );
   }
   return (
-    <BarInventory
+    <BarInventory 
       onBack={handleBackToDashboard}
       user={user}
       userRole={userRole}
