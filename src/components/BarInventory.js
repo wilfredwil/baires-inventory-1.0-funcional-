@@ -1,4 +1,4 @@
-// src/components/BarInventory.js - VERSIÓN LIMPIA SIN ERRORES
+// src/components/BarInventory.js - CON BOTONES PDF
 import React, { useState, useEffect } from 'react';
 import {
   Container, Row, Col, Card, Button, Form, Modal, Alert, Badge,
@@ -68,6 +68,236 @@ const BarInventory = ({ onBack, user, userRole }) => {
     { value: 'champagne', label: 'Champagne', icon: FaWineGlass, color: '#FFD700' },
     { value: 'aperitivo', label: 'Aperitivo', icon: FaCocktail, color: '#FFA500' },
   ];
+
+  // Función para generar PDFs usando window.print
+  const generatePDF = (type, categoryValue = null) => {
+    let itemsToInclude = [];
+    let reportTitle = '';
+    let reportSubtitle = '';
+
+    switch (type) {
+      case 'complete':
+        itemsToInclude = inventory;
+        reportTitle = 'Reporte Completo de Inventario del Bar';
+        reportSubtitle = `${inventory.length} productos en total`;
+        break;
+      
+      case 'low-stock':
+        itemsToInclude = inventory.filter(item => item.stock <= (item.umbral_low || 5) && item.stock > 0);
+        reportTitle = 'Reporte de Stock Bajo';
+        reportSubtitle = `${itemsToInclude.length} productos con stock bajo`;
+        break;
+      
+      case 'out-of-stock':
+        itemsToInclude = inventory.filter(item => item.stock === 0);
+        reportTitle = 'Reporte de Productos Sin Stock';
+        reportSubtitle = `${itemsToInclude.length} productos agotados`;
+        break;
+      
+      case 'category':
+        itemsToInclude = inventory.filter(item => 
+          (item.tipo?.toLowerCase() === categoryValue) || 
+          (item.subTipo?.toLowerCase() === categoryValue)
+        );
+        const categoryInfo = categories.find(cat => cat.value === categoryValue);
+        reportTitle = `Reporte de ${categoryInfo?.label || categoryValue}`;
+        reportSubtitle = `${itemsToInclude.length} productos en esta categoría`;
+        break;
+    }
+
+    if (itemsToInclude.length === 0) {
+      alert('No hay productos para incluir en este reporte.');
+      return;
+    }
+
+    // Crear ventana nueva para imprimir
+    const printWindow = window.open('', '_blank');
+    const currentDate = new Date().toLocaleDateString('es-ES');
+    const currentTime = new Date().toLocaleTimeString('es-ES');
+
+    const totalValue = itemsToInclude.reduce((sum, item) => sum + ((item.precio || 0) * (item.stock || 0)), 0);
+    const lowStockCount = itemsToInclude.filter(item => item.stock <= (item.umbral_low || 5) && item.stock > 0).length;
+    const outOfStockCount = itemsToInclude.filter(item => item.stock === 0).length;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>${reportTitle}</title>
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              margin: 20px;
+              color: #333;
+              line-height: 1.4;
+            }
+            .header {
+              text-align: center;
+              border-bottom: 3px solid #007bff;
+              padding-bottom: 20px;
+              margin-bottom: 30px;
+            }
+            .header h1 {
+              color: #007bff;
+              margin: 0;
+              font-size: 24px;
+            }
+            .header p {
+              color: #666;
+              margin: 5px 0 0 0;
+              font-size: 14px;
+            }
+            .summary {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 15px;
+              margin-bottom: 30px;
+            }
+            .summary-card {
+              background: #f8f9fa;
+              padding: 15px;
+              border-radius: 8px;
+              text-align: center;
+              border-left: 4px solid #007bff;
+            }
+            .summary-card h3 {
+              margin: 0;
+              color: #007bff;
+              font-size: 18px;
+            }
+            .summary-card p {
+              margin: 5px 0 0 0;
+              color: #666;
+              font-size: 12px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 20px;
+              font-size: 11px;
+            }
+            th, td {
+              border: 1px solid #ddd;
+              padding: 6px;
+              text-align: left;
+            }
+            th {
+              background-color: #007bff;
+              color: white;
+              font-weight: bold;
+            }
+            tr:nth-child(even) {
+              background-color: #f9f9f9;
+            }
+            .stock-low { 
+              color: #fd7e14; 
+              font-weight: bold; 
+            }
+            .stock-out { 
+              color: #dc3545; 
+              font-weight: bold; 
+            }
+            .stock-normal { 
+              color: #28a745; 
+            }
+            .footer {
+              margin-top: 30px;
+              text-align: center;
+              color: #666;
+              font-size: 12px;
+              border-top: 1px solid #ddd;
+              padding-top: 15px;
+            }
+            @media print {
+              body { margin: 10px; }
+              .summary { grid-template-columns: repeat(2, 1fr); }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>🍷 ${reportTitle}</h1>
+            <p>${reportSubtitle}</p>
+            <p>Generado el ${currentDate} a las ${currentTime}</p>
+          </div>
+
+          <div class="summary">
+            <div class="summary-card">
+              <h3>${itemsToInclude.length}</h3>
+              <p>Total Productos</p>
+            </div>
+            <div class="summary-card">
+              <h3>$${totalValue.toLocaleString()}</h3>
+              <p>Valor Total</p>
+            </div>
+            <div class="summary-card">
+              <h3>${lowStockCount}</h3>
+              <p>Stock Bajo</p>
+            </div>
+            <div class="summary-card">
+              <h3>${outOfStockCount}</h3>
+              <p>Sin Stock</p>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 25%;">Producto</th>
+                <th style="width: 15%;">Marca</th>
+                <th style="width: 15%;">Tipo</th>
+                <th style="width: 10%;">Stock</th>
+                <th style="width: 10%;">Umbral</th>
+                <th style="width: 10%;">Precio</th>
+                <th style="width: 15%;">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsToInclude.map(item => {
+                const stockClass = item.stock === 0 ? 'stock-out' : 
+                                 item.stock <= (item.umbral_low || 5) ? 'stock-low' : 'stock-normal';
+                const stockStatus = item.stock === 0 ? 'Sin Stock' : 
+                                  item.stock <= (item.umbral_low || 5) ? 'Stock Bajo' : 'Normal';
+                
+                return `
+                  <tr>
+                    <td><strong>${item.nombre}</strong></td>
+                    <td>${item.marca || '-'}</td>
+                    <td>${item.tipo}${item.subTipo ? ` (${item.subTipo})` : ''}</td>
+                    <td class="${stockClass}"><strong>${item.stock || 0} ${item.unidad || ''}</strong></td>
+                    <td>${item.umbral_low || 5}</td>
+                    <td>$${(item.precio || 0).toLocaleString()}</td>
+                    <td class="${stockClass}"><strong>${stockStatus}</strong></td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            <p><strong>Sistema de Inventario del Bar</strong></p>
+            <p>Usuario: ${user?.email} | Fecha: ${currentDate} ${currentTime}</p>
+          </div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+              window.onafterprint = function() {
+                window.close();
+              };
+            };
+          </script>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    
+    // Mostrar mensaje de éxito
+    setSuccess(`Reporte "${reportTitle}" listo para imprimir`);
+    setTimeout(() => setSuccess(''), 3000);
+  };
 
   // Cargar datos del inventario - SIN INDICES COMPUESTOS
   useEffect(() => {
@@ -175,8 +405,9 @@ const BarInventory = ({ onBack, user, userRole }) => {
                              itemSubType === categoryFilter;
                              
       const matchesStock = stockFilter === 'all' ||
-                          (stockFilter === 'low' && item.stock <= (item.umbral_low || 5)) ||
-                          (stockFilter === 'normal' && item.stock > (item.umbral_low || 5));
+                          (stockFilter === 'low' && item.stock <= (item.umbral_low || 5) && item.stock > 0) ||
+                          (stockFilter === 'normal' && item.stock > (item.umbral_low || 5)) ||
+                          (stockFilter === 'out' && item.stock === 0);
       return matchesSearch && matchesCategory && matchesStock;
     })
     .sort((a, b) => {
@@ -326,6 +557,22 @@ const BarInventory = ({ onBack, user, userRole }) => {
             </div>
             <div className="d-flex gap-2">
               <Button
+                variant="outline-danger"
+                disabled={inventory.length === 0}
+                onClick={() => generatePDF('complete')}
+              >
+                📄 PDF Completo
+              </Button>
+              
+              <Button
+                variant="outline-warning"
+                disabled={inventory.filter(item => item.stock <= (item.umbral_low || 5) && item.stock > 0).length === 0}
+                onClick={() => generatePDF('low-stock')}
+              >
+                ⚠️ PDF Stock Bajo
+              </Button>
+              
+              <Button
                 variant="outline-primary"
                 onClick={() => {
                   const csvContent = [
@@ -348,8 +595,9 @@ const BarInventory = ({ onBack, user, userRole }) => {
                 }}
                 disabled={filteredInventory.length === 0}
               >
-                <FaDownload /> Exportar
+                📊 CSV
               </Button>
+              
               {(userRole === 'admin' || userRole === 'manager') && (
                 <Button 
                   variant="primary" 
@@ -455,6 +703,7 @@ const BarInventory = ({ onBack, user, userRole }) => {
                 <option value="all">Todos los stocks</option>
                 <option value="normal">Stock normal</option>
                 <option value="low">Stock bajo</option>
+                <option value="out">Sin stock</option>
               </Form.Select>
             </Col>
             <Col md={2}>
