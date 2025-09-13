@@ -1,5 +1,5 @@
 // src/App.js - VERSIÓN COMPLETA CON ESTRUCTURA FOH/BOH CORREGIDA Y HORARIOS SEPARADOS
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Container, 
   Navbar, 
@@ -134,6 +134,8 @@ function App() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
+  const emailInputRef = useRef(null);
+  const passwordInputRef = useRef(null);
 
   // Estados de perfil
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -744,77 +746,94 @@ function App() {
                       </Alert>
                     )}
 
-                    <Form onSubmit={handleLogin}>
-                      <Form.Group className="mb-4">
-                        <Form.Label className="fw-semibold text-dark">
-                          Correo Electrónico
-                        </Form.Label>
-                        <InputGroup>
-                          <InputGroup.Text>
-                            <FaEnvelope className="text-muted" />
-                          </InputGroup.Text>
-                          <Form.Control
-                            type="email"
-                            value={loginEmail}
-                            onChange={(e) => setLoginEmail(e.target.value)}
-                            required
-                            placeholder="tu@email.com"
-                            className="border-start-0"
-                            style={{ 
-                              fontSize: '16px',
-                              padding: '12px 16px'
-                            }}
-                          />
-                        </InputGroup>
-                      </Form.Group>
+                    
+  <Form onSubmit={handleLogin}>
+  <Form.Group className="mb-4">
+    <Form.Label className="fw-semibold text-dark">
+      Correo Electrónico
+    </Form.Label>
+    <InputGroup>
+      <InputGroup.Text>
+        <FaEnvelope className="text-muted" />
+      </InputGroup.Text>
+      <Form.Control
+        ref={emailInputRef}
+        type="email"
+        value={loginEmail}
+        onChange={(e) => {
+          setLoginEmail(e.target.value);
+        }}
+        onBlur={(e) => {
+          // Mantener el foco si es necesario
+          e.preventDefault();
+        }}
+        required
+        placeholder="tu@email.com"
+        className="border-start-0"
+        autoComplete="off"
+        style={{ 
+          fontSize: '16px',
+          padding: '12px 16px'
+        }}
+      />
+    </InputGroup>
+  </Form.Group>
 
-                      <Form.Group className="mb-4">
-                        <Form.Label className="fw-semibold text-dark">
-                          Contraseña
-                        </Form.Label>
-                        <InputGroup>
-                          <InputGroup.Text>
-                            <FaEye className="text-muted" />
-                          </InputGroup.Text>
-                          <Form.Control
-                            type="password"
-                            value={loginPassword}
-                            onChange={(e) => setLoginPassword(e.target.value)}
-                            required
-                            placeholder="••••••••"
-                            className="border-start-0"
-                            style={{ 
-                              fontSize: '16px',
-                              padding: '12px 16px'
-                            }}
-                          />
-                        </InputGroup>
-                      </Form.Group>
+  <Form.Group className="mb-4">
+    <Form.Label className="fw-semibold text-dark">
+      Contraseña
+    </Form.Label>
+    <InputGroup>
+      <InputGroup.Text>
+        <FaEye className="text-muted" />
+      </InputGroup.Text>
+      <Form.Control
+        ref={passwordInputRef}
+        type="password"
+        value={loginPassword}
+        onChange={(e) => {
+          setLoginPassword(e.target.value);
+        }}
+        onBlur={(e) => {
+          // Mantener el foco si es necesario
+          e.preventDefault();
+        }}
+        required
+        placeholder="••••••••"
+        className="border-start-0"
+        autoComplete="off"
+        style={{ 
+          fontSize: '16px',
+          padding: '12px 16px'
+        }}
+      />
+    </InputGroup>
+  </Form.Group>
 
-                      <div className="d-grid mb-4">
-                        <Button 
-                          type="submit" 
-                          variant="primary" 
-                          size="lg"
-                          disabled={loginLoading}
-                          style={{
-                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                            border: 'none',
-                            padding: '12px',
-                            fontWeight: '600'
-                          }}
-                        >
-                          {loginLoading ? (
-                            <>
-                              <Spinner animation="border" size="sm" className="me-2" />
-                              Ingresando...
-                            </>
-                          ) : (
-                            'Ingresar al Sistema'
-                          )}
-                        </Button>
-                      </div>
-                    </Form>
+  <div className="d-grid mb-4">
+    <Button 
+      type="submit" 
+      variant="primary" 
+      size="lg"
+      disabled={loginLoading}
+      style={{
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        border: 'none',
+        padding: '12px',
+        fontWeight: '600'
+      }}
+    >
+      {loginLoading ? (
+        <>
+          <Spinner animation="border" size="sm" className="me-2" />
+          Ingresando...
+        </>
+      ) : (
+        'Ingresar al Sistema'
+      )}
+    </Button>
+  </div>
+</Form>
 
                     <div className="text-center">
                       <small className="text-muted">
