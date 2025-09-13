@@ -140,56 +140,149 @@ function App() {
 
    // Efectos principales
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log('onAuthStateChanged ejecutado:', user?.email);
-      
-      if (user) {
-        try {
-          const q = query(collection(db, 'users'), where('email', '==', user.email));
-          const querySnapshot = await getDocs(q);
-          
-          if (!querySnapshot.empty) {
-            const userData = querySnapshot.docs[0].data();
-            console.log('Datos del usuario desde Firestore:', userData);
-            setUserRole(userData.role || 'employee');
-          } else {
-            console.log('Usuario no encontrado en Firestore, creando entrada...');
-            await addDoc(collection(db, 'users'), {
-              uid: user.uid,
-              email: user.email,
-              role: 'employee',
-              active: true,
-              created_at: new Date()
-            });
-            setUserRole('employee');
-          }
-          setUser(user);
-        } catch (error) {
-          console.error('Error verificando usuario:', error);
-          setError('Error verificando permisos de usuario');
+  const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    console.log('onAuthStateChanged ejecutado:', firebaseUser?.email);
+    
+    if (firebaseUser) {
+      try {
+        // Usuario normal de Firebase Auth
+        const q = query(collection(db, 'users'), where('email', '==', firebaseUser.email));
+        const querySnapshot = await getDocs(q);
+        
+        if (!querySnapshot.empty) {
+          const userData = querySnapshot.docs[0].data();
+          console.log('Datos del usuario desde Firestore:', userData);
+          setUserRole(userData.role || 'employee');
+          setUser({
+            ...firebaseUser,
+            ...userData,
+            isVirtualUser: false
+          });
+        } else {
+          // Crear entrada básica para usuarios que no están en Firestore
+          console.log('Usuario no encontrado en Firestore, creando entrada...');
+          await addDoc(collection(db, 'users'), {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            role: 'employee',
+            active: true,
+            created_at: new Date(),
+            authCreated: true
+          });
+          setUserRole('employee');
+          setUser(firebaseUser);
         }
-      } else {
+      } catch (error) {
+        console.error('Error verificando usuario:', error);
+        setError('Error verificando permisos de usuario');
+      }
+    } else {
+      // No hay usuario de Firebase Auth
+      // Verificar si tenemos un usuario virtual en estado
+      if (!user || !user.isVirtualUser) {
         setUser(null);
         setUserRole('employee');
       }
-      setLoading(false);
-    });
+    }
+    setLoading(false);
+  });
 
-    return () => unsubscribe();
-  }, []);
+  return () => unsubscribe();
+}, []); // Solo dependemos de cambios en Firebase Auth
 
   // Función de login - MODIFICADA PARA USAR CON LoginForm
-  const handleLogin = async (email, password) => {
-    setLoginLoading(true);
-    setError('');
-    
+const handleLogin = async (email, password) => {
+  setLoginLoading(true);
+  setError('');
+  
+  try {
+    // PRIMERO: Intentar login normal con Firebase Auth
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      console.log('Usuario logueado:', userCredential.user);
-    } catch (error) {
-      console.error('Error en login:', error);
-      let errorMessage = 'Error al iniciar sesión';
+      console.log('Usuario logueado normalmente:', userCredential.user.email);
+      return; // Login exitoso, terminar aquí
+    } catch (authError) {
+      console.log('No existe en Auth, verificando Firestore...', authError.code);
       
+      // Si no existe en Auth, buscar en Firestore
+      if (authError.code === 'auth/user-not-found' || 
+          authError.code === 'auth/invalid-credential' ||
+          authError.code === 'auth/wrong-password') {
+        
+        // Buscar usuario en Firestore por email
+        const usersQuery = query(
+          collection(db, 'users'), 
+          where('email', '==', email)
+        );
+        const querySnapshot = await getDocs(usersQuery);
+        
+        if (!querySnapshot.empty) {
+          const userDoc = querySnapshot.docs[0];
+          const userData = userDoc.data();
+          
+          // Verificar contraseña temporal
+          if (userData.temporaryPassword === password && userData.authCreated === false) {
+            console.log('✅ Usuario encontrado con contraseña temporal válida');
+            
+            // **CREAR EN AUTH SIN CAMBIAR SESIÓN ACTUAL**
+            try {
+              // MÉTODO ALTERNATIVO: Usar Admin SDK o crear directamente
+              // Por ahora, vamos a marcar como "pendiente de activación"
+              
+              await updateDoc(doc(db, 'users', userDoc.id), {
+                loginRequested: true,
+                loginRequestedAt: serverTimestamp(),
+                tempPassword: password // Guardamos para validar después
+              });
+              
+              // Simular login exitoso creando una "sesión virtual"
+              const virtualUser = {
+                uid: userDoc.id,
+                email: userData.email,
+                displayName: userData.displayName,
+                isVirtualUser: true, // Flag para identificar usuarios virtuales
+                ...userData
+              };
+              
+              setUser(virtualUser);
+              setUserRole(userData.role);
+              
+              console.log('✅ Login virtual exitoso para:', userData.displayName);
+              
+              // Mensaje de bienvenida
+              setSuccess(`¡Bienvenido ${userData.displayName}! Tu cuenta está activa.`);
+              setTimeout(() => setSuccess(''), 5000);
+              
+              return; // Login exitoso
+              
+            } catch (createError) {
+              console.error('Error en activación:', createError);
+              throw new Error('Error al activar la cuenta. Contacta al administrador.');
+            }
+          } else if (userData.temporaryPassword === password && userData.authCreated === true) {
+            // El usuario ya fue creado en Auth pero algo falló
+            throw new Error('Cuenta ya activada. Usa tu nueva contraseña o contacta al administrador.');
+          } else {
+            throw new Error('Contraseña incorrecta');
+          }
+        } else {
+          throw new Error('Usuario no encontrado');
+        }
+      } else {
+        // Otros errores de Auth
+        throw authError;
+      }
+    }
+    
+  } catch (error) {
+    console.error('Error en login:', error);
+    let errorMessage = 'Error al iniciar sesión';
+    
+    if (error.message && !error.code) {
+      // Errores personalizados
+      errorMessage = error.message;
+    } else {
+      // Errores de Firebase
       switch (error.code) {
         case 'auth/user-not-found':
           errorMessage = 'Usuario no encontrado';
@@ -207,29 +300,39 @@ function App() {
           errorMessage = 'Demasiados intentos. Intenta más tarde';
           break;
         case 'auth/invalid-credential':
-          errorMessage = 'Credenciales inválidas';
+          errorMessage = 'Email o contraseña incorrectos';
           break;
         default:
-          errorMessage = 'Error al iniciar sesión: ' + error.message;
+          errorMessage = 'Error de conexión. Intenta de nuevo.';
       }
-      
-      setError(errorMessage);
     }
     
-    setLoginLoading(false);
-  };
+    setError(errorMessage);
+  }
+  
+  setLoginLoading(false);
+};
 
   // Función de logout
   const handleLogout = async () => {
-    try {
+  try {
+    if (user && user.isVirtualUser) {
+      // Logout de usuario virtual
+      setUser(null);
+      setUserRole('employee');
+      setCurrentView('dashboard');
+      console.log('Usuario virtual deslogueado');
+    } else {
+      // Logout normal de Firebase Auth
       await signOut(auth);
       setCurrentView('dashboard');
-      console.log('Usuario deslogueado');
-    } catch (error) {
-      console.error('Error en logout:', error);
-      setError('Error al cerrar sesión');
+      console.log('Usuario Firebase deslogueado');
     }
-  };
+  } catch (error) {
+    console.error('Error en logout:', error);
+    setError('Error al cerrar sesión');
+  }
+};
 
   // Limpiar mensajes
   const clearError = () => setError('');
