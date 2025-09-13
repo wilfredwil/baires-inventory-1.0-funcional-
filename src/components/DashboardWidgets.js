@@ -1,4 +1,4 @@
-// src/components/DashboardWidgets.js - VERSIÓN SIMPLIFICADA Y SEGURA
+// src/components/DashboardWidgets.js - VERSIÓN SIMPLIFICADA Y SEGURA CON NAVEGACIÓN CORREGIDA
 import React from 'react';
 import { Card, Row, Col, Button } from 'react-bootstrap';
 import {
@@ -28,7 +28,6 @@ const DashboardWidgets = ({ user, userRole, inventory, employees, onNavigate }) 
       totalProducts: safeInventory.length,
       totalEmployees: safeEmployees.length,
       lowStock: lowStockCount,
-      // Valores estáticos por ahora hasta que tengamos los datos reales
       totalShifts: 0,
       activeShifts: 0,
       todayMessages: 0
@@ -45,7 +44,6 @@ const DashboardWidgets = ({ user, userRole, inventory, employees, onNavigate }) 
 
   return (
     <div>
-      {/* Estadísticas Principales */}
       <Row className="mb-4">
         <Col lg={2} md={4} sm={6} className="mb-3">
           <Card className="text-center border-0 h-100" style={{ 
@@ -92,7 +90,7 @@ const DashboardWidgets = ({ user, userRole, inventory, employees, onNavigate }) 
             style={{ 
               background: stats.lowStock > 0 
                 ? 'linear-gradient(135deg, #ef4444, #dc2626)'
-                : 'linear-gradient(135deg, #10b981, #047857)',
+                : 'linear-gradient(135deg, #f59e0b, #d97706)',
               color: 'white'
             }}
           >
@@ -106,7 +104,7 @@ const DashboardWidgets = ({ user, userRole, inventory, employees, onNavigate }) 
         
         <Col lg={2} md={4} sm={6} className="mb-3">
           <Card className="text-center border-0 h-100" style={{ 
-            background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+            background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
             color: 'white'
           }}>
             <Card.Body>
@@ -118,28 +116,27 @@ const DashboardWidgets = ({ user, userRole, inventory, employees, onNavigate }) 
         </Col>
         
         <Col lg={2} md={4} sm={6} className="mb-3">
-          <Card className="text-center border-0 h-100 bg-light">
+          <Card className="text-center border-0 h-100" style={{ 
+            background: 'linear-gradient(135deg, #ec4899, #db2777)',
+            color: 'white'
+          }}>
             <Card.Body>
-              <FaChartLine size={24} className="mb-2 text-muted" />
-              <h4 className="text-muted">{stats.totalProducts}</h4>
-              <small className="text-muted">Productos</small>
+              <FaChartLine size={24} className="mb-2" />
+              <h4>{stats.totalProducts}</h4>
+              <small>Productos</small>
             </Card.Body>
           </Card>
         </Col>
       </Row>
 
-      {/* Accesos Rápidos */}
       <Row className="mb-4">
         <Col md={12}>
           <Card>
             <Card.Header>
-              <h6 className="mb-0">
-                <FaEye className="me-2" />
-                Accesos Rápidos
-              </h6>
+              <h5 className="mb-0">Accesos Rápidos</h5>
             </Card.Header>
             <Card.Body>
-              <Row className="g-3">
+              <Row>
                 <Col lg={3} md={6}>
                   <div 
                     className="text-center p-3 rounded border"
@@ -174,7 +171,7 @@ const DashboardWidgets = ({ user, userRole, inventory, employees, onNavigate }) 
                       cursor: 'pointer',
                       transition: 'all 0.2s'
                     }}
-                    onClick={() => handleNavigation('bar')}
+                    onClick={() => handleNavigation('bar-inventory')}
                     onMouseEnter={(e) => {
                       e.target.style.transform = 'translateY(-2px)';
                       e.target.style.boxShadow = '0 4px 12px rgba(139, 92, 246, 0.2)';
@@ -199,7 +196,7 @@ const DashboardWidgets = ({ user, userRole, inventory, employees, onNavigate }) 
                       cursor: 'pointer',
                       transition: 'all 0.2s'
                     }}
-                    onClick={() => handleNavigation('kitchen')}
+                    onClick={() => handleNavigation('kitchen-inventory')}
                     onMouseEnter={(e) => {
                       e.target.style.transform = 'translateY(-2px)';
                       e.target.style.boxShadow = '0 4px 12px rgba(234, 88, 12, 0.2)';
@@ -224,7 +221,7 @@ const DashboardWidgets = ({ user, userRole, inventory, employees, onNavigate }) 
                       cursor: 'pointer',
                       transition: 'all 0.2s'
                     }}
-                    onClick={() => handleNavigation('directory')}
+                    onClick={() => handleNavigation('messaging')}
                     onMouseEnter={(e) => {
                       e.target.style.transform = 'translateY(-2px)';
                       e.target.style.boxShadow = '0 4px 12px rgba(22, 163, 74, 0.2)';
@@ -235,8 +232,8 @@ const DashboardWidgets = ({ user, userRole, inventory, employees, onNavigate }) 
                     }}
                   >
                     <FaComments size={24} style={{ color: '#16a34a' }} className="mb-2" />
-                    <h6 className="mb-1">Directorio</h6>
-                    <small className="text-muted">Personal</small>
+                    <h6 className="mb-1">Mensajes</h6>
+                    <small className="text-muted">Comunicación del equipo</small>
                   </div>
                 </Col>
               </Row>
@@ -245,7 +242,6 @@ const DashboardWidgets = ({ user, userRole, inventory, employees, onNavigate }) 
         </Col>
       </Row>
 
-      {/* Información del Sistema */}
       <Row>
         <Col md={6}>
           <Card className="h-100">
@@ -260,7 +256,7 @@ const DashboardWidgets = ({ user, userRole, inventory, employees, onNavigate }) 
                   <Button 
                     variant="primary" 
                     size="sm"
-                    onClick={() => handleNavigation('bar')}
+                    onClick={() => handleNavigation('bar-inventory')}
                   >
                     Agregar productos
                   </Button>
@@ -282,7 +278,7 @@ const DashboardWidgets = ({ user, userRole, inventory, employees, onNavigate }) 
                       variant="outline-primary" 
                       size="sm" 
                       className="w-100"
-                      onClick={() => handleNavigation('bar')}
+                      onClick={() => handleNavigation('bar-inventory')}
                     >
                       Ver inventario completo
                     </Button>
@@ -331,7 +327,7 @@ const DashboardWidgets = ({ user, userRole, inventory, employees, onNavigate }) 
                       variant="outline-primary" 
                       size="sm" 
                       className="w-100"
-                      onClick={() => handleNavigation('directory')}
+                      onClick={() => handleNavigation('employee-directory')}
                     >
                       Ver directorio
                     </Button>

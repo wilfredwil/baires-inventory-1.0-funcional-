@@ -1,4 +1,4 @@
-// src/components/AppLayout.js - CON BOTÓN DE LOGOUT
+// src/components/AppLayout.js - ARCHIVO COMPLETO CORREGIDO
 import React, { useState, useEffect } from 'react';
 import { Alert, Dropdown } from 'react-bootstrap';
 import { 
@@ -20,7 +20,8 @@ import {
   FaBars,
   FaSignOutAlt,
   FaUser,
-  FaUserCircle
+  FaUserCircle,
+  FaWineGlass
 } from 'react-icons/fa';
 
 const AppLayout = ({ 
@@ -34,7 +35,7 @@ const AppLayout = ({
   success,
   onClearError,
   onClearSuccess,
-  onLogout // ← Prop para logout
+  onLogout
 }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -53,7 +54,7 @@ const AppLayout = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Configuración de navegación basada en tu estructura actual
+  // Configuración de navegación con IDs CORREGIDOS
   const navigationSections = [
     {
       title: 'Principal',
@@ -65,11 +66,11 @@ const AppLayout = ({
           active: currentView === 'dashboard'
         },
         {
-          id: 'messages',
+          id: 'messaging',  // ✅ CORREGIDO: era 'messages'
           label: 'Mensajes',
           icon: FaComments,
-          active: currentView === 'messages',
-          badge: 3 // Ejemplo de mensajes no leídos
+          active: currentView === 'messaging',  // ✅ CORREGIDO: era 'messages'
+          badge: 3
         },
         {
           id: 'shifts',
@@ -83,7 +84,7 @@ const AppLayout = ({
           icon: FaTasks,
           active: currentView === 'tasks',
           badge: 5,
-          disabled: true // Próximamente
+          disabled: true
         }
       ]
     },
@@ -91,23 +92,23 @@ const AppLayout = ({
       title: 'Inventarios',
       items: [
         {
-          id: 'bar',
+          id: 'bar-inventory',  // ✅ CORREGIDO: era 'bar'
           label: 'Bar & Bebidas',
-          icon: FaCocktail,
-          active: currentView === 'bar'
+          icon: FaWineGlass,
+          active: currentView === 'bar-inventory'  // ✅ CORREGIDO: era 'bar'
         },
         {
-          id: 'kitchen',
+          id: 'kitchen-inventory',  // ✅ CORREGIDO: era 'kitchen'
           label: 'Cocina & Ingredientes',
           icon: FaUtensils,
-          active: currentView === 'kitchen'
+          active: currentView === 'kitchen-inventory'  // ✅ CORREGIDO: era 'kitchen'
         },
         {
           id: 'salon',
           label: 'Salón & Menaje',
           icon: FaGlassCheers,
           active: currentView === 'salon',
-          disabled: true // Próximamente
+          disabled: true
         }
       ]
     },
@@ -115,10 +116,10 @@ const AppLayout = ({
       title: 'Gestión',
       items: [
         {
-          id: 'personal',
+          id: 'users',
           label: 'Personal',
           icon: FaUsers,
-          active: currentView === 'personal',
+          active: currentView === 'users',
           adminOnly: true
         },
         {
@@ -128,17 +129,17 @@ const AppLayout = ({
           active: currentView === 'providers'
         },
         {
-          id: 'directory',
+          id: 'employee-directory',  // ✅ CORREGIDO: era 'directory'
           label: 'Directorio',
           icon: FaUsers,
-          active: currentView === 'directory'
+          active: currentView === 'employee-directory'  // ✅ CORREGIDO: era 'directory'
         },
         {
           id: 'reports',
           label: 'Reportes',
           icon: FaChartBar,
           active: currentView === 'reports',
-          disabled: true // Próximamente
+          disabled: true
         }
       ]
     }
@@ -167,7 +168,7 @@ const AppLayout = ({
   };
 
   const handleMessagesClick = () => {
-    handleNavigation('messages');
+    handleNavigation('messaging');  // ✅ CORREGIDO: era 'messages'
   };
 
   const sidebarStyles = {
@@ -207,7 +208,7 @@ const AppLayout = ({
             background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
-            color: '#fbbf24' // Fallback
+            color: '#fbbf24'
           }}>
             Baires
           </div>
@@ -262,36 +263,28 @@ const AppLayout = ({
                     }}
                     onMouseEnter={(e) => {
                       if (!isDisabled && !isActive) {
-                        e.currentTarget.style.color = 'white';
                         e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                        e.currentTarget.style.borderLeftColor = '#fbbf24';
+                        e.currentTarget.style.borderLeft = '3px solid rgba(251, 191, 36, 0.5)';
                       }
                     }}
                     onMouseLeave={(e) => {
-                      if (!isActive) {
-                        e.currentTarget.style.color = isDisabled ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.8)';
+                      if (!isDisabled && !isActive) {
                         e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.borderLeftColor = 'transparent';
+                        e.currentTarget.style.borderLeft = '3px solid transparent';
                       }
                     }}
                   >
                     <IconComponent style={{ marginRight: '12px', width: '20px' }} />
-                    <span style={{ flex: 1 }}>
-                      {item.label}
-                      {isDisabled && (
-                        <span style={{ fontSize: '0.7rem', opacity: 0.6, marginLeft: '8px' }}>
-                          (Próximamente)
-                        </span>
-                      )}
-                    </span>
-                    {item.badge > 0 && !isDisabled && (
+                    <span style={{ flex: 1 }}>{item.label}</span>
+                    {item.badge && (
                       <span style={{
                         background: '#ef4444',
                         color: 'white',
-                        padding: '2px 8px',
-                        borderRadius: '12px',
+                        borderRadius: '10px',
+                        padding: '2px 6px',
                         fontSize: '0.7rem',
-                        fontWeight: 600
+                        minWidth: '18px',
+                        textAlign: 'center'
                       }}>
                         {item.badge}
                       </span>
@@ -378,13 +371,13 @@ const AppLayout = ({
               <FaHome />
               <span style={{ textTransform: 'capitalize' }}>
                 {currentView === 'dashboard' ? 'Dashboard' : 
-                 currentView === 'bar' ? 'Bar & Bebidas' :
-                 currentView === 'kitchen' ? 'Cocina & Ingredientes' :
+                 currentView === 'bar-inventory' ? 'Bar & Bebidas' :
+                 currentView === 'kitchen-inventory' ? 'Cocina & Ingredientes' :
                  currentView === 'shifts' ? 'Turnos & Horarios' :
-                 currentView === 'messages' ? 'Sistema de Mensajes' :
-                 currentView === 'personal' ? 'Gestión de Personal' :
+                 currentView === 'messaging' ? 'Sistema de Mensajes' :
+                 currentView === 'users' ? 'Gestión de Personal' :
                  currentView === 'providers' ? 'Proveedores' :
-                 currentView === 'directory' ? 'Directorio' :
+                 currentView === 'employee-directory' ? 'Directorio' :
                  currentView}
               </span>
             </div>
