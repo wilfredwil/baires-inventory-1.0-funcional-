@@ -134,8 +134,7 @@ function App() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
-  const emailInputRef = useRef(null);
-  const passwordInputRef = useRef(null);
+ 
 
   // Estados de perfil
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -757,20 +756,13 @@ function App() {
         <FaEnvelope className="text-muted" />
       </InputGroup.Text>
       <Form.Control
-        ref={emailInputRef}
         type="email"
         value={loginEmail}
-        onChange={(e) => {
-          setLoginEmail(e.target.value);
-        }}
-        onBlur={(e) => {
-          // Mantener el foco si es necesario
-          e.preventDefault();
-        }}
+        onChange={(e) => setLoginEmail(e.target.value)}
         required
         placeholder="tu@email.com"
         className="border-start-0"
-        autoComplete="off"
+        autoComplete="email"
         style={{ 
           fontSize: '16px',
           padding: '12px 16px'
@@ -788,20 +780,13 @@ function App() {
         <FaEye className="text-muted" />
       </InputGroup.Text>
       <Form.Control
-        ref={passwordInputRef}
         type="password"
         value={loginPassword}
-        onChange={(e) => {
-          setLoginPassword(e.target.value);
-        }}
-        onBlur={(e) => {
-          // Mantener el foco si es necesario
-          e.preventDefault();
-        }}
+        onChange={(e) => setLoginPassword(e.target.value)}
         required
         placeholder="••••••••"
         className="border-start-0"
-        autoComplete="off"
+        autoComplete="current-password"
         style={{ 
           fontSize: '16px',
           padding: '12px 16px'
