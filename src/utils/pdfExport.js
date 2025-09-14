@@ -1,10 +1,9 @@
 // src/utils/pdfExport.js
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-// MEJORAS VISUALES PARA exportCriticalStockToPDF - solo cambios estéticos
-// FUNCIÓN COMPLETA SIN ACENTOS - Reemplaza completamente tu exportCriticalStockToPDF
 
-export const exportCriticalStockToPDF = (inventory) => {
+// FUNCIÓN CORREGIDA PARA STOCK CRÍTICO
+const exportCriticalStockToPDF = (inventory) => {
   try {
     console.log('=== DEBUG PDF STOCK CRITICO UNIFICADO POR CATEGORIAS ===');
     console.log('Inventario total:', inventory?.length || 0);
@@ -13,11 +12,79 @@ export const exportCriticalStockToPDF = (inventory) => {
       throw new Error('No hay productos para exportar');
     }
 
-    // Obtener todos los productos criticos (sin stock + stock bajo)
+    // DEBUG: Verificar algunos productos antes del filtro
+    console.log('=== VERIFICANDO PRODUCTOS ANTES DEL FILTRO ===');
+    inventory.slice(0, 5).forEach(item => {
+      console.log(`${item.nombre}: stock=${item.stock} (${typeof item.stock}), umbral_low=${item.umbral_low} (${typeof item.umbral_low})`);
+    });
+
+    // FILTRO INTELIGENTE POR TIPO DE PRODUCTO - Obtener todos los productos críticos
     const criticalItems = inventory.filter(item => {
-      const stock = Number(item.stock) || 0;
-      const umbral = Number(item.umbral_low) || 5;
-      return stock <= umbral; // Incluye tanto sin stock (0) como stock bajo
+      // Convertir valores de manera más segura
+      const stock = parseFloat(item.stock) || 0;
+      const umbralOriginal = parseFloat(item.umbral_low) || 5;
+      
+      // Validar que los valores sean números válidos
+      if (isNaN(stock) || isNaN(umbralOriginal)) {
+        console.warn(`Valores inválidos para ${item.nombre}: stock=${item.stock}, umbral=${item.umbral_low}`);
+        return false;
+      }
+      
+      // UMBRAL INTELIGENTE POR TIPO DE PRODUCTO
+      const tipo = (item.tipo || '').toLowerCase();
+      const subtipo = (item.subTipo || '').toLowerCase();
+      const unidad = (item.unidad || '').toLowerCase();
+      
+      let umbralInteligente = umbralOriginal;
+      
+      // Para LICORES/SPIRITS (se miden en fracciones)
+      if (tipo.includes('licor') || tipo.includes('whisky') || tipo.includes('vodka') || 
+          tipo.includes('gin') || tipo.includes('rum') || tipo.includes('tequila') ||
+          subtipo.includes('whisky') || subtipo.includes('vodka') || subtipo.includes('gin') ||
+          subtipo.includes('bourbon') || subtipo.includes('scotch') || subtipo.includes('cognac') ||
+          subtipo.includes('brandy') || subtipo.includes('mezcal') || subtipo.includes('pisco')) {
+        
+        // Para licores, usar umbral más alto si es muy bajo
+        umbralInteligente = Math.max(umbralOriginal, 1); // Cambié de 0.5 a 1
+        
+      // Para VINOS (se cuentan por botellas)
+      } else if (tipo.includes('vino') || tipo.includes('wine') ||
+                 subtipo.includes('cabernet') || subtipo.includes('malbec') || 
+                 subtipo.includes('chardonnay') || subtipo.includes('sauvignon') ||
+                 subtipo.includes('pinot') || subtipo.includes('merlot') || 
+                 subtipo.includes('tempranillo') || subtipo.includes('rosé') ||
+                 subtipo.includes('prosecco') || subtipo.includes('champagne')) {
+        
+        // Para vinos, mínimo 3-5 botellas
+        umbralInteligente = Math.max(umbralOriginal, 3); // Cambié de 2 a 3
+        
+      // Para CERVEZAS (se cuentan por cajas/cages)
+      } else if (tipo.includes('cerveza') || tipo.includes('beer') ||
+                 subtipo.includes('lager') || subtipo.includes('ale') || subtipo.includes('ipa') ||
+                 item.nombre.toLowerCase().includes('corona') || 
+                 item.nombre.toLowerCase().includes('heineken') ||
+                 item.nombre.toLowerCase().includes('stella') ||
+                 item.nombre.toLowerCase().includes('quilmes') ||
+                 item.nombre.toLowerCase().includes('peroni')) {
+        
+        // Para cervezas, mínimo 2 cajas/cages
+        umbralInteligente = Math.max(umbralOriginal, 2); // Cambié de 1 a 2
+        
+      // Para OTROS productos, usar umbral original pero con mínimo de 1
+      } else {
+        umbralInteligente = Math.max(umbralOriginal, 2); // Cambié de 1 a 2
+      }
+      
+      const isCritical = stock <= umbralInteligente;
+      
+      // Debug para verificar el filtrado con nuevo umbral
+      if (umbralInteligente !== umbralOriginal) {
+        console.log(`${item.nombre} [${tipo}/${subtipo}]: Stock=${stock}, Umbral original=${umbralOriginal}, Umbral inteligente=${umbralInteligente}, ¿Crítico?=${isCritical}`);
+      } else {
+        console.log(`${item.nombre}: Stock=${stock}, Umbral=${umbralOriginal}, ¿Crítico?=${isCritical}`);
+      }
+      
+      return isCritical;
     });
 
     console.log('Productos criticos totales:', criticalItems.length);
@@ -26,7 +93,7 @@ export const exportCriticalStockToPDF = (inventory) => {
       throw new Error('No hay productos con stock critico para exportar');
     }
 
-    // Funcion para agrupar TODOS los productos criticos por categorias
+    // Función para agrupar TODOS los productos críticos por categorías
     const groupByCategory = (items) => {
       const grouped = {};
       items.forEach(item => {
@@ -35,23 +102,23 @@ export const exportCriticalStockToPDF = (inventory) => {
           grouped[categoria] = [];
         }
         
-        // Agregar informacion del estado del stock
+        // Agregar información del estado del stock
         const itemWithStatus = {
           ...item,
-          stockStatus: Number(item.stock) === 0 ? 'SIN_STOCK' : 'STOCK_BAJO'
+          stockStatus: parseFloat(item.stock) === 0 ? 'SIN_STOCK' : 'STOCK_BAJO'
         };
         
         grouped[categoria].push(itemWithStatus);
       });
       
-      // Ordenar productos dentro de cada categoria: primero sin stock, luego stock bajo, alfabetico
+      // Ordenar productos dentro de cada categoría: primero sin stock, luego stock bajo, alfabético
       Object.keys(grouped).forEach(categoria => {
         grouped[categoria].sort((a, b) => {
           // Primero por estado (sin stock primero)
           if (a.stockStatus !== b.stockStatus) {
             return a.stockStatus === 'SIN_STOCK' ? -1 : 1;
           }
-          // Luego alfabeticamente
+          // Luego alfabéticamente
           return (a.nombre || '').localeCompare(b.nombre || '');
         });
       });
@@ -67,21 +134,21 @@ export const exportCriticalStockToPDF = (inventory) => {
     doc.setFillColor(220, 53, 69); // Rojo principal
     doc.rect(0, 0, pageWidth, 35, 'F');
     
-    doc.setFillColor(240, 70, 85); // Rojo mas claro
+    doc.setFillColor(240, 70, 85); // Rojo más claro
     doc.rect(0, 0, pageWidth, 25, 'F');
     
-    // Titulo principal con mejor tipografia
+    // Título principal con mejor tipografía
     doc.setFontSize(22);
     doc.setTextColor(255, 255, 255);
     doc.setFont(undefined, 'bold');
     doc.text('REPORTE DE STOCK CRITICO POR CATEGORIAS', pageWidth / 2, 15, { align: 'center' });
     
-    // Subtitulo
+    // Subtítulo
     doc.setFontSize(12);
     doc.setFont(undefined, 'normal');
     doc.text('Baires Inventory - Sistema de Gestion', pageWidth / 2, 23, { align: 'center' });
     
-    // SECCION DE INFORMACION CON MEJOR DISEÑO
+    // SECCIÓN DE INFORMACIÓN CON MEJOR DISEÑO
     const currentDate = new Date().toLocaleDateString('es-AR', {
       year: 'numeric',
       month: 'long',
@@ -90,7 +157,7 @@ export const exportCriticalStockToPDF = (inventory) => {
       minute: '2-digit'
     });
     
-    // Caja de informacion
+    // Caja de información
     doc.setFillColor(248, 249, 250);
     doc.rect(14, 42, pageWidth - 28, 25, 'F');
     
@@ -102,11 +169,11 @@ export const exportCriticalStockToPDF = (inventory) => {
     doc.setTextColor(108, 117, 125);
     doc.text(`Generado el: ${currentDate}`, 18, 50);
     
-    // Contar sin stock y stock bajo
-    const outOfStockCount = criticalItems.filter(item => Number(item.stock) === 0).length;
+    // Contar sin stock y stock bajo con valores corregidos
+    const outOfStockCount = criticalItems.filter(item => parseFloat(item.stock) === 0).length;
     const lowStockCount = criticalItems.filter(item => {
-      const stock = Number(item.stock) || 0;
-      return stock > 0 && stock <= (Number(item.umbral_low) || 5);
+      const stock = parseFloat(item.stock) || 0;
+      return stock > 0 && stock <= (parseFloat(item.umbral_low) || 5);
     }).length;
     
     // Resumen principal con mejor formato
@@ -115,7 +182,7 @@ export const exportCriticalStockToPDF = (inventory) => {
     doc.setFont(undefined, 'bold');
     doc.text(`${criticalItems.length} productos requieren atencion inmediata`, pageWidth / 2, 58, { align: 'center' });
     
-    // Estadisticas en caja destacada
+    // Estadísticas en caja destacada
     doc.setFontSize(11);
     doc.setTextColor(40, 40, 40);
     doc.setFont(undefined, 'bold');
@@ -124,7 +191,7 @@ export const exportCriticalStockToPDF = (inventory) => {
 
     let currentY = 90;
 
-    // SECCIONES POR CATEGORIA CON MEJOR DISEÑO
+    // SECCIONES POR CATEGORÍA CON MEJOR DISEÑO
     const criticalByCategory = groupByCategory(criticalItems);
     const categorias = Object.keys(criticalByCategory).sort();
 
@@ -133,7 +200,7 @@ export const exportCriticalStockToPDF = (inventory) => {
       const sinStockEnCategoria = productos.filter(p => p.stockStatus === 'SIN_STOCK').length;
       const stockBajoEnCategoria = productos.filter(p => p.stockStatus === 'STOCK_BAJO').length;
       
-      // Header de categoria con diseño mejorado
+      // Header de categoría con diseño mejorado
       doc.setFillColor(52, 58, 64);
       doc.rect(14, currentY - 5, pageWidth - 28, 12, 'F');
       
@@ -149,26 +216,27 @@ export const exportCriticalStockToPDF = (inventory) => {
 
       // Tabla con mejor diseño visual
       const categoryTableData = productos.map(item => {
-        const stock = Number(item.stock) || 0;
-        const umbral = Number(item.umbral_low) || 5;
+        const stock = parseFloat(item.stock) || 0;
+        const umbral = parseFloat(item.umbral_low) || 5;
         const necesario = Math.max(0, umbral - stock);
         const estado = stock === 0 ? 'SIN STOCK' : 'STOCK BAJO';
         
         return [
-          item.nombre || 'Sin nombre',
+          item.nombre || 'N/A',
           item.marca || '-',
-          stock.toString(),
+          `${stock} ${item.unidad || 'u'}`,
           umbral.toString(),
           necesario.toString(),
-          estado,
-          item.proveedor_nombre || 'Sin proveedor'
+          estado
         ];
       });
 
+      // Generar tabla para esta categoría
       autoTable(doc, {
-        head: [['Producto', 'Marca', 'Stock', 'Umbral', 'Necesario', 'Estado', 'Proveedor']],
+        head: [['Producto', 'Marca', 'Stock', 'Umbral', 'Necesario', 'Estado']],
         body: categoryTableData,
         startY: currentY,
+        theme: 'grid',
         styles: {
           fontSize: 8,
           cellPadding: 3,
@@ -176,44 +244,30 @@ export const exportCriticalStockToPDF = (inventory) => {
           lineColor: [200, 200, 200]
         },
         headStyles: {
-          fillColor: [73, 80, 87],
+          fillColor: [108, 117, 125],
           textColor: [255, 255, 255],
           fontStyle: 'bold',
-          halign: 'center'
+          fontSize: 9
         },
         columnStyles: {
-          0: { halign: 'left', cellWidth: 38, fontStyle: 'bold' },
-          1: { halign: 'left', cellWidth: 22 },
-          2: { halign: 'center', cellWidth: 16, fontStyle: 'bold' },
-          3: { halign: 'center', cellWidth: 16 },
-          4: { halign: 'center', cellWidth: 18, fontStyle: 'bold' },
-          5: { halign: 'center', cellWidth: 22, fontStyle: 'bold' },
-          6: { halign: 'left', cellWidth: 28 }
+          0: { cellWidth: 45 }, // Producto
+          1: { cellWidth: 35 }, // Marca
+          2: { cellWidth: 25, halign: 'center' }, // Stock
+          3: { cellWidth: 20, halign: 'center' }, // Umbral
+          4: { cellWidth: 25, halign: 'center' }, // Necesario
+          5: { cellWidth: 30, halign: 'center' }  // Estado
         },
-        margin: { left: 14, right: 14 },
-        alternateRowStyles: {
-          fillColor: [252, 252, 252]
-        },
-        didParseCell: (data) => {
-          // Mejorar el diseño de celdas criticas
-          if (data.column.index === 5) { // Columna "Estado"
-            const estado = data.cell.raw;
-            if (estado === 'SIN STOCK') {
-              data.cell.styles.fillColor = [220, 53, 69];
-              data.cell.styles.textColor = [255, 255, 255];
-              data.cell.styles.fontStyle = 'bold';
-              data.cell.styles.lineWidth = 0.2;
-              data.cell.styles.lineColor = [180, 40, 55];
-            } else if (estado === 'STOCK BAJO') {
-              data.cell.styles.fillColor = [255, 193, 7];
-              data.cell.styles.textColor = [33, 37, 41];
-              data.cell.styles.fontStyle = 'bold';
-              data.cell.styles.lineWidth = 0.2;
-              data.cell.styles.lineColor = [220, 165, 6];
-            }
+        didParseCell: function(data) {
+          // Resaltar estado SIN STOCK
+          if (data.column.index === 5 && data.cell.raw === 'SIN STOCK') {
+            data.cell.styles.fillColor = [255, 193, 7];
+            data.cell.styles.textColor = [33, 37, 41];
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.lineWidth = 0.2;
+            data.cell.styles.lineColor = [220, 165, 6];
           }
           
-          // Mejorar visualizacion de stock
+          // Mejorar visualización de stock
           if (data.column.index === 2) { // Columna "Stock"
             const stock = parseFloat(data.cell.raw) || 0;
             if (stock === 0) {
@@ -240,7 +294,7 @@ export const exportCriticalStockToPDF = (inventory) => {
 
       currentY = doc.lastAutoTable.finalY + 20;
       
-      // Verificar nueva pagina con mejor espaciado
+      // Verificar nueva página con mejor espaciado
       if (index < categorias.length - 1 && currentY > 220) {
         doc.addPage();
         currentY = 25;
@@ -253,7 +307,7 @@ export const exportCriticalStockToPDF = (inventory) => {
       currentY = 25;
     }
 
-    // Titulo de leyenda con fondo
+    // Título de leyenda con fondo
     doc.setFillColor(108, 117, 125);
     doc.rect(14, currentY - 5, pageWidth - 28, 10, 'F');
     
@@ -263,64 +317,31 @@ export const exportCriticalStockToPDF = (inventory) => {
     doc.text('LEYENDA DE COLORES', 18, currentY);
     currentY += 12;
 
-    // Tabla de leyenda mejorada
+    // Tabla de leyenda
     autoTable(doc, {
-      head: [['Estado', 'Descripcion', 'Accion Requerida']],
+      head: [['Color', 'Significado', 'Accion Requerida']],
       body: [
-        ['SIN STOCK', 'Producto completamente agotado', 'URGENTE - Reposicion inmediata'],
-        ['STOCK BAJO', 'Stock por debajo del umbral minimo', 'ALTA - Programar reposicion']
+        ['Rojo (Sin Stock)', 'Producto agotado', 'Contacto URGENTE con proveedor'],
+        ['Naranja (Stock Bajo)', 'Stock por debajo del umbral', 'Programar reposicion'],
+        ['Amarillo (Necesario)', 'Cantidad sugerida a reponer', 'Incluir en proxima orden']
       ],
       startY: currentY,
+      theme: 'grid',
       styles: {
         fontSize: 9,
-        cellPadding: 4,
-        lineWidth: 0.1
+        cellPadding: 4
       },
       headStyles: {
         fillColor: [52, 58, 64],
         textColor: [255, 255, 255],
         fontStyle: 'bold'
-      },
-      columnStyles: {
-        0: { halign: 'center', cellWidth: 30, fontStyle: 'bold' },
-        1: { halign: 'left', cellWidth: 65 },
-        2: { halign: 'left', cellWidth: 70, fontStyle: 'bold' }
-      },
-      margin: { left: 14, right: 14 },
-      didParseCell: (data) => {
-        if (data.column.index === 0) {
-          const estado = data.cell.raw;
-          if (estado === 'SIN STOCK') {
-            data.cell.styles.fillColor = [220, 53, 69];
-            data.cell.styles.textColor = [255, 255, 255];
-          } else if (estado === 'STOCK BAJO') {
-            data.cell.styles.fillColor = [255, 193, 7];
-            data.cell.styles.textColor = [33, 37, 41];
-          }
-        }
-        if (data.column.index === 2) { // Accion requerida
-          data.cell.styles.textColor = [40, 40, 40];
-        }
       }
     });
 
     currentY = doc.lastAutoTable.finalY + 20;
 
-    // PLAN DE ACCION CON MEJOR DISEÑO
-    doc.setFillColor(240, 248, 255);
-    doc.rect(14, currentY - 5, pageWidth - 28, 50, 'F');
-    
-    doc.setDrawColor(52, 144, 220);
-    doc.setLineWidth(0.5);
-    doc.rect(14, currentY - 5, pageWidth - 28, 50);
-
+    // RECOMENDACIONES FINALES
     doc.setFontSize(12);
-    doc.setTextColor(40, 40, 40);
-    doc.setFont(undefined, 'bold');
-    doc.text('PLAN DE ACCION POR CATEGORIAS', 18, currentY + 2);
-    currentY += 12;
-
-    doc.setFontSize(10);
     doc.setTextColor(60, 60, 60);
     
     const recommendations = [
@@ -354,12 +375,12 @@ export const exportCriticalStockToPDF = (inventory) => {
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i);
       
-      // Linea decorativa superior del footer
+      // Línea decorativa superior del footer
       doc.setDrawColor(220, 53, 69);
       doc.setLineWidth(0.8);
       doc.line(14, pageHeight - 25, pageWidth - 14, pageHeight - 25);
       
-      // Informacion del footer con mejor diseño
+      // Información del footer con mejor diseño
       doc.setFontSize(8);
       doc.setTextColor(100, 100, 100);
       doc.setFont(undefined, 'normal');
@@ -386,3 +407,349 @@ export const exportCriticalStockToPDF = (inventory) => {
     throw new Error('Error al generar PDF de stock critico: ' + error.message);
   }
 };
+
+// PDF de productos importantes (con estrella)
+const exportImportantProductsToPDF = (inventory) => {
+  try {
+    console.log('=== GENERANDO PDF DE PRODUCTOS IMPORTANTES ===');
+    
+    if (!inventory || !Array.isArray(inventory) || inventory.length === 0) {
+      throw new Error('No hay productos para exportar');
+    }
+
+    // Filtrar solo productos marcados como importantes
+    const importantItems = inventory.filter(item => item.importante === true);
+
+    console.log('Productos importantes encontrados:', importantItems.length);
+
+    if (importantItems.length === 0) {
+      throw new Error('No hay productos marcados como importantes para exportar');
+    }
+
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    
+    // HEADER
+    doc.setFillColor(255, 193, 7); // Amarillo para importantes
+    doc.rect(0, 0, pageWidth, 35, 'F');
+    
+    doc.setFontSize(20);
+    doc.setTextColor(33, 37, 41);
+    doc.setFont(undefined, 'bold');
+    doc.text('⭐ PRODUCTOS IMPORTANTES - NUNCA PUEDEN FALTAR ⭐', pageWidth / 2, 15, { align: 'center' });
+    
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'normal');
+    doc.text('Licores críticos para operación del bar', pageWidth / 2, 25, { align: 'center' });
+    
+    // Información
+    const currentDate = new Date().toLocaleDateString('es-AR', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    
+    doc.setFontSize(10);
+    doc.setTextColor(108, 117, 125);
+    doc.text(`Generado el: ${currentDate}`, 18, 45);
+    
+    // Contar críticos dentro de importantes
+    const importantCritical = importantItems.filter(item => {
+      const stock = parseFloat(item.stock) || 0;
+      const umbral = parseFloat(item.umbral_low) || 5;
+      return stock <= umbral;
+    });
+    
+    doc.setFontSize(14);
+    doc.setTextColor(220, 53, 69);
+    doc.setFont(undefined, 'bold');
+    doc.text(`${importantCritical.length} de ${importantItems.length} productos importantes necesitan reposición URGENTE`, pageWidth / 2, 58, { align: 'center' });
+
+    let currentY = 70;
+
+    // Tabla de productos importantes
+    const tableData = importantItems.map(item => {
+      const stock = parseFloat(item.stock) || 0;
+      const umbral = parseFloat(item.umbral_low) || 5;
+      const necesario = Math.max(0, umbral - stock);
+      const estado = stock === 0 ? 'SIN STOCK' : 
+                    stock <= umbral ? 'STOCK BAJO' : 'OK';
+      
+      return [
+        item.nombre || 'N/A',
+        item.marca || '-',
+        item.tipo || '-',
+        `${stock} ${item.unidad || 'u'}`,
+        umbral.toString(),
+        necesario.toString(),
+        estado
+      ];
+    });
+
+    autoTable(doc, {
+      head: [['Producto', 'Marca', 'Tipo', 'Stock', 'Umbral', 'Necesario', 'Estado']],
+      body: tableData,
+      startY: currentY,
+      theme: 'grid',
+      styles: {
+        fontSize: 9,
+        cellPadding: 4,
+        lineWidth: 0.1,
+        lineColor: [200, 200, 200]
+      },
+      headStyles: {
+        fillColor: [255, 193, 7],
+        textColor: [33, 37, 41],
+        fontStyle: 'bold',
+        fontSize: 10
+      },
+      columnStyles: {
+        0: { cellWidth: 50 },
+        1: { cellWidth: 30 },
+        2: { cellWidth: 25 },
+        3: { cellWidth: 20, halign: 'center' },
+        4: { cellWidth: 20, halign: 'center' },
+        5: { cellWidth: 20, halign: 'center' },
+        6: { cellWidth: 25, halign: 'center' }
+      },
+      didParseCell: function(data) {
+        // Resaltar productos críticos
+        if (data.column.index === 6) {
+          if (data.cell.raw === 'SIN STOCK') {
+            data.cell.styles.fillColor = [220, 53, 69];
+            data.cell.styles.textColor = [255, 255, 255];
+            data.cell.styles.fontStyle = 'bold';
+          } else if (data.cell.raw === 'STOCK BAJO') {
+            data.cell.styles.fillColor = [255, 193, 7];
+            data.cell.styles.textColor = [33, 37, 41];
+            data.cell.styles.fontStyle = 'bold';
+          } else {
+            data.cell.styles.fillColor = [40, 167, 69];
+            data.cell.styles.textColor = [255, 255, 255];
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      }
+    });
+
+    // Footer
+    const pageCount = doc.internal.getNumberOfPages();
+    const pageHeight = doc.internal.pageSize.height;
+    
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      
+      doc.setDrawColor(255, 193, 7);
+      doc.setLineWidth(0.8);
+      doc.line(14, pageHeight - 25, pageWidth - 14, pageHeight - 25);
+      
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      doc.setFont(undefined, 'normal');
+      doc.text('Baires Inventory - Productos Importantes', 14, pageHeight - 15);
+      doc.text(`Página ${i} de ${pageCount}`, pageWidth - 14, pageHeight - 15, { align: 'right' });
+      
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(255, 193, 7);
+      doc.text('⭐ PRIORIDAD MÁXIMA ⭐', pageWidth / 2, pageHeight - 8, { align: 'center' });
+    }
+    
+    // Generar archivo
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+    const fileName = `productos_importantes_${timestamp}.pdf`;
+    
+    doc.save(fileName);
+    console.log('PDF de productos importantes generado exitosamente');
+    return fileName;
+    
+  } catch (error) {
+    console.error('Error generando PDF de productos importantes:', error);
+    throw new Error('Error al generar PDF de productos importantes: ' + error.message);
+  }
+};
+
+// PDF organizado para órdenes de compra
+const exportOrderSheetToPDF = (inventory) => {
+  try {
+    console.log('=== GENERANDO PDF PARA ÓRDENES DE COMPRA ===');
+    
+    if (!inventory || !Array.isArray(inventory) || inventory.length === 0) {
+      throw new Error('No hay productos para exportar');
+    }
+
+    // Productos que necesitan reposición
+    const needsRestock = inventory.filter(item => {
+      const stock = parseFloat(item.stock) || 0;
+      const umbral = parseFloat(item.umbral_low) || 5;
+      return stock <= umbral;
+    });
+
+    if (needsRestock.length === 0) {
+      throw new Error('No hay productos que necesiten reposición');
+    }
+
+    // Agrupar por proveedor si existe, sino por tipo
+    const groupedItems = {};
+    needsRestock.forEach(item => {
+      let groupKey = 'Sin Proveedor';
+      
+      // Si tiene proveedor, usar ese
+      if (item.proveedor_nombre && item.proveedor_nombre.trim()) {
+        groupKey = item.proveedor_nombre.trim();
+      } else if (item.tipo) {
+        // Sino agrupar por tipo
+        groupKey = `${item.tipo} (Por tipo)`;
+      }
+      
+      if (!groupedItems[groupKey]) {
+        groupedItems[groupKey] = [];
+      }
+      groupedItems[groupKey].push(item);
+    });
+
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    
+    // HEADER
+    doc.setFillColor(40, 167, 69);
+    doc.rect(0, 0, pageWidth, 35, 'F');
+    
+    doc.setFontSize(20);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont(undefined, 'bold');
+    doc.text('📋 LISTA DE COMPRAS - REPOSICIÓN DE STOCK', pageWidth / 2, 15, { align: 'center' });
+    
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'normal');
+    doc.text('Organizado por proveedor para facilitar órdenes', pageWidth / 2, 25, { align: 'center' });
+    
+    // Información
+    const currentDate = new Date().toLocaleDateString('es-AR', {
+      year: 'numeric',
+      month: 'long', 
+      day: 'numeric'
+    });
+    
+    doc.setFontSize(10);
+    doc.setTextColor(108, 117, 125);
+    doc.text(`Lista generada el: ${currentDate}`, 18, 45);
+    doc.text(`Total de productos a reponer: ${needsRestock.length}`, pageWidth - 18, 45, { align: 'right' });
+
+    let currentY = 60;
+
+    // Procesar cada grupo
+    Object.keys(groupedItems).sort().forEach((groupName, index) => {
+      const productos = groupedItems[groupName];
+      
+      // Header del grupo
+      doc.setFillColor(52, 58, 64);
+      doc.rect(14, currentY - 5, pageWidth - 28, 12, 'F');
+      
+      doc.setFontSize(12);
+      doc.setTextColor(255, 255, 255);
+      doc.setFont(undefined, 'bold');
+      doc.text(`📦 ${groupName.toUpperCase()} (${productos.length} productos)`, 18, currentY + 2);
+      currentY += 15;
+
+      // Tabla para este grupo
+      const groupTableData = productos.map(item => {
+        const stock = parseFloat(item.stock) || 0;
+        const umbral = parseFloat(item.umbral_low) || 5;
+        const sugerido = Math.max(umbral * 2, umbral + 5); // Sugerir más cantidad
+        const necesario = sugerido - stock;
+        const prioridad = (item.importante === true || item.importante === "true") ? '⭐ ALTA' : 
+                         stock === 0 ? 'URGENTE' : 'NORMAL';
+        
+        return [
+          item.nombre || 'N/A',
+          `${stock} ${item.unidad || 'u'}`,
+          necesario.toString(),
+          sugerido.toString(),
+          prioridad,
+          '☐' // Checkbox para marcar
+        ];
+      });
+
+      autoTable(doc, {
+        head: [['Producto', 'Stock Actual', 'Cantidad Mínima', 'Cantidad Sugerida', 'Prioridad', '✓']],
+        body: groupTableData,
+        startY: currentY,
+        theme: 'grid',
+        styles: {
+          fontSize: 8,
+          cellPadding: 3,
+          lineWidth: 0.1
+        },
+        headStyles: {
+          fillColor: [108, 117, 125],
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 9
+        },
+        columnStyles: {
+          0: { cellWidth: 60 },
+          1: { cellWidth: 25, halign: 'center' },
+          2: { cellWidth: 25, halign: 'center' },
+          3: { cellWidth: 30, halign: 'center' },
+          4: { cellWidth: 25, halign: 'center' },
+          5: { cellWidth: 15, halign: 'center' }
+        },
+        didParseCell: function(data) {
+          if (data.column.index === 4) { // Prioridad
+            if (data.cell.raw.includes('⭐')) {
+              data.cell.styles.fillColor = [255, 193, 7];
+              data.cell.styles.textColor = [33, 37, 41];
+              data.cell.styles.fontStyle = 'bold';
+            } else if (data.cell.raw === 'URGENTE') {
+              data.cell.styles.fillColor = [220, 53, 69];
+              data.cell.styles.textColor = [255, 255, 255];
+              data.cell.styles.fontStyle = 'bold';
+            }
+          }
+        }
+      });
+
+      currentY = doc.lastAutoTable.finalY + 10;
+      
+      // Nueva página si es necesario
+      if (index < Object.keys(groupedItems).length - 1 && currentY > 220) {
+        doc.addPage();
+        currentY = 25;
+      }
+    });
+
+    // Footer
+    const pageCount = doc.internal.getNumberOfPages();
+    const pageHeight = doc.internal.pageSize.height;
+    
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      
+      doc.setDrawColor(40, 167, 69);
+      doc.setLineWidth(0.8);
+      doc.line(14, pageHeight - 25, pageWidth - 14, pageHeight - 25);
+      
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      doc.text('Baires Inventory - Lista de Compras', 14, pageHeight - 15);
+      doc.text(`Página ${i} de ${pageCount}`, pageWidth - 14, pageHeight - 15, { align: 'right' });
+    }
+    
+    // Generar archivo
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+    const fileName = `lista_compras_${timestamp}.pdf`;
+    
+    doc.save(fileName);
+    console.log('PDF de lista de compras generado exitosamente');
+    return fileName;
+    
+  } catch (error) {
+    console.error('Error generando PDF de lista de compras:', error);
+    throw new Error('Error al generar PDF de lista de compras: ' + error.message);
+  }
+};
+
+// Exportar todas las funciones
+export { exportCriticalStockToPDF, exportImportantProductsToPDF, exportOrderSheetToPDF };

@@ -1,4 +1,4 @@
-// src/components/BarInventory.js - VERSIÓN COMPLETA CON DROPDOWN PDF
+// src/components/BarInventory.js - VERSIÓN COMPLETA CON CORRECCIONES
 import React, { useState, useEffect } from 'react';
 import {
   Container, Row, Col, Card, Button, Form, Modal, Alert, Badge,
@@ -42,87 +42,187 @@ const BarInventory = ({ onBack, user, userRole }) => {
 
   // Estados de vista
   const [viewMode, setViewMode] = useState('cards');
-  const [showItemModal, setShowItemModal] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
-  const [showMetrics, setShowMetrics] = useState(true);
-
-  // Estados de filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [stockFilter, setStockFilter] = useState('all');
   const [sortBy, setSortBy] = useState('nombre');
   const [sortOrder, setSortOrder] = useState('asc');
+  const [showAnalytics, setShowAnalytics] = useState(false);
 
-  // Categorías estáticas - incluye variaciones comunes
+  // Estados de modales
+  const [showItemModal, setShowItemModal] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+
+  // Categorías de productos del bar
   const categories = [
-    { value: 'all', label: 'Todas las bebidas', icon: FaWineGlass, color: '#6c757d' },
-    { value: 'whiskey', label: 'Whiskey', icon: FaGlassWhiskey, color: '#8B4513' },
-    { value: 'whisky', label: 'Whisky', icon: FaGlassWhiskey, color: '#8B4513' },
-    { value: 'vodka', label: 'Vodka', icon: FaWineBottle, color: '#E6E6FA' },
-    { value: 'ron', label: 'Ron', icon: FaWineBottle, color: '#CD853F' },
-    { value: 'gin', label: 'Gin', icon: FaWineBottle, color: '#98FB98' },
-    { value: 'tequila', label: 'Tequila', icon: FaWineBottle, color: '#DAA520' },
-    { value: 'cerveza', label: 'Cerveza', icon: FaBeer, color: '#FFD700' },
-    { value: 'vino', label: 'Vino', icon: FaWineGlass, color: '#800080' },
-    { value: 'licor', label: 'Licores', icon: FaCocktail, color: '#FF69B4' },
-    { value: 'mixers', label: 'Mixers', icon: FaCocktail, color: '#20B2AA' },
-    { value: 'champagne', label: 'Champagne', icon: FaWineGlass, color: '#FFD700' },
-    { value: 'aperitivo', label: 'Aperitivo', icon: FaCocktail, color: '#FFA500' },
+    { value: 'all', label: 'Todas las categorías', icon: FaWineGlass, color: '#6c757d' },
+    { value: 'licor', label: 'Licores', icon: FaGlassWhiskey, color: '#dc3545' },
+    { value: 'vino', label: 'Vinos', icon: FaWineBottle, color: '#6f42c1' },
+    { value: 'cerveza', label: 'Cervezas', icon: FaBeer, color: '#fd7e14' },
+    { value: 'cocktail', label: 'Ingredientes de Cóctel', icon: FaCocktail, color: '#20c997' },
+    { value: 'whisky', label: 'Whiskys', icon: FaGlassWhiskey, color: '#8B4513' },
+    { value: 'vodka', label: 'Vodkas', icon: FaGlassWhiskey, color: '#007bff' },
+    { value: 'gin', label: 'Gins', icon: FaGlassWhiskey, color: '#28a745' },
+    { value: 'ron', label: 'Rones', icon: FaGlassWhiskey, color: '#ffc107' },
+    { value: 'tequila', label: 'Tequilas', icon: FaGlassWhiskey, color: '#17a2b8' },
+    { value: 'champagne', label: 'Champagne/Espumante', icon: FaWineBottle, color: '#e83e8c' },
+    { value: 'aperitivo', label: 'Aperitivos', icon: FaCocktail, color: '#fd7e14' }
   ];
-  
 
-  // Función para generar PDFs usando window.print con agrupación
-const generatePDF = (type, filterValue = null) => {
-  let itemsToInclude = [];
-  let reportTitle = '';
-  let reportSubtitle = '';
+  // Hook para cargar datos
+  useEffect(() => {
+    console.log('🔍 useEffect ejecutado - User:', user?.email);
+    
+    if (!user?.email) {
+      console.log('❌ No hay usuario, no se puede cargar inventario');
+      setLoading(false);
+      return;
+    }
 
-  switch (type) {
-    case 'complete':
-      itemsToInclude = inventory;
-      reportTitle = 'Reporte Completo de Inventario del Bar';
-      reportSubtitle = `${inventory.length} productos agrupados por categoría`;
-      break;
-    
-    case 'low-stock':
-      itemsToInclude = inventory.filter(item => item.stock <= (item.umbral_low || 5) && item.stock > 0);
-      reportTitle = 'Reporte de Stock Bajo';
-      reportSubtitle = `${itemsToInclude.length} productos con stock bajo`;
-      break;
-    
-    case 'out-of-stock':
-      itemsToInclude = inventory.filter(item => item.stock === 0);
-      reportTitle = 'Reporte de Productos Sin Stock';
-      reportSubtitle = `${itemsToInclude.length} productos agotados`;
-      break;
-    
-    case 'critical-stock':
-      // Usar la nueva función para stock crítico que combina sin stock y stock bajo
-      exportCriticalStockToPDF(inventory);
-      return; // Salir aquí ya que la nueva función maneja todo
-    
-    case 'category':
-      itemsToInclude = inventory.filter(item => 
-        (item.tipo?.toLowerCase() === filterValue) || 
-        (item.subTipo?.toLowerCase() === filterValue)
-      );
-      const categoryInfo = categories.find(cat => cat.value === filterValue);
-      reportTitle = `Reporte de ${categoryInfo?.label || filterValue}`;
-      reportSubtitle = `${itemsToInclude.length} productos en esta categoría`;
-      break;
-    
-    case 'provider':
-      itemsToInclude = inventory.filter(item => item.proveedor_id === filterValue);
-      const providerInfo = providers.find(p => p.id === filterValue);
-      reportTitle = `Reporte por Proveedor: ${providerInfo?.nombre || 'Proveedor'}`;
-      reportSubtitle = `${itemsToInclude.length} productos - Orden de compra sugerida`;
-      break;
-  }
+    console.log('🔄 Cargando inventario del bar automáticamente...');
 
-  if (itemsToInclude.length === 0) {
-    alert('No hay productos para incluir en este reporte.');
-    return;
-  }
+    // Intentar cargar todos los productos primero si no hay productos con tipo_inventario
+    const inventoryQuery = query(collection(db, 'inventario'));
+
+    const unsubscribeInventory = onSnapshot(
+      inventoryQuery,
+      (snapshot) => {
+        console.log('📦 Documentos encontrados:', snapshot.docs.length);
+        
+        const allInventoryData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        // Filtrar productos del bar de manera más flexible
+        const barInventoryData = allInventoryData.filter(item => {
+          const tipoInventario = (item.tipo_inventario || '').toLowerCase().trim();
+          const tipo = (item.tipo || '').toLowerCase();
+          
+          // Incluir si tiene tipo_inventario = 'bar' O si es un tipo típico de bar
+          return tipoInventario === 'bar' || 
+                 tipo.includes('licor') || 
+                 tipo.includes('vino') || 
+                 tipo.includes('cerveza') || 
+                 tipo.includes('whisky') || 
+                 tipo.includes('vodka') || 
+                 tipo.includes('gin') || 
+                 tipo.includes('ron') || 
+                 tipo.includes('tequila') ||
+                 item.subTipo?.toLowerCase().includes('whisky') ||
+                 item.subTipo?.toLowerCase().includes('vodka') ||
+                 item.subTipo?.toLowerCase().includes('gin') ||
+                 item.subTipo?.toLowerCase().includes('bourbon') ||
+                 item.subTipo?.toLowerCase().includes('champagne');
+        });
+        
+        console.log('🍺 Productos del bar encontrados:', barInventoryData.length);
+        console.log('📋 Tipos encontrados:', [...new Set(allInventoryData.map(item => item.tipo))]);
+        
+        setInventory(barInventoryData);
+        setLoading(false);
+      },
+      (error) => {
+        console.error('❌ Error cargando inventario:', error);
+        setError('Error cargando inventario del bar');
+        setLoading(false);
+      }
+    );
+
+    // Cargar proveedores
+    const providersQuery = query(
+      collection(db, 'proveedores'),
+      orderBy('nombre', 'asc')
+    );
+
+    const unsubscribeProviders = onSnapshot(
+      providersQuery,
+      (snapshot) => {
+        const providersData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        const filteredProviders = providersData.filter(provider => 
+          provider.nombre && provider.nombre.trim() !== ''
+        ).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+          
+        setProviders(filteredProviders);
+      },
+      (error) => {
+        console.error('Error cargando proveedores:', error);
+      }
+    );
+
+    // Auto-cargar después de un pequeño delay
+    const timer = setTimeout(() => {
+      console.log('🔍 Iniciando carga automática tras delay');
+      // Ya se está cargando automáticamente con onSnapshot
+    }, 100);
+
+    return () => {
+      unsubscribeInventory();
+      unsubscribeProviders();
+      clearTimeout(timer);
+    };
+  }, [user]);
+
+  // Función para generar PDFs
+  const generatePDF = (type, filterValue = null) => {
+    console.log('DEBUG - generatePDF llamado con type:', type, 'filterValue:', filterValue);
+    
+    let itemsToInclude = [];
+    let reportTitle = '';
+    let reportSubtitle = '';
+
+    console.log('DEBUG - Antes del switch, type:', type);
+    
+    switch (type) {
+      case 'complete':
+        itemsToInclude = inventory;
+        reportTitle = 'Reporte Completo de Inventario del Bar';
+        reportSubtitle = `${inventory.length} productos agrupados por categoría`;
+        break;
+      
+      case 'low-stock':
+        itemsToInclude = inventory.filter(item => item.stock <= (item.umbral_low || 5) && item.stock > 0);
+        reportTitle = 'Reporte de Stock Bajo';
+        reportSubtitle = `${itemsToInclude.length} productos con stock bajo`;
+        break;
+      
+      case 'out-of-stock':
+        itemsToInclude = inventory.filter(item => item.stock === 0);
+        reportTitle = 'Reporte de Productos Sin Stock';
+        reportSubtitle = `${itemsToInclude.length} productos agotados`;
+        break;
+      
+      case 'critical-stock':
+        // Usar la nueva función para stock crítico que combina sin stock y stock bajo
+        exportCriticalStockToPDF(inventory);
+        return; // Salir aquí ya que la nueva función maneja todo
+      
+      case 'category':
+        itemsToInclude = inventory.filter(item => 
+          (item.tipo?.toLowerCase() === filterValue) || 
+          (item.subTipo?.toLowerCase() === filterValue)
+        );
+        const categoryInfo = categories.find(cat => cat.value === filterValue);
+        reportTitle = `Reporte de ${categoryInfo?.label || filterValue}`;
+        reportSubtitle = `${itemsToInclude.length} productos en esta categoría`;
+        break;
+      
+      case 'provider':
+        itemsToInclude = inventory.filter(item => item.proveedor_id === filterValue);
+        const providerInfo = providers.find(p => p.id === filterValue);
+        reportTitle = `Reporte por Proveedor: ${providerInfo?.nombre || 'Proveedor'}`;
+        reportSubtitle = `${itemsToInclude.length} productos - Orden de compra sugerida`;
+        break;
+    }
+
+    if (itemsToInclude.length === 0) {
+      alert('No hay productos para incluir en este reporte.');
+      return;
+    }
 
     // Función para agrupar productos
     const groupItems = (items, groupBy) => {
@@ -252,264 +352,174 @@ const generatePDF = (type, filterValue = null) => {
       }
     }
 
-    printWindow.document.write(`
+    const htmlContent = `
       <!DOCTYPE html>
       <html>
-        <head>
-          <meta charset="utf-8">
-          <title>${reportTitle}</title>
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              margin: 20px;
-              color: #333;
-              line-height: 1.4;
-            }
-            .header {
-              text-align: center;
-              border-bottom: 3px solid #007bff;
-              padding-bottom: 20px;
-              margin-bottom: 30px;
-            }
-            .header h1 {
-              color: #007bff;
-              margin: 0;
-              font-size: 24px;
-            }
-            .header p {
-              color: #666;
-              margin: 5px 0 0 0;
-              font-size: 14px;
-            }
-            .summary {
-              display: grid;
-              grid-template-columns: repeat(4, 1fr);
-              gap: 15px;
-              margin-bottom: 30px;
-            }
-            .summary-card {
-              background: #f8f9fa;
-              padding: 15px;
-              border-radius: 8px;
-              text-align: center;
-              border-left: 4px solid #007bff;
-            }
-            .summary-card h3 {
-              margin: 0;
-              color: #007bff;
-              font-size: 18px;
-            }
-            .summary-card p {
-              margin: 5px 0 0 0;
-              color: #666;
-              font-size: 12px;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-top: 20px;
-              font-size: 11px;
-            }
-            th, td {
-              border: 1px solid #ddd;
-              padding: 6px;
-              text-align: left;
-            }
-            th {
-              background-color: #007bff;
-              color: white;
-              font-weight: bold;
-            }
-            tr:nth-child(even) {
-              background-color: #f9f9f9;
-            }
-            .stock-low { 
-              color: #fd7e14; 
-              font-weight: bold; 
-            }
-            .stock-out { 
-              color: #dc3545; 
-              font-weight: bold; 
-            }
-            .stock-normal { 
-              color: #28a745; 
-            }
-            .footer {
-              margin-top: 30px;
-              text-align: center;
-              color: #666;
-              font-size: 12px;
-              border-top: 1px solid #ddd;
-              padding-top: 15px;
-            }
-            @media print {
-              body { margin: 10px; }
-              .summary { grid-template-columns: repeat(2, 1fr); }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>🍷 ${reportTitle}</h1>
-            <p>${reportSubtitle}</p>
-            <p>Generado el ${currentDate} a las ${currentTime}</p>
-          </div>
+      <head>
+        <meta charset="UTF-8">
+        <title>${reportTitle}</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            color: #333;
+            line-height: 1.4;
+          }
+          .header {
+            text-align: center;
+            border-bottom: 3px solid #007bff;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+          }
+          .header h1 {
+            margin: 0;
+            color: #007bff;
+            font-size: 28px;
+          }
+          .header h2 {
+            margin: 10px 0 0 0;
+            color: #6c757d;
+            font-weight: normal;
+            font-size: 16px;
+          }
+          .summary {
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+          }
+          .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            text-align: center;
+          }
+          .summary-item h4 {
+            margin: 0 0 5px 0;
+            font-size: 24px;
+          }
+          .summary-item p {
+            margin: 0;
+            opacity: 0.9;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+          }
+          th {
+            background: #007bff;
+            color: white;
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: 600;
+          }
+          td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #dee2e6;
+          }
+          tr:nth-child(even) {
+            background-color: #f8f9fa;
+          }
+          tr:hover {
+            background-color: #e3f2fd;
+          }
+          .stock-out {
+            background-color: #ffebee;
+            color: #c62828;
+            font-weight: bold;
+          }
+          .stock-low {
+            background-color: #fff3e0;
+            color: #ef6c00;
+            font-weight: bold;
+          }
+          .stock-normal {
+            color: #2e7d32;
+          }
+          .footer {
+            margin-top: 40px;
+            text-align: center;
+            color: #6c757d;
+            border-top: 1px solid #dee2e6;
+            padding-top: 20px;
+          }
+          @media print {
+            body { margin: 10px; }
+            .summary { break-inside: avoid; }
+            table { page-break-inside: auto; }
+            tr { page-break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>🍷 ${reportTitle}</h1>
+          <h2>${reportSubtitle}</h2>
+          <p style="margin: 10px 0 0 0; color: #6c757d;">
+            Generado el ${currentDate} a las ${currentTime} | Usuario: ${user.email}
+          </p>
+        </div>
 
-          ${providerInfo}
-
-          <div class="summary">
-            <div class="summary-card">
-              <h3>${itemsToInclude.length}</h3>
+        <div class="summary">
+          <div class="summary-grid">
+            <div class="summary-item">
+              <h4>${itemsToInclude.length}</h4>
               <p>Total Productos</p>
             </div>
-            <div class="summary-card">
-              <h3>$${totalValue.toLocaleString()}</h3>
-              <p>Valor Total</p>
+            <div class="summary-item">
+              <h4>${totalValue.toLocaleString()}</h4>
+              <p>Valor Total Stock</p>
             </div>
-            <div class="summary-card">
-              <h3>${lowStockCount}</h3>
+            <div class="summary-item">
+              <h4>${lowStockCount}</h4>
               <p>Stock Bajo</p>
             </div>
-            <div class="summary-card">
-              <h3>${outOfStockCount}</h3>
+            <div class="summary-item">
+              <h4>${outOfStockCount}</h4>
               <p>Sin Stock</p>
             </div>
+            <div class="summary-item">
+              <h4>⭐ ${importantCount}</h4>
+              <p>Productos Importantes</p>
+            </div>
           </div>
+        </div>
 
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 25%;">Producto</th>
-                <th style="width: 15%;">Marca</th>
-                <th style="width: 15%;">Subtipo</th>
-                <th style="width: 10%;">Stock</th>
-                <th style="width: 10%;">Umbral</th>
-                <th style="width: 10%;">Precio</th>
-                <th style="width: 15%;">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${tableContent}
-            </tbody>
-          </table>
+        ${providerInfo}
 
-          <div class="footer">
-            <p><strong>Sistema de Inventario del Bar</strong></p>
-            <p>Usuario: ${user?.email} | Fecha: ${currentDate} ${currentTime}</p>
-            ${type === 'provider' ? '<p style="margin-top: 10px;"><strong>📋 Reporte de Orden de Compra</strong></p>' : ''}
-          </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th>Marca</th>
+              <th>Categoría</th>
+              <th>Stock</th>
+              <th>Umbral</th>
+              <th>Precio</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableContent}
+          </tbody>
+        </table>
 
-          <script>
-            window.onload = function() {
-              window.print();
-              window.onafterprint = function() {
-                window.close();
-              };
-            };
-          </script>
-        </body>
+        <div class="footer">
+          <p><strong>Baires Inventory - Sistema de Gestión</strong></p>
+          <p>Reporte generado automáticamente • Para uso interno únicamente</p>
+        </div>
+      </body>
       </html>
-    `);
+    `;
 
+    printWindow.document.write(htmlContent);
     printWindow.document.close();
-    
-    // Mostrar mensaje de éxito
-    setSuccess(`Reporte "${reportTitle}" listo para imprimir`);
-    setTimeout(() => setSuccess(''), 3000);
+    printWindow.print();
   };
-
-  // Cargar datos del inventario - SIN INDICES COMPUESTOS
-  useEffect(() => {
-    console.log('🔍 useEffect ejecutado - User:', user?.email);
-    
-    if (!user?.email) {
-      console.log('⚠️ Usuario no está listo aún, esperando...');
-      return;
-    }
-
-    const loadData = async () => {
-      console.log('🔄 Cargando inventario del bar automáticamente...');
-      setLoading(true);
-      setError('');
-      
-      try {
-        const snapshot = await getDocs(collection(db, 'inventario'));
-        console.log('📦 Documentos encontrados:', snapshot.size);
-        
-        const barTypes = ['licor', 'whisky', 'whiskey', 'vodka', 'ron', 'gin', 'tequila', 'cerveza', 'vino', 'champagne', 'mixers', 'aperitivo'];
-        
-        const allItems = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        
-        const barItems = allItems.filter(item => {
-          const itemType = (item.tipo || '').toLowerCase();
-          const itemSubType = (item.subTipo || '').toLowerCase();
-          return barTypes.includes(itemType) || barTypes.includes(itemSubType);
-        });
-        
-        console.log('🍺 Productos del bar encontrados:', barItems.length);
-        
-        const sortedItems = barItems.sort((a, b) => {
-          const aName = (a.nombre || '').toLowerCase();
-          const bName = (b.nombre || '').toLowerCase();
-          return aName.localeCompare(bName);
-        });
-        
-        setInventory(sortedItems);
-        setLoading(false);
-        
-        if (sortedItems.length > 0) {
-          setSuccess(`✅ Cargados ${sortedItems.length} productos del bar automáticamente`);
-          setTimeout(() => setSuccess(''), 3000);
-        }
-        
-      } catch (error) {
-        console.error('❌ Error cargando inventario:', error);
-        setError('Error cargando inventario: ' + error.message);
-        setLoading(false);
-        setInventory([]);
-      }
-    };
-
-    const timer = setTimeout(() => {
-      console.log('🔍 Iniciando carga automática tras delay');
-      loadData();
-    }, 300);
-
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [user?.email]);
-
-  // Cargar proveedores
-  useEffect(() => {
-    if (!user) return;
-
-    const unsubscribeProviders = onSnapshot(
-      collection(db, 'providers'),
-      (snapshot) => {
-        const providerData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        
-        const filteredProviders = providerData
-          .filter(p => p.tipo === 'bar' || p.tipo === 'ambos')
-          .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-          
-        setProviders(filteredProviders);
-      },
-      (error) => {
-        console.error('Error cargando proveedores:', error);
-      }
-    );
-
-    return () => {
-      unsubscribeProviders();
-    };
-  }, [user]);
 
   // Filtrar y ordenar inventario
   const filteredInventory = inventory
@@ -526,7 +536,8 @@ const generatePDF = (type, filterValue = null) => {
       const matchesStock = stockFilter === 'all' ||
                           (stockFilter === 'low' && item.stock <= (item.umbral_low || 5) && item.stock > 0) ||
                           (stockFilter === 'normal' && item.stock > (item.umbral_low || 5)) ||
-                          (stockFilter === 'out' && item.stock === 0);
+                          (stockFilter === 'out' && item.stock === 0) ||
+                          (stockFilter === 'important' && item.importante === true);
       return matchesSearch && matchesCategory && matchesStock;
     })
     .sort((a, b) => {
@@ -596,6 +607,7 @@ const generatePDF = (type, filterValue = null) => {
     }
   };
 
+  // FUNCIÓN CORREGIDA - Cambiar parseInt por parseFloat
   const handleQuickStockUpdate = async (item, newStock) => {
     try {
       await updateDoc(doc(db, 'inventario', item.id), {
@@ -607,6 +619,32 @@ const generatePDF = (type, filterValue = null) => {
     } catch (error) {
       console.error('Error:', error);
       setError('Error actualizando stock');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  // NUEVA FUNCIÓN - Toggle producto importante
+  const handleToggleImportante = async (item) => {
+    try {
+      await updateDoc(doc(db, 'inventario', item.id), {
+        importante: !item.importante,
+        updated_at: serverTimestamp()
+      });
+      
+      await addDoc(collection(db, 'historial'), {
+        item_nombre: item.nombre,
+        usuario: user.email,
+        tipo: 'marca_importante',
+        fecha: serverTimestamp(),
+        detalles: `Producto ${!item.importante ? 'marcado como' : 'removido de'} importante`,
+        tipo_inventario: 'bar'
+      });
+
+      setSuccess(`${item.nombre} ${!item.importante ? 'marcado como' : 'removido de'} importante`);
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (error) {
+      console.error('Error:', error);
+      setError('Error actualizando producto importante');
       setTimeout(() => setError(''), 3000);
     }
   };
@@ -685,8 +723,16 @@ const generatePDF = (type, filterValue = null) => {
                     📊 Reporte Completo (Agrupado)
                   </Dropdown.Item>
                   <Dropdown.Item onClick={() => generatePDF('critical-stock')}>
-  🚨 Stock Crítico (Sin Stock + Stock Bajo)
-</Dropdown.Item>
+                    🚨 Stock Crítico (Sin Stock + Stock Bajo)
+                  </Dropdown.Item>
+                  <Dropdown.Divider />
+                  <Dropdown.Header>Reportes Especiales</Dropdown.Header>
+                  <Dropdown.Item onClick={() => generatePDF('important-products')}>
+                    ⭐ Productos Importantes (Solo con estrella)
+                  </Dropdown.Item>
+                  <Dropdown.Item onClick={() => generatePDF('order-sheet')}>
+                    📋 Lista de Compras (Organizada por proveedor)
+                  </Dropdown.Item>
                   <Dropdown.Divider />
                   <Dropdown.Header>Por Categorías</Dropdown.Header>
                   {categories.slice(1).map(cat => {
@@ -694,66 +740,36 @@ const generatePDF = (type, filterValue = null) => {
                       (item.tipo?.toLowerCase() === cat.value) || 
                       (item.subTipo?.toLowerCase() === cat.value)
                     ).length;
-                    if (count === 0) return null;
-                    return (
-                      <Dropdown.Item 
-                        key={cat.value} 
-                        onClick={() => generatePDF('category', cat.value)}
-                      >
-                        <cat.icon style={{ color: cat.color }} className="me-2" />
+                    return count > 0 ? (
+                      <Dropdown.Item key={cat.value} onClick={() => generatePDF('category', cat.value)}>
+                        <cat.icon className="me-2" style={{ color: cat.color }} />
                         {cat.label} ({count})
                       </Dropdown.Item>
-                    );
+                    ) : null;
                   })}
                   <Dropdown.Divider />
-                  <Dropdown.Header>Por Proveedor</Dropdown.Header>
-                  {providers.map(provider => {
+                  <Dropdown.Header>Por Proveedores</Dropdown.Header>
+                  {providers.slice(0, 10).map(provider => {
                     const count = inventory.filter(item => item.proveedor_id === provider.id).length;
-                    if (count === 0) return null;
-                    return (
-                      <Dropdown.Item
-                        key={provider.id}
-                        onClick={() => generatePDF('provider', provider.id)}
-                      >
-                        🏪 {provider.nombre} ({count})
+                    return count > 0 ? (
+                      <Dropdown.Item key={provider.id} onClick={() => generatePDF('provider', provider.id)}>
+                        📦 {provider.nombre} ({count})
                       </Dropdown.Item>
-                    );
+                    ) : null;
                   })}
                 </Dropdown.Menu>
               </Dropdown>
               
-              <Button
-                variant="outline-primary"
-                onClick={() => {
-                  const csvContent = [
-                    ['Nombre', 'Marca', 'Tipo', 'Stock', 'Precio'].join(','),
-                    ...filteredInventory.map(item => [
-                      item.nombre,
-                      item.marca || '',
-                      item.tipo || '',
-                      item.stock || 0,
-                      item.precio || 0
-                    ].join(','))
-                  ].join('\n');
-
-                  const blob = new Blob([csvContent], { type: 'text/csv' });
-                  const url = window.URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `inventario-bar-${new Date().toISOString().split('T')[0]}.csv`;
-                  a.click();
-                }}
-                disabled={filteredInventory.length === 0}
+              <Button 
+                variant="outline-primary" 
+                onClick={() => setShowAnalytics(!showAnalytics)}
               >
-                📊 CSV
+                <FaChartBar /> Analytics
               </Button>
               
               {(userRole === 'admin' || userRole === 'manager') && (
-                <Button 
-                  variant="primary" 
-                  onClick={handleAddItem}
-                >
-                  <FaPlus /> Nuevo Producto
+                <Button variant="primary" onClick={handleAddItem}>
+                  <FaPlus /> Agregar Producto
                 </Button>
               )}
             </div>
@@ -763,52 +779,48 @@ const generatePDF = (type, filterValue = null) => {
 
       {/* Alertas */}
       {error && (
-        <Alert variant="danger" dismissible onClose={() => setError('')}>
-          <FaExclamationTriangle className="me-2" />
+        <Alert variant="danger" className="mb-3">
           {error}
         </Alert>
       )}
+      
       {success && (
-        <Alert variant="success" dismissible onClose={() => setSuccess('')}>
+        <Alert variant="success" className="mb-3">
           {success}
         </Alert>
       )}
 
       {/* Métricas */}
-      {showMetrics && (
+      {showAnalytics && (
         <Row className="mb-4">
           <Col md={3}>
-            <Card className="text-center h-100">
+            <Card className="text-center">
               <Card.Body>
-                <FaBoxes className="mb-2 text-primary" size={24} />
-                <h4>{metrics.totalProducts}</h4>
+                <h4 className="text-primary">{metrics.totalProducts}</h4>
                 <small className="text-muted">Total Productos</small>
               </Card.Body>
             </Card>
           </Col>
           <Col md={3}>
-            <Card className="text-center h-100">
+            <Card className="text-center">
               <Card.Body>
-                <FaDollarSign className="mb-2 text-success" size={24} />
-                <h4>${metrics.totalValue.toLocaleString()}</h4>
+                <h4 className="text-success">${metrics.totalValue.toLocaleString()}</h4>
                 <small className="text-muted">Valor Total</small>
               </Card.Body>
             </Card>
           </Col>
           <Col md={3}>
-            <Card className="text-center h-100">
+            <Card className="text-center">
               <Card.Body>
-                <FaExclamationTriangle className="mb-2 text-warning" size={24} />
-                <h4>{metrics.lowStock}</h4>
+                <h4 className="text-warning">{metrics.lowStock}</h4>
                 <small className="text-muted">Stock Bajo</small>
               </Card.Body>
             </Card>
           </Col>
           <Col md={3}>
-            <Card className="text-center h-100">
+            <Card className="text-center">
               <Card.Body>
-                <FaArrowDown className="mb-2 text-danger" size={24} />
-                <h4>{metrics.outOfStock}</h4>
+                <h4 className="text-danger">{metrics.outOfStock}</h4>
                 <small className="text-muted">Sin Stock</small>
               </Card.Body>
             </Card>
@@ -854,6 +866,7 @@ const generatePDF = (type, filterValue = null) => {
                 <option value="normal">Stock normal</option>
                 <option value="low">Stock bajo</option>
                 <option value="out">Sin stock</option>
+                <option value="important">Productos importantes</option>
               </Form.Select>
             </Col>
             <Col md={2}>
@@ -901,34 +914,31 @@ const generatePDF = (type, filterValue = null) => {
       {viewMode === 'cards' ? (
         <Row>
           {filteredInventory.map(item => (
-            <Col key={item.id} lg={4} md={6} className="mb-3">
-              <Card className={`h-100 ${item.stock <= (item.umbral_low || 5) ? 'border-warning' : ''}`}>
+            <Col key={item.id} md={6} lg={4} xl={3} className="mb-3">
+              <Card className="h-100 shadow-sm">
                 <Card.Body>
-                  <div className="d-flex justify-content-between align-items-start">
-                    <div>
-                      <h6 className="mb-1">
-                        {getCategoryIcon(item)}
-                        <span className="ms-2">{item.nombre}</span>
-                      </h6>
-                      <p className="text-muted small mb-2">
-                        {item.marca} • {item.tipo}{item.subTipo && ` (${item.subTipo})`}
-                      </p>
-                    </div>
-                    {getStockBadge(item)}
+                  <div className="d-flex justify-content-between align-items-start mb-2">
+                    <Card.Title className="h6">
+                      {item.nombre}
+                      {item.importante && (
+                        <Badge bg="warning" className="ms-2">⭐</Badge>
+                      )}
+                    </Card.Title>
+                    {getCategoryIcon(item)}
                   </div>
+                  
+                  <Card.Text className="text-muted small">
+                    <strong>Marca:</strong> {item.marca || 'N/A'}<br />
+                    <strong>Tipo:</strong> {item.tipo}{item.subTipo && ` (${item.subTipo})`}<br />
+                    <strong>Precio:</strong> ${(item.precio || 0).toLocaleString()}
+                  </Card.Text>
 
-                  <div className="mb-3">
-                    <div className="d-flex justify-content-between">
-                      <span>Stock:</span>
-                      <strong>{item.stock} {item.unidad}</strong>
-                    </div>
-                    <div className="d-flex justify-content-between">
-                      <span>Precio:</span>
-                      <strong>${item.precio}</strong>
-                    </div>
-                    <ProgressBar
-                      now={Math.min((item.stock / Math.max(item.umbral_low * 3, 1)) * 100, 100)}
-                      variant={item.stock <= (item.umbral_low || 5) ? 'warning' : 'success'}
+                  <div className="mb-2">
+                    <small className="text-muted">Stock actual</small>
+                    <ProgressBar 
+                      now={Math.min(100, (item.stock / (item.umbral_low * 2 || 10)) * 100)}
+                      variant={item.stock === 0 ? 'danger' : 
+                              item.stock <= (item.umbral_low || 5) ? 'warning' : 'success'}
                       size="sm"
                       className="mt-2"
                     />
@@ -939,9 +949,10 @@ const generatePDF = (type, filterValue = null) => {
                       <Form.Control
                         type="number"
                         min="0"
+                        step="0.01"
                         defaultValue={item.stock || 0}
                         onBlur={(e) => {
-                          const newStock = parseInt(e.target.value) || 0;
+                          const newStock = parseFloat(e.target.value) || 0;
                           if (newStock !== item.stock) {
                             handleQuickStockUpdate(item, newStock);
                           }
@@ -950,6 +961,19 @@ const generatePDF = (type, filterValue = null) => {
                     </InputGroup>
                     
                     <div className="d-flex gap-1">
+                      <OverlayTrigger
+                        placement="top"
+                        overlay={<Tooltip>{item.importante ? 'Producto importante' : 'Marcar como importante'}</Tooltip>}
+                      >
+                        <Button
+                          variant={item.importante ? "warning" : "outline-warning"}
+                          size="sm"
+                          onClick={() => handleToggleImportante(item)}
+                          className="me-1"
+                        >
+                          ⭐
+                        </Button>
+                      </OverlayTrigger>
                       <Button
                         variant="outline-primary"
                         size="sm"
@@ -967,6 +991,10 @@ const generatePDF = (type, filterValue = null) => {
                         </Button>
                       )}
                     </div>
+                  </div>
+
+                  <div className="mt-2">
+                    {getStockBadge(item)}
                   </div>
                 </Card.Body>
               </Card>
@@ -994,6 +1022,9 @@ const generatePDF = (type, filterValue = null) => {
                     <td>
                       {getCategoryIcon(item)}
                       <span className="ms-2">{item.nombre}</span>
+                      {item.importante && (
+                        <Badge bg="warning" size="sm" className="ms-2">⭐</Badge>
+                      )}
                     </td>
                     <td>{item.marca}</td>
                     <td>{item.tipo}{item.subTipo && ` (${item.subTipo})`}</td>
@@ -1002,9 +1033,10 @@ const generatePDF = (type, filterValue = null) => {
                         <Form.Control
                           type="number"
                           min="0"
+                          step="0.01"
                           defaultValue={item.stock || 0}
                           onBlur={(e) => {
-                            const newStock = parseInt(e.target.value) || 0;
+                            const newStock = parseFloat(e.target.value) || 0;
                             if (newStock !== item.stock) {
                               handleQuickStockUpdate(item, newStock);
                             }
@@ -1012,10 +1044,22 @@ const generatePDF = (type, filterValue = null) => {
                         />
                       </InputGroup>
                     </td>
-                    <td>${item.precio}</td>
+                    <td>${(item.precio || 0).toLocaleString()}</td>
                     <td>{getStockBadge(item)}</td>
                     <td>
                       <div className="d-flex gap-1">
+                        <OverlayTrigger
+                          placement="top"
+                          overlay={<Tooltip>{item.importante ? 'Producto importante' : 'Marcar como importante'}</Tooltip>}
+                        >
+                          <Button
+                            variant={item.importante ? "warning" : "outline-warning"}
+                            size="sm"
+                            onClick={() => handleToggleImportante(item)}
+                          >
+                            ⭐
+                          </Button>
+                        </OverlayTrigger>
                         <Button
                           variant="outline-primary"
                           size="sm"
@@ -1042,47 +1086,15 @@ const generatePDF = (type, filterValue = null) => {
         </Card>
       )}
 
-      {/* Mensaje si no hay resultados */}
-      {filteredInventory.length === 0 && !loading && (
-        <Card>
-          <Card.Body className="text-center py-5">
-            <FaWineGlass size={48} className="text-muted mb-3" />
-            <h5>
-              {inventory.length === 0 
-                ? 'No hay productos en el inventario del bar' 
-                : 'No se encontraron productos con los filtros actuales'
-              }
-            </h5>
-            <p className="text-muted">
-              {inventory.length === 0 
-                ? 'Comienza agregando productos al inventario del bar'
-                : searchTerm || categoryFilter !== 'all' || stockFilter !== 'all' 
-                  ? 'Intenta ajustar los filtros de búsqueda'
-                  : 'Todos los productos están ocultos por los filtros actuales'
-              }
-            </p>
-            
-            {(userRole === 'admin' || userRole === 'manager') && inventory.length === 0 && (
-              <Button variant="primary" onClick={handleAddItem} className="mt-3">
-                <FaPlus /> Agregar Primer Producto del Bar
-              </Button>
-            )}
-          </Card.Body>
-        </Card>
-      )}
-
-      {/* Modal de formulario */}
+      {/* Modal para agregar/editar items */}
       <InventoryItemForm
         show={showItemModal}
-        onHide={() => {
-          setShowItemModal(false);
-          setEditingItem(null);
-        }}
+        onHide={() => setShowItemModal(false)}
         item={editingItem}
-        userRole={userRole}
-        user={user}
         onSuccess={handleItemSuccess}
-        providers={providers}
+        user={user}
+        userRole={userRole}
+        inventoryType="bar"
       />
     </Container>
   );
