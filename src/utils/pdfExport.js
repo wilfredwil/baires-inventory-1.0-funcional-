@@ -277,37 +277,7 @@ const exportCriticalStockToPDF = (inventory) => {
     }
 
     // SECCIÓN DE RECOMENDACIONES
-    currentY += 10;
-    
-    doc.setFillColor(23, 162, 184);
-    doc.rect(14, currentY - 5, pageWidth - 28, 12, 'F');
-    
-    doc.setFontSize(12);
-    doc.setTextColor(255, 255, 255);
-    doc.setFont(undefined, 'bold');
-    doc.text('📋 RECOMENDACIONES URGENTES', 18, currentY + 2);
-    currentY += 15;
-
-    const recommendations = [
-      '• PRIORIDAD MÁXIMA: Reponer productos importantes marcados con ⭐',
-      '• PRODUCTOS NORMALES: Atender según disponibilidad de proveedores',
-      '• Productos SIN STOCK: Contactar proveedores inmediatamente',
-      '• Productos STOCK BAJO: Programar reposición en 24-48 horas',
-      '• Verificar precios y disponibilidad antes de ordenar',
-      '• Considerar compras en cantidad para obtener mejores precios si aplica'
-    ];
-
-    recommendations.forEach((rec, index) => {
-      if (rec.includes('PRIORIDAD') || rec.includes('PRODUCTOS NORMALES')) {
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(40, 40, 40);
-      } else {
-        doc.setFont(undefined, 'normal');
-        doc.setTextColor(80, 80, 80);
-      }
-      
-      doc.text(rec, 18, currentY + (index * 4));
-    });
+   
 
     // FOOTER
     const pageCount = doc.internal.getNumberOfPages();
@@ -460,28 +430,7 @@ const exportImportantProductsToPDF = (inventory) => {
 
     currentY = doc.lastAutoTable.finalY + 20;
 
-    // Recomendaciones
-    doc.setFillColor(23, 162, 184);
-    doc.rect(14, currentY - 5, pageWidth - 28, 12, 'F');
-    
-    doc.setFontSize(12);
-    doc.setTextColor(255, 255, 255);
-    doc.setFont(undefined, 'bold');
-    doc.text('📋 RECOMENDACIONES ESPECIALES PARA PRODUCTOS IMPORTANTES', 18, currentY + 2);
-    currentY += 15;
-
-    const recommendations = [
-      '• Estos productos NUNCA pueden faltar en el bar',
-      '• Mantener siempre stock de seguridad adicional',
-      '• Contactar proveedores inmediatamente si están en rojo',
-      '• Considerar tener proveedores alternativos para estos productos'
-    ];
-
-    recommendations.forEach((rec, index) => {
-      doc.setFont(undefined, 'normal');
-      doc.setTextColor(80, 80, 80);
-      doc.text(rec, 18, currentY + 10 + (index * 4));
-    });
+    // Recomendaciones eliminadas
 
     // Footer
     const pageCount = doc.internal.getNumberOfPages();
