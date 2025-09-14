@@ -22,7 +22,7 @@ import {
   Tooltip as ChartTooltip, Legend, ArcElement, PointElement, LineElement
 } from 'chart.js';
 import InventoryItemForm from './InventoryItemForm';
-import { exportCriticalStockToPDF } from '../utils/pdfExport';
+import { exportCriticalStockToPDF, exportImportantProductsToPDF, exportOrderSheetToPDF } from '../utils/pdfExport';
 
 // Registrar componentes de Chart.js
 ChartJS.register(
@@ -201,6 +201,28 @@ const BarInventory = ({ onBack, user, userRole }) => {
         exportCriticalStockToPDF(inventory);
         return; // Salir aquí ya que la nueva función maneja todo
       
+        case 'important-products':
+  console.log('DEBUG - Ejecutando caso important-products');
+  try {
+    exportImportantProductsToPDF(inventory);
+    console.log('DEBUG - PDF de productos importantes generado exitosamente');
+  } catch (error) {
+    console.error('Error generando PDF de productos importantes:', error);
+    alert('Error al generar PDF de productos importantes: ' + error.message);
+  }
+  return; // Salir aquí ya que la función maneja todo
+
+case 'order-sheet':
+  console.log('DEBUG - Ejecutando caso order-sheet');
+  try {
+    exportOrderSheetToPDF(inventory);
+    console.log('DEBUG - PDF de lista de compras generado exitosamente');
+  } catch (error) {
+    console.error('Error generando PDF de lista de compras:', error);
+    alert('Error al generar PDF de lista de compras: ' + error.message);
+  }
+  return; // Salir aquí ya que la función maneja todo
+  
       case 'category':
         itemsToInclude = inventory.filter(item => 
           (item.tipo?.toLowerCase() === filterValue) || 
