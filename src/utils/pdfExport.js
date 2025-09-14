@@ -1,8 +1,8 @@
-// src/utils/pdfExport.js
+// src/utils/pdfExport.js - VERSIÓN CORREGIDA
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// FUNCIÓN CORREGIDA PARA STOCK CRÍTICO CON SECCIÓN DE IMPORTANTES
+// FUNCIÓN CORREGIDA PARA STOCK CRÍTICO - RESPETA EXACTAMENTE LOS VALORES DE LA BD
 const exportCriticalStockToPDF = (inventory) => {
   try {
     console.log('=== DEBUG PDF STOCK CRITICO UNIFICADO POR CATEGORIAS ===');
@@ -18,7 +18,7 @@ const exportCriticalStockToPDF = (inventory) => {
       console.log(`${item.nombre}: stock=${item.stock} (${typeof item.stock}), umbral_low=${item.umbral_low} (${typeof item.umbral_low}), importante=${item.importante}`);
     });
 
-    // FILTRO INTELIGENTE POR TIPO DE PRODUCTO - Obtener todos los productos críticos
+    // FILTRO CORREGIDO - USAR SOLO VALORES DE LA BASE DE DATOS
     const criticalItems = inventory.filter(item => {
       // Convertir valores de manera más segura
       const stock = parseFloat(item.stock) || 0;
@@ -30,45 +30,11 @@ const exportCriticalStockToPDF = (inventory) => {
         return false;
       }
       
-      // UMBRAL INTELIGENTE POR TIPO DE PRODUCTO
-      const tipo = (item.tipo || '').toLowerCase();
-      const subtipo = (item.subTipo || '').toLowerCase();
-      const unidad = (item.unidad || '').toLowerCase();
+      // USAR SOLO EL UMBRAL ORIGINAL DE LA BASE DE DATOS - SIN MODIFICACIONES
+      const isCritical = stock <= umbralOriginal;
       
-      let umbralInteligente = umbralOriginal;
-      
-      // Para LICORES/SPIRITS (se miden en botellas)
-      if (tipo.includes('licor') || tipo.includes('spirit') || tipo.includes('whisky') ||
-          tipo.includes('vodka') || tipo.includes('gin') || tipo.includes('ron') ||
-          tipo.includes('tequila') || tipo.includes('cognac') || tipo.includes('brandy') ||
-          unidad.includes('botella') || unidad.includes('750ml') || unidad.includes('1l')) {
-        
-        // Para licores importantes, usar mínimo 2 botellas
-        umbralInteligente = Math.max(umbralOriginal, 2);
-        
-      // Para CERVEZAS (se miden en cajones/canastas)
-      } else if (tipo.includes('cerveza') || tipo.includes('beer') ||
-                 subtipo.includes('cerveza') || unidad.includes('cajón') || unidad.includes('canasta') ||
-                 item.nombre.toLowerCase().includes('stella') ||
-                 item.nombre.toLowerCase().includes('quilmes') ||
-                 item.nombre.toLowerCase().includes('peroni')) {
-        
-        // Para cervezas, mínimo 2 cajas/cages
-        umbralInteligente = Math.max(umbralOriginal, 2);
-        
-      // Para OTROS productos, usar umbral original pero con mínimo de 1
-      } else {
-        umbralInteligente = Math.max(umbralOriginal, 2);
-      }
-      
-      const isCritical = stock <= umbralInteligente;
-      
-      // Debug para verificar el filtrado con nuevo umbral
-      if (umbralInteligente !== umbralOriginal) {
-        console.log(`${item.nombre} [${tipo}/${subtipo}]: Stock=${stock}, Umbral original=${umbralOriginal}, Umbral inteligente=${umbralInteligente}, ¿Crítico?=${isCritical}`);
-      } else {
-        console.log(`${item.nombre}: Stock=${stock}, Umbral=${umbralOriginal}, ¿Crítico?=${isCritical}`);
-      }
+      // Debug para verificar el filtrado sin modificaciones
+      console.log(`${item.nombre}: Stock=${stock}, Umbral BD=${umbralOriginal}, ¿Crítico?=${isCritical}`);
       
       return isCritical;
     });
@@ -123,7 +89,6 @@ const exportCriticalStockToPDF = (inventory) => {
     const pageWidth = doc.internal.pageSize.width;
     
     // HEADER MEJORADO CON GRADIENTE VISUAL
-    // Fondo decorativo superior
     doc.setFillColor(220, 53, 69); // Rojo principal
     doc.rect(0, 0, pageWidth, 35, 'F');
     
@@ -175,218 +140,186 @@ const exportCriticalStockToPDF = (inventory) => {
     doc.setFont(undefined, 'bold');
     doc.text(`${criticalItems.length} productos requieren atencion inmediata`, pageWidth / 2, 58, { align: 'center' });
     
-    // Estadísticas en caja destacada
-    doc.setFontSize(11);
-    doc.setTextColor(40, 40, 40);
-    doc.setFont(undefined, 'bold');
-    doc.text(`Sin stock: ${outOfStockCount} | Stock bajo: ${lowStockCount} | Importantes: ${importantCritical.length}`, pageWidth / 2, 78, { align: 'center' });
+    // Estadísticas detalladas
+    doc.setFontSize(10);
+    doc.setTextColor(108, 117, 125);
+    doc.text(`${outOfStockCount} sin stock | ${lowStockCount} stock bajo | ${importantCritical.length} productos importantes críticos`, pageWidth / 2, 62, { align: 'center' });
 
-    let currentY = 90;
+    let currentY = 75;
 
-    // SECCIÓN ESPECIAL PARA PRODUCTOS IMPORTANTES - NUEVA
+    // SECCIÓN DE PRODUCTOS IMPORTANTES PRIMERO (SI HAY)
     if (importantCritical.length > 0) {
-      // Header para productos importantes
+      // Header de productos importantes
       doc.setFillColor(255, 193, 7); // Amarillo para importantes
       doc.rect(14, currentY - 5, pageWidth - 28, 15, 'F');
       
       doc.setFontSize(14);
       doc.setTextColor(33, 37, 41);
       doc.setFont(undefined, 'bold');
-      doc.text(`⭐ PRODUCTOS IMPORTANTES CRÍTICOS (${importantCritical.length}) - PRIORIDAD MÁXIMA`, pageWidth / 2, currentY + 3, { align: 'center' });
-      
-      currentY += 18;
+      doc.text(`⭐ PRODUCTOS IMPORTANTES CRÍTICOS (${importantCritical.length})`, 18, currentY + 5);
+      currentY += 20;
 
-      // Tabla de productos importantes - SIN COLUMNAS DE UMBRAL Y NECESARIO
+      // Tabla de productos importantes críticos
       const importantTableData = importantCritical.map(item => {
         const stock = parseFloat(item.stock) || 0;
+        const umbral = parseFloat(item.umbral_low) || 5;
+        const necesario = Math.max(0, umbral - stock);
         const estado = stock === 0 ? 'SIN STOCK' : 'STOCK BAJO';
         
         return [
-          item.nombre || 'N/A',
-          item.marca || '-',
-          item.tipo || '-',
-          `${stock} ${item.unidad || 'u'}`,
+          item.nombre || 'Sin nombre',
+          item.tipo || 'Sin tipo',
+          `${stock}`,
+          `${umbral}`,
+          `${necesario}`,
           estado
         ];
       });
 
       autoTable(doc, {
-        head: [['Producto', 'Marca', 'Tipo', 'Stock Actual', 'Estado']],
-        body: importantTableData,
         startY: currentY,
-        theme: 'grid',
-        styles: {
-          fontSize: 9,
-          cellPadding: 4,
-          lineWidth: 0.1,
-          lineColor: [200, 200, 200]
-        },
-        headStyles: {
+        head: [['Producto', 'Tipo', 'Stock', 'Umbral', 'Necesario', 'Estado']],
+        body: importantTableData,
+        theme: 'striped',
+        headStyles: { 
           fillColor: [255, 193, 7],
           textColor: [33, 37, 41],
-          fontStyle: 'bold',
-          fontSize: 10
+          fontSize: 10,
+          fontStyle: 'bold'
         },
+        bodyStyles: { fontSize: 9 },
         columnStyles: {
-          0: { cellWidth: 70 }, // Producto más ancho
-          1: { cellWidth: 40 }, // Marca
-          2: { cellWidth: 30 }, // Tipo
-          3: { cellWidth: 30, halign: 'center' }, // Stock
-          4: { cellWidth: 30, halign: 'center' } // Estado
+          0: { cellWidth: 60 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 20, halign: 'center' },
+          3: { cellWidth: 20, halign: 'center' },
+          4: { cellWidth: 20, halign: 'center' },
+          5: { cellWidth: 25, halign: 'center' }
         },
         didParseCell: function(data) {
-          // Resaltar productos críticos importantes por estado
-          if (data.column.index === 4) { // Columna Estado
-            if (data.cell.raw === 'SIN STOCK') {
+          if (data.column.index === 5) { // Columna Estado
+            if (data.cell.text[0] === 'SIN STOCK') {
               data.cell.styles.fillColor = [220, 53, 69];
               data.cell.styles.textColor = [255, 255, 255];
-              data.cell.styles.fontStyle = 'bold';
             } else {
               data.cell.styles.fillColor = [255, 193, 7];
               data.cell.styles.textColor = [33, 37, 41];
-              data.cell.styles.fontStyle = 'bold';
             }
           }
         }
       });
-
+      
       currentY = doc.lastAutoTable.finalY + 15;
-
-      // Verificar si necesitamos nueva página
-      if (currentY > 240) {
-        doc.addPage();
-        currentY = 20;
-      }
     }
 
-    // SECCIONES POR CATEGORÍA PARA PRODUCTOS NORMALES (NO IMPORTANTES)
+    // SECCIÓN DE PRODUCTOS NORMALES CRÍTICOS POR CATEGORÍA
     if (normalCritical.length > 0) {
-      const criticalByCategory = groupByCategory(normalCritical);
-      const categorias = Object.keys(criticalByCategory).sort();
+      const groupedNormal = groupByCategory(normalCritical);
+      const sortedCategories = Object.keys(groupedNormal).sort();
 
-      // Header para productos normales críticos
+      // Header de productos normales
       doc.setFillColor(52, 58, 64);
-      doc.rect(14, currentY - 5, pageWidth - 28, 12, 'F');
+      doc.rect(14, currentY - 5, pageWidth - 28, 15, 'F');
       
-      doc.setFontSize(12);
+      doc.setFontSize(14);
       doc.setTextColor(255, 255, 255);
       doc.setFont(undefined, 'bold');
-      doc.text(`📦 OTROS PRODUCTOS CRÍTICOS POR CATEGORÍA (${normalCritical.length})`, pageWidth / 2, currentY + 2, { align: 'center' });
-      currentY += 15;
+      doc.text(`📦 PRODUCTOS NORMALES CRÍTICOS POR CATEGORÍA (${normalCritical.length})`, 18, currentY + 5);
+      currentY += 20;
 
-      categorias.forEach((categoria, index) => {
-        const productos = criticalByCategory[categoria];
-        const sinStockEnCategoria = productos.filter(p => p.stockStatus === 'SIN_STOCK').length;
-        const stockBajoEnCategoria = productos.filter(p => p.stockStatus === 'STOCK_BAJO').length;
+      // Procesar cada categoría
+      sortedCategories.forEach((categoria, index) => {
+        const productos = groupedNormal[categoria];
         
-        // Header de categoría con diseño mejorado
-        doc.setFillColor(108, 117, 125);
-        doc.rect(14, currentY - 5, pageWidth - 28, 10, 'F');
-        
-        doc.setFontSize(11);
-        doc.setTextColor(255, 255, 255);
-        doc.setFont(undefined, 'bold');
-        doc.text(`${categoria.toUpperCase()} (${productos.length})`, 18, currentY);
-        
-        doc.setFontSize(8);
-        doc.setFont(undefined, 'normal');
-        doc.text(`Sin stock: ${sinStockEnCategoria} | Stock bajo: ${stockBajoEnCategoria}`, pageWidth - 18, currentY, { align: 'right' });
-        currentY += 12;
-
-        // Tabla con mejor diseño visual - SIN COLUMNAS DE UMBRAL Y NECESARIO
-        const categoryTableData = productos.map(item => {
-          const stock = parseFloat(item.stock) || 0;
-          const estado = stock === 0 ? 'SIN STOCK' : 'STOCK BAJO';
-          
-          return [
-            item.nombre || 'N/A',
-            item.marca || '-',
-            `${stock} ${item.unidad || 'u'}`,
-            estado
-          ];
-        });
-
-        autoTable(doc, {
-          head: [['Producto', 'Marca', 'Stock Actual', 'Estado']],
-          body: categoryTableData,
-          startY: currentY,
-          theme: 'grid',
-          styles: {
-            fontSize: 8,
-            cellPadding: 3,
-            lineWidth: 0.1,
-            lineColor: [200, 200, 200]
-          },
-          headStyles: {
-            fillColor: [108, 117, 125],
-            textColor: [255, 255, 255],
-            fontStyle: 'bold',
-            fontSize: 9
-          },
-          columnStyles: {
-            0: { cellWidth: 80 }, // Producto más ancho
-            1: { cellWidth: 45 }, // Marca
-            2: { cellWidth: 35, halign: 'center' }, // Stock
-            3: { cellWidth: 30, halign: 'center' } // Estado
-          },
-          didParseCell: function(data) {
-            // Resaltar productos críticos por estado
-            if (data.column.index === 3) { // Columna Estado
-              if (data.cell.raw === 'SIN STOCK') {
-                data.cell.styles.fillColor = [220, 53, 69];
-                data.cell.styles.textColor = [255, 255, 255];
-                data.cell.styles.fontStyle = 'bold';
-              } else {
-                data.cell.styles.fillColor = [255, 193, 7];
-                data.cell.styles.textColor = [33, 37, 41];
-                data.cell.styles.fontStyle = 'bold';
-              }
-            }
-          }
-        });
-
-        currentY = doc.lastAutoTable.finalY + 8;
-
         // Verificar si necesitamos nueva página
         if (currentY > 240) {
           doc.addPage();
           currentY = 20;
         }
+
+        // Sub-header de categoría
+        doc.setFillColor(108, 117, 125);
+        doc.rect(14, currentY - 5, pageWidth - 28, 12, 'F');
+        
+        doc.setFontSize(12);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont(undefined, 'bold');
+        doc.text(`${categoria.toUpperCase()} (${productos.length} productos)`, 18, currentY + 2);
+        currentY += 15;
+
+        // Tabla para esta categoría
+        const categoryTableData = productos.map(item => {
+          const stock = parseFloat(item.stock) || 0;
+          const umbral = parseFloat(item.umbral_low) || 5;
+          const necesario = Math.max(0, umbral - stock);
+          const estado = stock === 0 ? 'SIN STOCK' : 'STOCK BAJO';
+          
+          return [
+            item.nombre || 'Sin nombre',
+            item.marca || 'Sin marca',
+            `${stock}`,
+            `${umbral}`,
+            `${necesario}`,
+            estado
+          ];
+        });
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [['Producto', 'Marca', 'Stock', 'Umbral', 'Necesario', 'Estado']],
+          body: categoryTableData,
+          theme: 'grid',
+          headStyles: { 
+            fillColor: [108, 117, 125],
+            textColor: [255, 255, 255],
+            fontSize: 9,
+            fontStyle: 'bold'
+          },
+          bodyStyles: { fontSize: 8 },
+          columnStyles: {
+            0: { cellWidth: 60 },
+            1: { cellWidth: 30 },
+            2: { cellWidth: 18, halign: 'center' },
+            3: { cellWidth: 18, halign: 'center' },
+            4: { cellWidth: 18, halign: 'center' },
+            5: { cellWidth: 26, halign: 'center' }
+          },
+          didParseCell: function(data) {
+            if (data.column.index === 5) { // Columna Estado
+              if (data.cell.text[0] === 'SIN STOCK') {
+                data.cell.styles.fillColor = [220, 53, 69];
+                data.cell.styles.textColor = [255, 255, 255];
+              } else {
+                data.cell.styles.fillColor = [255, 193, 7];
+                data.cell.styles.textColor = [33, 37, 41];
+              }
+            }
+          }
+        });
+        
+        currentY = doc.lastAutoTable.finalY + 10;
       });
     }
 
-    // SECCIÓN DE RECOMENDACIONES MEJORADA
-    currentY += 15;
-    if (currentY > 220) {
-      doc.addPage();
-      currentY = 20;
-    }
+    // SECCIÓN DE RECOMENDACIONES
+    currentY += 10;
     
-    doc.setFillColor(255, 248, 240);
-    doc.rect(14, currentY - 5, pageWidth - 28, 50, 'F');
+    doc.setFillColor(23, 162, 184);
+    doc.rect(14, currentY - 5, pageWidth - 28, 12, 'F');
     
-    doc.setDrawColor(255, 193, 7);
-    doc.setLineWidth(0.5);
-    doc.rect(14, currentY - 5, pageWidth - 28, 50);
-    
-    doc.setFontSize(14);
-    doc.setTextColor(183, 110, 0);
+    doc.setFontSize(12);
+    doc.setTextColor(255, 255, 255);
     doc.setFont(undefined, 'bold');
-    doc.text('RECOMENDACIONES Y PLAN DE ACCIÓN:', 18, currentY + 8);
-    
-    currentY += 18;
-    doc.setFontSize(11);
-    doc.setTextColor(60, 60, 60);
-    
+    doc.text('📋 RECOMENDACIONES URGENTES', 18, currentY + 2);
+    currentY += 15;
+
     const recommendations = [
-      'PRIORIDAD MÁXIMA - PRODUCTOS IMPORTANTES:',
-      '   • Contactar proveedores INMEDIATAMENTE',
-      '   • Buscar proveedores alternativos de emergencia',
-      '',
-      'PRODUCTOS NORMALES POR CATEGORÍA:',
-      '   • Revisar cada categoría por separado',
-      '   • Agrupar pedidos por proveedor para optimizar costos',
-      '   • Considerar transferencias entre sucursales si aplica'
+      '• PRIORIDAD MÁXIMA: Reponer productos importantes marcados con ⭐',
+      '• PRODUCTOS NORMALES: Atender según disponibilidad de proveedores',
+      '• Productos SIN STOCK: Contactar proveedores inmediatamente',
+      '• Productos STOCK BAJO: Programar reposición en 24-48 horas',
+      '• Verificar precios y disponibilidad antes de ordenar',
+      '• Considerar compras en cantidad para obtener mejores precios si aplica'
     ];
 
     recommendations.forEach((rec, index) => {
@@ -502,7 +435,7 @@ const exportImportantProductsToPDF = (inventory) => {
 
     let currentY = 70;
 
-    // Tabla de productos importantes - PARTE QUE FALTABA EN EL CÓDIGO ORIGINAL - SIN MARCA
+    // Tabla de productos importantes
     const tableData = importantItems.map(item => {
       const stock = parseFloat(item.stock) || 0;
       const umbral = parseFloat(item.umbral_low) || 5;
@@ -511,86 +444,65 @@ const exportImportantProductsToPDF = (inventory) => {
                     stock <= umbral ? 'STOCK BAJO' : 'OK';
       
       return [
-        item.nombre || 'N/A',
-        item.tipo || '-',
-        `${stock} ${item.unidad || 'u'}`,
-        umbral.toString(),
-        necesario.toString(),
+        item.nombre || 'Sin nombre',
+        item.tipo || 'Sin tipo',
+        item.marca || 'Sin marca',
+        `${stock}`,
+        `${umbral}`,
+        `${necesario}`,
         estado
       ];
     });
 
     autoTable(doc, {
-      head: [['Producto', 'Tipo', 'Stock', 'Umbral', 'Necesario', 'Estado']],
-      body: tableData,
       startY: currentY,
-      theme: 'grid',
-      styles: {
-        fontSize: 9,
-        cellPadding: 4,
-        lineWidth: 0.1,
-        lineColor: [200, 200, 200]
-      },
-      headStyles: {
+      head: [['Producto', 'Tipo', 'Marca', 'Stock', 'Umbral', 'Necesario', 'Estado']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: { 
         fillColor: [255, 193, 7],
         textColor: [33, 37, 41],
-        fontStyle: 'bold',
-        fontSize: 10
+        fontSize: 10,
+        fontStyle: 'bold'
       },
+      bodyStyles: { fontSize: 9 },
       columnStyles: {
-        0: { cellWidth: 60 }, // Producto reducido
-        1: { cellWidth: 25 }, // Tipo
-        2: { cellWidth: 20, halign: 'center' },
+        0: { cellWidth: 50 },
+        1: { cellWidth: 25 },
+        2: { cellWidth: 30 },
         3: { cellWidth: 20, halign: 'center' },
         4: { cellWidth: 20, halign: 'center' },
-        5: { cellWidth: 25, halign: 'center' }
+        5: { cellWidth: 20, halign: 'center' },
+        6: { cellWidth: 25, halign: 'center' }
       },
       didParseCell: function(data) {
-        // Resaltar productos críticos
-        if (data.column.index === 5) { // Columna Estado
-          if (data.cell.raw === 'SIN STOCK') {
+        if (data.column.index === 6) { // Columna Estado
+          if (data.cell.text[0] === 'SIN STOCK') {
             data.cell.styles.fillColor = [220, 53, 69];
             data.cell.styles.textColor = [255, 255, 255];
-            data.cell.styles.fontStyle = 'bold';
-          } else if (data.cell.raw === 'STOCK BAJO') {
+          } else if (data.cell.text[0] === 'STOCK BAJO') {
             data.cell.styles.fillColor = [255, 193, 7];
             data.cell.styles.textColor = [33, 37, 41];
-            data.cell.styles.fontStyle = 'bold';
           } else {
             data.cell.styles.fillColor = [40, 167, 69];
             data.cell.styles.textColor = [255, 255, 255];
-            data.cell.styles.fontStyle = 'bold';
           }
         }
       }
     });
 
-    // Agregar sección de recomendaciones - PARTE QUE TAMBIÉN FALTABA
     currentY = doc.lastAutoTable.finalY + 20;
-    
-    // Verificar si necesitamos nueva página
-    if (currentY > 250) {
-      doc.addPage();
-      currentY = 20;
-    }
-    
-    // Sección de recomendaciones
-    doc.setFillColor(255, 248, 240);
-    doc.rect(14, currentY - 5, pageWidth - 28, 30, 'F');
-    
-    doc.setDrawColor(255, 193, 7);
-    doc.setLineWidth(0.5);
-    doc.rect(14, currentY - 5, pageWidth - 28, 30);
+
+    // Recomendaciones
+    doc.setFillColor(23, 162, 184);
+    doc.rect(14, currentY - 5, pageWidth - 28, 12, 'F');
     
     doc.setFontSize(12);
-    doc.setTextColor(183, 110, 0);
+    doc.setTextColor(255, 255, 255);
     doc.setFont(undefined, 'bold');
-    doc.text('RECOMENDACIONES PARA PRODUCTOS IMPORTANTES:', 18, currentY + 3);
-    
-    doc.setFontSize(10);
-    doc.setTextColor(60, 60, 60);
-    doc.setFont(undefined, 'normal');
-    
+    doc.text('📋 RECOMENDACIONES ESPECIALES PARA PRODUCTOS IMPORTANTES', 18, currentY + 2);
+    currentY += 15;
+
     const recommendations = [
       '• Estos productos NUNCA pueden faltar en el bar',
       '• Mantener siempre stock de seguridad adicional',
@@ -599,10 +511,12 @@ const exportImportantProductsToPDF = (inventory) => {
     ];
 
     recommendations.forEach((rec, index) => {
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(80, 80, 80);
       doc.text(rec, 18, currentY + 10 + (index * 4));
     });
 
-    // Footer - PARTE QUE TAMBIÉN FALTABA
+    // Footer
     const pageCount = doc.internal.getNumberOfPages();
     const pageHeight = doc.internal.pageSize.height;
     
@@ -649,7 +563,7 @@ const exportOrderSheetToPDF = (inventory) => {
       throw new Error('No hay productos para exportar');
     }
 
-    // Productos que necesitan reposición
+    // Productos que necesitan reposición - USANDO VALORES EXACTOS DE BD
     const needsRestock = inventory.filter(item => {
       const stock = parseFloat(item.stock) || 0;
       const umbral = parseFloat(item.umbral_low) || 5;
@@ -733,56 +647,49 @@ const exportOrderSheetToPDF = (inventory) => {
                          stock === 0 ? 'URGENTE' : 'NORMAL';
         
         return [
-          item.nombre || 'N/A',
-          item.marca || '-',
-          `${stock} ${item.unidad || 'u'}`,
-          sugerido.toString(),
-          necesario.toString(),
+          item.nombre || 'Sin nombre',
+          `${umbral}`,
+          `${stock}`,
+          `${sugerido}`,
+          `${necesario}`,
           prioridad
         ];
       });
 
       autoTable(doc, {
-        head: [['Producto', 'Marca', 'Stock Actual', 'Sugerido', 'A Comprar', 'Prioridad']],
-        body: groupTableData,
         startY: currentY,
+        head: [['Producto', 'Umbral', 'Stock', 'Sugerido', 'Comprar', 'Prioridad']],
+        body: groupTableData,
         theme: 'grid',
-        styles: {
-          fontSize: 8,
-          cellPadding: 3,
-          lineWidth: 0.1,
-          lineColor: [200, 200, 200]
-        },
-        headStyles: {
-          fillColor: [40, 167, 69],
+        headStyles: { 
+          fillColor: [52, 58, 64],
           textColor: [255, 255, 255],
-          fontStyle: 'bold',
-          fontSize: 9
+          fontSize: 9,
+          fontStyle: 'bold'
         },
+        bodyStyles: { fontSize: 8 },
         columnStyles: {
-          0: { cellWidth: 60 },
-          1: { cellWidth: 35 },
-          2: { cellWidth: 25, halign: 'center' },
-          3: { cellWidth: 25, halign: 'center' },
-          4: { cellWidth: 25, halign: 'center' },
-          5: { cellWidth: 20, halign: 'center' }
+          0: { cellWidth: 75 },
+          1: { cellWidth: 20, halign: 'center' },
+          2: { cellWidth: 20, halign: 'center' },
+          3: { cellWidth: 20, halign: 'center' },
+          4: { cellWidth: 20, halign: 'center' },
+          5: { cellWidth: 35, halign: 'center' }
         },
         didParseCell: function(data) {
-          if (data.column.index === 5) {
-            if (data.cell.raw.includes('⭐')) {
+          if (data.column.index === 5) { // Columna Prioridad
+            if (data.cell.text[0].includes('⭐')) {
               data.cell.styles.fillColor = [255, 193, 7];
               data.cell.styles.textColor = [33, 37, 41];
-              data.cell.styles.fontStyle = 'bold';
-            } else if (data.cell.raw === 'URGENTE') {
+            } else if (data.cell.text[0] === 'URGENTE') {
               data.cell.styles.fillColor = [220, 53, 69];
               data.cell.styles.textColor = [255, 255, 255];
-              data.cell.styles.fontStyle = 'bold';
             }
           }
         }
       });
-
-      currentY = doc.lastAutoTable.finalY + 8;
+      
+      currentY = doc.lastAutoTable.finalY + 15;
 
       // Verificar si necesitamos nueva página
       if (currentY > 240) {
