@@ -1,4 +1,4 @@
-// src/utils/pdfExport.js - VERSIÓN CORREGIDA
+// src/utils/pdfExport.js - VERSIÓN COMPLETAMENTE CORREGIDA
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -18,23 +18,19 @@ const exportCriticalStockToPDF = (inventory) => {
       console.log(`${item.nombre}: stock=${item.stock} (${typeof item.stock}), umbral_low=${item.umbral_low} (${typeof item.umbral_low}), importante=${item.importante}`);
     });
 
-    // FILTRO CORREGIDO - USAR SOLO VALORES DE LA BASE DE DATOS
+    // FILTRO CORREGIDO - USAR SOLO VALORES EXACTOS DE LA BASE DE DATOS
     const criticalItems = inventory.filter(item => {
-      // Convertir valores de manera más segura
       const stock = parseFloat(item.stock) || 0;
-      const umbralOriginal = parseFloat(item.umbral_low) || 5;
+      const umbral = parseFloat(item.umbral_low) || 5;
       
-      // Validar que los valores sean números válidos
-      if (isNaN(stock) || isNaN(umbralOriginal)) {
+      if (isNaN(stock) || isNaN(umbral)) {
         console.warn(`Valores inválidos para ${item.nombre}: stock=${item.stock}, umbral=${item.umbral_low}`);
         return false;
       }
       
-      // USAR SOLO EL UMBRAL ORIGINAL DE LA BASE DE DATOS - SIN MODIFICACIONES
-      const isCritical = stock <= umbralOriginal;
-      
-      // Debug para verificar el filtrado sin modificaciones
-      console.log(`${item.nombre}: Stock=${stock}, Umbral BD=${umbralOriginal}, ¿Crítico?=${isCritical}`);
+      // USAR SOLO LOS VALORES EXACTOS DE LA BASE DE DATOS
+      const isCritical = stock <= umbral;
+      console.log(`${item.nombre}: Stock=${stock}, Umbral=${umbral}, ¿Crítico?=${isCritical}`);
       
       return isCritical;
     });
@@ -52,7 +48,7 @@ const exportCriticalStockToPDF = (inventory) => {
     console.log('Productos críticos importantes:', importantCritical.length);
     console.log('Productos críticos normales:', normalCritical.length);
 
-    // Función para agrupar productos críticos por categorías (sin importantes)
+    // Función para agrupar productos críticos por categorías
     const groupByCategory = (items) => {
       const grouped = {};
       items.forEach(item => {
@@ -61,7 +57,6 @@ const exportCriticalStockToPDF = (inventory) => {
           grouped[categoria] = [];
         }
         
-        // Agregar información del estado del stock
         const itemWithStatus = {
           ...item,
           stockStatus: parseFloat(item.stock) === 0 ? 'SIN_STOCK' : 'STOCK_BAJO'
@@ -70,14 +65,11 @@ const exportCriticalStockToPDF = (inventory) => {
         grouped[categoria].push(itemWithStatus);
       });
       
-      // Ordenar productos dentro de cada categoría: primero sin stock, luego stock bajo, alfabético
       Object.keys(grouped).forEach(categoria => {
         grouped[categoria].sort((a, b) => {
-          // Primero por estado (sin stock primero)
           if (a.stockStatus !== b.stockStatus) {
             return a.stockStatus === 'SIN_STOCK' ? -1 : 1;
           }
-          // Luego alfabéticamente
           return (a.nombre || '').localeCompare(b.nombre || '');
         });
       });
@@ -88,25 +80,23 @@ const exportCriticalStockToPDF = (inventory) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
     
-    // HEADER MEJORADO CON GRADIENTE VISUAL
-    doc.setFillColor(220, 53, 69); // Rojo principal
+    // HEADER
+    doc.setFillColor(220, 53, 69);
     doc.rect(0, 0, pageWidth, 35, 'F');
     
-    doc.setFillColor(240, 70, 85); // Rojo más claro
+    doc.setFillColor(240, 70, 85);
     doc.rect(0, 0, pageWidth, 25, 'F');
     
-    // Título principal con mejor tipografía
     doc.setFontSize(22);
     doc.setTextColor(255, 255, 255);
     doc.setFont(undefined, 'bold');
     doc.text('REPORTE DE STOCK CRITICO POR CATEGORIAS', pageWidth / 2, 15, { align: 'center' });
     
-    // Subtítulo
     doc.setFontSize(12);
     doc.setFont(undefined, 'normal');
     doc.text('Baires Inventory - Sistema de Gestion', pageWidth / 2, 23, { align: 'center' });
     
-    // SECCIÓN DE INFORMACIÓN CON MEJOR DISEÑO
+    // INFORMACIÓN
     const currentDate = new Date().toLocaleDateString('es-AR', {
       year: 'numeric',
       month: 'long',
@@ -115,7 +105,6 @@ const exportCriticalStockToPDF = (inventory) => {
       minute: '2-digit'
     });
     
-    // Caja de información
     doc.setFillColor(248, 249, 250);
     doc.rect(14, 42, pageWidth - 28, 25, 'F');
     
@@ -127,30 +116,26 @@ const exportCriticalStockToPDF = (inventory) => {
     doc.setTextColor(108, 117, 125);
     doc.text(`Generado el: ${currentDate}`, 18, 50);
     
-    // Contar sin stock y stock bajo con valores corregidos
     const outOfStockCount = criticalItems.filter(item => parseFloat(item.stock) === 0).length;
     const lowStockCount = criticalItems.filter(item => {
       const stock = parseFloat(item.stock) || 0;
       return stock > 0 && stock <= (parseFloat(item.umbral_low) || 5);
     }).length;
     
-    // Resumen principal con mejor formato
     doc.setFontSize(14);
     doc.setTextColor(220, 53, 69);
     doc.setFont(undefined, 'bold');
     doc.text(`${criticalItems.length} productos requieren atencion inmediata`, pageWidth / 2, 58, { align: 'center' });
     
-    // Estadísticas detalladas
     doc.setFontSize(10);
     doc.setTextColor(108, 117, 125);
     doc.text(`${outOfStockCount} sin stock | ${lowStockCount} stock bajo | ${importantCritical.length} productos importantes críticos`, pageWidth / 2, 62, { align: 'center' });
 
     let currentY = 75;
 
-    // SECCIÓN DE PRODUCTOS IMPORTANTES PRIMERO (SI HAY)
+    // SECCIÓN DE PRODUCTOS IMPORTANTES PRIMERO
     if (importantCritical.length > 0) {
-      // Header de productos importantes
-      doc.setFillColor(255, 193, 7); // Amarillo para importantes
+      doc.setFillColor(255, 193, 7);
       doc.rect(14, currentY - 5, pageWidth - 28, 15, 'F');
       
       doc.setFontSize(14);
@@ -159,26 +144,24 @@ const exportCriticalStockToPDF = (inventory) => {
       doc.text(`⭐ PRODUCTOS IMPORTANTES CRÍTICOS (${importantCritical.length})`, 18, currentY + 5);
       currentY += 20;
 
-      // Tabla de productos importantes críticos
+      // TABLA CON ORDEN CORREGIDO: Umbral primero, luego Stock, SIN columna Necesario
       const importantTableData = importantCritical.map(item => {
         const stock = parseFloat(item.stock) || 0;
         const umbral = parseFloat(item.umbral_low) || 5;
-        const necesario = Math.max(0, umbral - stock);
         const estado = stock === 0 ? 'SIN STOCK' : 'STOCK BAJO';
         
         return [
           item.nombre || 'Sin nombre',
           item.tipo || 'Sin tipo',
-          `${stock}`,
           `${umbral}`,
-          `${necesario}`,
+          `${stock}`,
           estado
         ];
       });
 
       autoTable(doc, {
         startY: currentY,
-        head: [['Producto', 'Tipo', 'Stock', 'Umbral', 'Necesario', 'Estado']],
+        head: [['Producto', 'Tipo', 'Umbral', 'Stock', 'Estado']],
         body: importantTableData,
         theme: 'striped',
         headStyles: { 
@@ -189,15 +172,14 @@ const exportCriticalStockToPDF = (inventory) => {
         },
         bodyStyles: { fontSize: 9 },
         columnStyles: {
-          0: { cellWidth: 60 },
-          1: { cellWidth: 25 },
-          2: { cellWidth: 20, halign: 'center' },
-          3: { cellWidth: 20, halign: 'center' },
-          4: { cellWidth: 20, halign: 'center' },
-          5: { cellWidth: 25, halign: 'center' }
+          0: { cellWidth: 70 },
+          1: { cellWidth: 30 },
+          2: { cellWidth: 25, halign: 'center' },
+          3: { cellWidth: 25, halign: 'center' },
+          4: { cellWidth: 30, halign: 'center' }
         },
         didParseCell: function(data) {
-          if (data.column.index === 5) { // Columna Estado
+          if (data.column.index === 4) { // Columna Estado
             if (data.cell.text[0] === 'SIN STOCK') {
               data.cell.styles.fillColor = [220, 53, 69];
               data.cell.styles.textColor = [255, 255, 255];
@@ -217,7 +199,6 @@ const exportCriticalStockToPDF = (inventory) => {
       const groupedNormal = groupByCategory(normalCritical);
       const sortedCategories = Object.keys(groupedNormal).sort();
 
-      // Header de productos normales
       doc.setFillColor(52, 58, 64);
       doc.rect(14, currentY - 5, pageWidth - 28, 15, 'F');
       
@@ -227,17 +208,14 @@ const exportCriticalStockToPDF = (inventory) => {
       doc.text(`📦 PRODUCTOS NORMALES CRÍTICOS POR CATEGORÍA (${normalCritical.length})`, 18, currentY + 5);
       currentY += 20;
 
-      // Procesar cada categoría
       sortedCategories.forEach((categoria, index) => {
         const productos = groupedNormal[categoria];
         
-        // Verificar si necesitamos nueva página
         if (currentY > 240) {
           doc.addPage();
           currentY = 20;
         }
 
-        // Sub-header de categoría
         doc.setFillColor(108, 117, 125);
         doc.rect(14, currentY - 5, pageWidth - 28, 12, 'F');
         
@@ -247,26 +225,24 @@ const exportCriticalStockToPDF = (inventory) => {
         doc.text(`${categoria.toUpperCase()} (${productos.length} productos)`, 18, currentY + 2);
         currentY += 15;
 
-        // Tabla para esta categoría
+        // TABLA CON ORDEN CORREGIDO: Umbral primero, luego Stock, SIN columna Necesario
         const categoryTableData = productos.map(item => {
           const stock = parseFloat(item.stock) || 0;
           const umbral = parseFloat(item.umbral_low) || 5;
-          const necesario = Math.max(0, umbral - stock);
           const estado = stock === 0 ? 'SIN STOCK' : 'STOCK BAJO';
           
           return [
             item.nombre || 'Sin nombre',
             item.marca || 'Sin marca',
-            `${stock}`,
             `${umbral}`,
-            `${necesario}`,
+            `${stock}`,
             estado
           ];
         });
 
         autoTable(doc, {
           startY: currentY,
-          head: [['Producto', 'Marca', 'Stock', 'Umbral', 'Necesario', 'Estado']],
+          head: [['Producto', 'Marca', 'Umbral', 'Stock', 'Estado']],
           body: categoryTableData,
           theme: 'grid',
           headStyles: { 
@@ -277,15 +253,14 @@ const exportCriticalStockToPDF = (inventory) => {
           },
           bodyStyles: { fontSize: 8 },
           columnStyles: {
-            0: { cellWidth: 60 },
-            1: { cellWidth: 30 },
-            2: { cellWidth: 18, halign: 'center' },
-            3: { cellWidth: 18, halign: 'center' },
-            4: { cellWidth: 18, halign: 'center' },
-            5: { cellWidth: 26, halign: 'center' }
+            0: { cellWidth: 70 },
+            1: { cellWidth: 35 },
+            2: { cellWidth: 22, halign: 'center' },
+            3: { cellWidth: 22, halign: 'center' },
+            4: { cellWidth: 31, halign: 'center' }
           },
           didParseCell: function(data) {
-            if (data.column.index === 5) { // Columna Estado
+            if (data.column.index === 4) { // Columna Estado
               if (data.cell.text[0] === 'SIN STOCK') {
                 data.cell.styles.fillColor = [220, 53, 69];
                 data.cell.styles.textColor = [255, 255, 255];
@@ -334,19 +309,17 @@ const exportCriticalStockToPDF = (inventory) => {
       doc.text(rec, 18, currentY + (index * 4));
     });
 
-    // FOOTER MEJORADO
+    // FOOTER
     const pageCount = doc.internal.getNumberOfPages();
     const pageHeight = doc.internal.pageSize.height;
     
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i);
       
-      // Línea decorativa superior del footer
       doc.setDrawColor(220, 53, 69);
       doc.setLineWidth(0.8);
       doc.line(14, pageHeight - 25, pageWidth - 14, pageHeight - 25);
       
-      // Información del footer con mejor diseño
       doc.setFontSize(8);
       doc.setTextColor(100, 100, 100);
       doc.setFont(undefined, 'normal');
@@ -374,7 +347,7 @@ const exportCriticalStockToPDF = (inventory) => {
   }
 };
 
-// PDF de productos importantes (con estrella) - FUNCIÓN COMPLETA CORREGIDA
+// PDF de productos importantes (con estrella) - FUNCIÓN CORREGIDA
 const exportImportantProductsToPDF = (inventory) => {
   try {
     console.log('=== GENERANDO PDF DE PRODUCTOS IMPORTANTES ===');
@@ -383,7 +356,6 @@ const exportImportantProductsToPDF = (inventory) => {
       throw new Error('No hay productos para exportar');
     }
 
-    // Filtrar solo productos marcados como importantes
     const importantItems = inventory.filter(item => item.importante === true);
 
     console.log('Productos importantes encontrados:', importantItems.length);
@@ -396,7 +368,7 @@ const exportImportantProductsToPDF = (inventory) => {
     const pageWidth = doc.internal.pageSize.width;
     
     // HEADER
-    doc.setFillColor(255, 193, 7); // Amarillo para importantes
+    doc.setFillColor(255, 193, 7);
     doc.rect(0, 0, pageWidth, 35, 'F');
     
     doc.setFontSize(20);
@@ -408,7 +380,6 @@ const exportImportantProductsToPDF = (inventory) => {
     doc.setFont(undefined, 'normal');
     doc.text('Licores críticos para operación del bar', pageWidth / 2, 25, { align: 'center' });
     
-    // Información
     const currentDate = new Date().toLocaleDateString('es-AR', {
       year: 'numeric',
       month: 'long',
@@ -421,7 +392,6 @@ const exportImportantProductsToPDF = (inventory) => {
     doc.setTextColor(108, 117, 125);
     doc.text(`Generado el: ${currentDate}`, 18, 45);
     
-    // Contar críticos dentro de importantes
     const importantCritical = importantItems.filter(item => {
       const stock = parseFloat(item.stock) || 0;
       const umbral = parseFloat(item.umbral_low) || 5;
@@ -435,11 +405,10 @@ const exportImportantProductsToPDF = (inventory) => {
 
     let currentY = 70;
 
-    // Tabla de productos importantes
+    // TABLA CON ORDEN CORREGIDO: Umbral primero, luego Stock, SIN columna Necesario
     const tableData = importantItems.map(item => {
       const stock = parseFloat(item.stock) || 0;
       const umbral = parseFloat(item.umbral_low) || 5;
-      const necesario = Math.max(0, umbral - stock);
       const estado = stock === 0 ? 'SIN STOCK' : 
                     stock <= umbral ? 'STOCK BAJO' : 'OK';
       
@@ -447,16 +416,15 @@ const exportImportantProductsToPDF = (inventory) => {
         item.nombre || 'Sin nombre',
         item.tipo || 'Sin tipo',
         item.marca || 'Sin marca',
-        `${stock}`,
         `${umbral}`,
-        `${necesario}`,
+        `${stock}`,
         estado
       ];
     });
 
     autoTable(doc, {
       startY: currentY,
-      head: [['Producto', 'Tipo', 'Marca', 'Stock', 'Umbral', 'Necesario', 'Estado']],
+      head: [['Producto', 'Tipo', 'Marca', 'Umbral', 'Stock', 'Estado']],
       body: tableData,
       theme: 'striped',
       headStyles: { 
@@ -467,16 +435,15 @@ const exportImportantProductsToPDF = (inventory) => {
       },
       bodyStyles: { fontSize: 9 },
       columnStyles: {
-        0: { cellWidth: 50 },
+        0: { cellWidth: 55 },
         1: { cellWidth: 25 },
         2: { cellWidth: 30 },
-        3: { cellWidth: 20, halign: 'center' },
-        4: { cellWidth: 20, halign: 'center' },
-        5: { cellWidth: 20, halign: 'center' },
-        6: { cellWidth: 25, halign: 'center' }
+        3: { cellWidth: 22, halign: 'center' },
+        4: { cellWidth: 22, halign: 'center' },
+        5: { cellWidth: 26, halign: 'center' }
       },
       didParseCell: function(data) {
-        if (data.column.index === 6) { // Columna Estado
+        if (data.column.index === 5) { // Columna Estado
           if (data.cell.text[0] === 'SIN STOCK') {
             data.cell.styles.fillColor = [220, 53, 69];
             data.cell.styles.textColor = [255, 255, 255];
@@ -538,7 +505,6 @@ const exportImportantProductsToPDF = (inventory) => {
       doc.text('⭐ PRIORIDAD MÁXIMA ⭐', pageWidth / 2, pageHeight - 8, { align: 'center' });
     }
     
-    // Generar archivo
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
     const fileName = `productos_importantes_${timestamp}.pdf`;
     
@@ -579,11 +545,9 @@ const exportOrderSheetToPDF = (inventory) => {
     needsRestock.forEach(item => {
       let groupKey = 'Sin Proveedor';
       
-      // Si tiene proveedor, usar ese
       if (item.proveedor_nombre && item.proveedor_nombre.trim()) {
         groupKey = item.proveedor_nombre.trim();
       } else if (item.tipo) {
-        // Sino agrupar por tipo
         groupKey = `${item.tipo} (Por tipo)`;
       }
       
@@ -609,7 +573,6 @@ const exportOrderSheetToPDF = (inventory) => {
     doc.setFont(undefined, 'normal');
     doc.text('Organizado por proveedor para facilitar órdenes', pageWidth / 2, 25, { align: 'center' });
     
-    // Información
     const currentDate = new Date().toLocaleDateString('es-AR', {
       year: 'numeric',
       month: 'long', 
@@ -627,7 +590,6 @@ const exportOrderSheetToPDF = (inventory) => {
     Object.keys(groupedItems).sort().forEach((groupName, index) => {
       const productos = groupedItems[groupName];
       
-      // Header del grupo
       doc.setFillColor(52, 58, 64);
       doc.rect(14, currentY - 5, pageWidth - 28, 12, 'F');
       
@@ -637,11 +599,11 @@ const exportOrderSheetToPDF = (inventory) => {
       doc.text(`📦 ${groupName.toUpperCase()} (${productos.length} productos)`, 18, currentY + 2);
       currentY += 15;
 
-      // Tabla para este grupo
+      // TABLA CON ORDEN CORREGIDO: Umbral primero, luego Stock
       const groupTableData = productos.map(item => {
         const stock = parseFloat(item.stock) || 0;
         const umbral = parseFloat(item.umbral_low) || 5;
-        const sugerido = Math.max(umbral * 2, umbral + 5); // Sugerir más cantidad
+        const sugerido = Math.max(umbral * 2, umbral + 5);
         const necesario = sugerido - stock;
         const prioridad = (item.importante === true || item.importante === "true") ? '⭐ ALTA' : 
                          stock === 0 ? 'URGENTE' : 'NORMAL';
@@ -691,7 +653,6 @@ const exportOrderSheetToPDF = (inventory) => {
       
       currentY = doc.lastAutoTable.finalY + 15;
 
-      // Verificar si necesitamos nueva página
       if (currentY > 240) {
         doc.addPage();
         currentY = 20;
@@ -720,7 +681,6 @@ const exportOrderSheetToPDF = (inventory) => {
       doc.text('LISTA PARA PROVEEDORES', pageWidth / 2, pageHeight - 8, { align: 'center' });
     }
     
-    // Generar archivo
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
     const fileName = `lista_compras_${timestamp}.pdf`;
     
