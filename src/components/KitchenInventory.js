@@ -1,46 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Button, Form, Table, Badge, Alert } from 'react-bootstrap';
 import { FaPlus, FaSearch, FaEdit, FaTrash, FaExclamationTriangle, FaBox, FaFilter } from 'react-icons/fa';
+import { 
+  collection, 
+  addDoc, 
+  onSnapshot, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  query, 
+  orderBy, 
+  serverTimestamp,
+  where
+} from 'firebase/firestore';
+import { db } from '../firebase';
 
-const KitchenInventory = () => {
-  const [items, setItems] = useState([
-    {
-      id: 1,
-      name: 'Tomates',
-      category: 'Verduras',
-      quantity: 8,
-      unit: 'unidades',
-      location: 'Refrigerador',
-      purchaseDate: '2025-09-05',
-      expirationDate: '2025-09-15',
-      price: 2.50,
-      status: 'normal'
-    },
-    {
-      id: 2,
-      name: 'Arroz Basmati',
-      category: 'Granos',
-      quantity: 2,
-      unit: 'kg',
-      location: 'Despensa',
-      purchaseDate: '2025-08-20',
-      expirationDate: '2026-08-20',
-      price: 4.99,
-      status: 'normal'
-    },
-    {
-      id: 3,
-      name: 'Leche',
-      category: 'Lácteos',
-      quantity: 1,
-      unit: 'litro',
-      location: 'Refrigerador',
-      purchaseDate: '2025-09-08',
-      expirationDate: '2025-09-12',
-      price: 1.85,
-      status: 'warning'
-    }
-  ]);
+const KitchenInventory = ({ user, userRole, onBack }) => {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -51,6 +30,17 @@ const KitchenInventory = () => {
   const categories = ['Verduras', 'Frutas', 'Lácteos', 'Carnes', 'Granos', 'Condimentos', 'Bebidas', 'Congelados'];
   const locations = ['Refrigerador', 'Congelador', 'Despensa', 'Alacena'];
   const units = ['unidades', 'kg', 'g', 'litros', 'ml', 'paquetes', 'latas', 'cajas'];
+
+  const [newItem, setNewItem] = useState({
+    name: '',
+    category: 'Verduras',
+    quantity: '',
+    unit: 'unidades',
+    location: 'Refrigerador',
+    purchaseDate: new Date().toISOString().split('T')[0],
+    expirationDate: '',
+    price: ''
+  });
 
   // Calcular estado del producto basado en fecha de vencimiento
   const getItemStatus = (expirationDate) => {
@@ -64,26 +54,43 @@ const KitchenInventory = () => {
     return 'normal';
   };
 
-  // CORRECCIÓN: Comentar el useEffect problemático
-  // useEffect(() => {
-  //   setItems(prevItems => 
-  //     prevItems.map(item => ({
-  //       ...item,
-  //       status: getItemStatus(item.expirationDate)
-  //     }))
-  //   );
-  // }, []);
+  // Cargar datos desde Firebase
+  useEffect(() => {
+    if (!user?.email) {
+      setLoading(false);
+      return;
+    }
 
-  const [newItem, setNewItem] = useState({
-    name: '',
-    category: 'Verduras',
-    quantity: '',
-    unit: 'unidades',
-    location: 'Refrigerador',
-    purchaseDate: new Date().toISOString().split('T')[0],
-    expirationDate: '',
-    price: ''
-  });
+    console.log('🔄 Cargando inventario de cocina desde Firebase...');
+    
+    // Query para obtener items del inventario de cocina
+    const kitchenQuery = query(
+      collection(db, 'inventario_cocina'),
+      orderBy('name', 'asc')
+    );
+
+    const unsubscribe = onSnapshot(
+      kitchenQuery,
+      (snapshot) => {
+        const kitchenItems = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          status: getItemStatus(doc.data().expirationDate)
+        }));
+        
+        console.log('✅ Inventario de cocina cargado:', kitchenItems.length, 'productos');
+        setItems(kitchenItems);
+        setLoading(false);
+      },
+      (error) => {
+        console.error('❌ Error cargando inventario de cocina:', error);
+        setError('Error cargando el inventario de cocina');
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user]);
 
   const filteredItems = items.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -92,52 +99,101 @@ const KitchenInventory = () => {
     return matchesSearch && matchesCategory && matchesLocation;
   });
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!newItem.name || !newItem.quantity || !newItem.expirationDate || !newItem.price) {
-      alert('Por favor completa todos los campos requeridos');
+      setError('Por favor completa todos los campos requeridos');
       return;
     }
 
-    if (editingItem) {
-      setItems(items.map(item => 
-        item.id === editingItem.id 
-          ? { ...newItem, id: editingItem.id, status: getItemStatus(newItem.expirationDate) }
-          : item
-      ));
-      setEditingItem(null);
-    } else {
-      const id = Math.max(...items.map(item => item.id), 0) + 1;
-      setItems([...items, { 
-        ...newItem, 
-        id, 
+    setLoading(true);
+    setError('');
+
+    try {
+      const itemData = {
+        name: newItem.name,
+        category: newItem.category,
         quantity: parseFloat(newItem.quantity),
+        unit: newItem.unit,
+        location: newItem.location,
+        purchaseDate: newItem.purchaseDate,
+        expirationDate: newItem.expirationDate,
         price: parseFloat(newItem.price),
-        status: getItemStatus(newItem.expirationDate)
-      }]);
+        status: getItemStatus(newItem.expirationDate),
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+        created_by: user.email
+      };
+
+      if (editingItem) {
+        // Actualizar producto existente
+        await updateDoc(doc(db, 'inventario_cocina', editingItem.id), {
+          ...itemData,
+          updated_by: user.email
+        });
+        setSuccess(`"${newItem.name}" actualizado correctamente`);
+      } else {
+        // Crear nuevo producto
+        await addDoc(collection(db, 'inventario_cocina'), itemData);
+        setSuccess(`"${newItem.name}" agregado correctamente`);
+      }
+
+      // Limpiar formulario
+      setNewItem({
+        name: '',
+        category: 'Verduras',
+        quantity: '',
+        unit: 'unidades',
+        location: 'Refrigerador',
+        purchaseDate: new Date().toISOString().split('T')[0],
+        expirationDate: '',
+        price: ''
+      });
+      setShowAddForm(false);
+      setEditingItem(null);
+      
+      // Limpiar mensaje después de 3 segundos
+      setTimeout(() => setSuccess(''), 3000);
+
+    } catch (error) {
+      console.error('Error guardando producto:', error);
+      setError('Error al guardar el producto');
+      setTimeout(() => setError(''), 3000);
     }
-    setNewItem({
-      name: '',
-      category: 'Verduras',
-      quantity: '',
-      unit: 'unidades',
-      location: 'Refrigerador',
-      purchaseDate: new Date().toISOString().split('T')[0],
-      expirationDate: '',
-      price: ''
-    });
-    setShowAddForm(false);
+    
+    setLoading(false);
   };
 
   const handleEdit = (item) => {
-    setNewItem(item);
+    setNewItem({
+      name: item.name,
+      category: item.category,
+      quantity: item.quantity.toString(),
+      unit: item.unit,
+      location: item.location,
+      purchaseDate: item.purchaseDate,
+      expirationDate: item.expirationDate,
+      price: item.price.toString()
+    });
     setEditingItem(item);
     setShowAddForm(true);
   };
 
-  const handleDelete = (id) => {
-    if (window.confirm('¿Estás seguro de que deseas eliminar este producto?')) {
-      setItems(items.filter(item => item.id !== id));
+  const handleDelete = async (item) => {
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar "${item.name}"?`)) {
+      return;
     }
+
+    setLoading(true);
+    try {
+      await deleteDoc(doc(db, 'inventario_cocina', item.id));
+      setSuccess(`"${item.name}" eliminado correctamente`);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      console.error('Error eliminando producto:', error);
+      setError('Error al eliminar el producto');
+      setTimeout(() => setError(''), 3000);
+    }
+    setLoading(false);
   };
 
   const getStatusVariant = (status) => {
@@ -160,13 +216,48 @@ const KitchenInventory = () => {
   const warningItems = items.filter(item => item.status === 'warning').length;
   const totalValue = items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
 
+  if (loading && items.length === 0) {
+    return (
+      <Container className="d-flex justify-content-center align-items-center" style={{ minHeight: '50vh' }}>
+        <div className="text-center">
+          <div className="spinner-border text-primary" role="status">
+            <span className="visually-hidden">Cargando...</span>
+          </div>
+          <p className="mt-2 text-muted">Cargando inventario de cocina...</p>
+        </div>
+      </Container>
+    );
+  }
+
   return (
     <Container fluid style={{ backgroundColor: '#f8f9fa', minHeight: '100vh', padding: '20px' }}>
+      {/* Alertas */}
+      {error && (
+        <Alert variant="danger" dismissible onClose={() => setError('')}>
+          {error}
+        </Alert>
+      )}
+      
+      {success && (
+        <Alert variant="success" dismissible onClose={() => setSuccess('')}>
+          {success}
+        </Alert>
+      )}
+
       {/* Encabezado */}
       <Card className="mb-4 border-0 shadow-sm">
         <Card.Header style={{ backgroundColor: '#fff', borderBottom: '1px solid #e9ecef' }}>
-          <h1 className="display-6 text-dark mb-2">Inventario de Cocina</h1>
-          <p className="text-muted mb-0">Gestiona tu inventario con el sistema FIFO para reducir desperdicios</p>
+          <div className="d-flex justify-content-between align-items-center">
+            <div>
+              <h1 className="display-6 text-dark mb-2">Inventario de Cocina</h1>
+              <p className="text-muted mb-0">Gestiona tu inventario con el sistema FIFO para reducir desperdicios</p>
+            </div>
+            {onBack && (
+              <Button variant="outline-secondary" onClick={onBack}>
+                ← Volver al Dashboard
+              </Button>
+            )}
+          </div>
         </Card.Header>
 
         {/* Resumen del inventario */}
@@ -441,9 +532,10 @@ const KitchenInventory = () => {
               <Button
                 variant="success"
                 onClick={handleSubmit}
+                disabled={loading}
                 style={{ borderRadius: '6px' }}
               >
-                {editingItem ? 'Actualizar' : 'Agregar'}
+                {loading ? 'Guardando...' : (editingItem ? 'Actualizar' : 'Agregar')}
               </Button>
               <Button
                 variant="secondary"
@@ -553,7 +645,7 @@ const KitchenInventory = () => {
                           <Button
                             variant="outline-danger"
                             size="sm"
-                            onClick={() => handleDelete(item.id)}
+                            onClick={() => handleDelete(item)}
                             style={{ borderRadius: '4px' }}
                           >
                             <FaTrash size={12} />
