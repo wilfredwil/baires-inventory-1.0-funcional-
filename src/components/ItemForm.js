@@ -1,683 +1,516 @@
-// src/components/ItemForm.js - Versión mejorada
+// src/components/InventoryItemForm.js - ARCHIVO COMPLETO CON PROVEEDOR
 import React, { useState, useEffect } from 'react';
-import { 
-  Form, 
-  Button, 
-  Row, 
-  Col, 
-  Alert, 
-  InputGroup,
-  Modal,
-  Badge
-} from 'react-bootstrap';
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  serverTimestamp,
-  getDocs,
-  query,
-  where 
-} from 'firebase/firestore';
+import { Modal, Form, Button, Alert, Spinner, Row, Col } from 'react-bootstrap';
+import { collection, getDocs, updateDoc, doc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { 
-  FaPlus, 
-  FaWineBottle, 
-  FaUtensils, 
-  FaTruck,
-  FaSave,
-  FaTimes 
-} from 'react-icons/fa';
 
-const ItemForm = ({ 
-  editingItem, 
-  onSuccess, 
-  onCancel, 
-  currentUser, 
-  userRole,
-  providers,
-  inventoryType = 'bar',
-  canEditAllFields = false 
+const InventoryItemForm = ({ 
+  show, 
+  onHide, 
+  item = null, 
+  userRole, 
+  user, 
+  onSuccess,
+  providers = [] 
 }) => {
   const [formData, setFormData] = useState({
     nombre: '',
     marca: '',
-    tipo: '',
-    stock: '',
-    unidad: '',
-    umbral_low: '',
-    precio: '',
+    tipo: 'licor',
+    subTipo: '',
+    origen: '',
+    stock: 0,
+    umbral_low: 5,
     proveedor_id: '',
-    tipo_inventario: inventoryType
+    precio: 0,
+    descripcion: ''
   });
 
+  const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [showProviderForm, setShowProviderForm] = useState(false);
-  const [newProvider, setNewProvider] = useState({
-    nombre: '',
-    contacto: '',
-    telefono: '',
-    email: '',
-    tipo: inventoryType
-  });
+  const [submitError, setSubmitError] = useState('');
 
-  // Filtrar proveedores por tipo de inventario
-  const filteredProviders = providers.filter(provider => 
-    provider.tipo === inventoryType
-  );
-
-  // Opciones según el tipo de inventario
-  const getTypeOptions = () => {
-    if (inventoryType === 'bar') {
-      return [
-        'Whisky', 'Ron', 'Vodka', 'Gin', 'Tequila', 'Licor', 
-        'Cerveza', 'Vino', 'Champagne', 'Aperitivo', 'Sin Alcohol', 'Mixers'
-      ];
-    } else {
-      return [
-        'Carnes', 'Pescados', 'Verduras', 'Lácteos', 'Cereales',
-        'Condimentos', 'Aceites', 'Conservas', 'Panadería', 'Congelados',
-        'Frutas', 'Hierbas', 'Especias'
-      ];
-    }
-  };
-
-  const getUnitOptions = () => {
-    if (inventoryType === 'bar') {
-      return ['ml', 'L', 'oz', 'botellas', 'latas', 'cajas'];
-    } else {
-      return ['kg', 'g', 'L', 'ml', 'unidades', 'paquetes', 'cajas', 'latas'];
-    }
-  };
+  const isEditing = !!item;
+  const canEditAllFields = userRole === 'admin' || userRole === 'manager';
 
   useEffect(() => {
-    if (editingItem) {
+    if (item) {
       setFormData({
-        nombre: editingItem.nombre || '',
-        marca: editingItem.marca || '',
-        tipo: editingItem.tipo || '',
-        stock: editingItem.stock || '',
-        unidad: editingItem.unidad || '',
-        umbral_low: editingItem.umbral_low || '',
-        precio: editingItem.precio || '',
-        proveedor_id: editingItem.proveedor_id || '',
-        tipo_inventario: editingItem.tipo_inventario || inventoryType
+        nombre: item.nombre || '',
+        marca: item.marca || '',
+        tipo: item.tipo || 'licor',
+        subTipo: item.subTipo || '',
+        origen: item.origen || '',
+        stock: Number(item.stock) || 0,
+        umbral_low: Number(item.umbral_low) || 5,
+        proveedor_id: item.proveedor_id || '',
+        precio: Number(item.precio) || 0,
+        descripcion: item.descripcion || ''
       });
     } else {
-      setFormData(prev => ({
-        ...prev,
-        tipo_inventario: inventoryType
-      }));
+      // Reset form for new item
+      setFormData({
+        nombre: '',
+        marca: '',
+        tipo: 'licor',
+        subTipo: '',
+        origen: '',
+        stock: 0,
+        umbral_low: 5,
+        proveedor_id: '',
+        precio: 0,
+        descripcion: ''
+      });
     }
-  }, [editingItem, inventoryType]);
+    setErrors({});
+    setSubmitError('');
+  }, [item, show]);
+
+  const validateForm = () => {
+    const newErrors = {};
+
+    // Validaciones para campos que todos pueden editar
+    if (formData.stock < 0) {
+      newErrors.stock = 'El stock no puede ser negativo';
+    }
+    if (formData.stock > 10000) {
+      newErrors.stock = 'El stock no puede exceder 10,000 unidades';
+    }
+
+    // Validaciones para campos que solo admin/manager pueden editar
+    if (canEditAllFields) {
+      if (!formData.nombre.trim()) {
+        newErrors.nombre = 'El nombre es obligatorio';
+      } else if (formData.nombre.length < 2) {
+        newErrors.nombre = 'El nombre debe tener al menos 2 caracteres';
+      } else if (formData.nombre.length > 100) {
+        newErrors.nombre = 'El nombre no puede exceder 100 caracteres';
+      }
+
+      if (formData.umbral_low < 0) {
+        newErrors.umbral_low = 'El umbral no puede ser negativo';
+      }
+      if (formData.umbral_low > 1000) {
+        newErrors.umbral_low = 'El umbral no puede exceder 1,000 unidades';
+      }
+
+      if (formData.precio < 0) {
+        newErrors.precio = 'El precio no puede ser negativo';
+      }
+      if (formData.precio > 100000) {
+        newErrors.precio = 'El precio no puede exceder $100,000';
+      }
+
+      // Validaciones específicas por tipo
+      if (formData.tipo === 'licor' && !formData.subTipo) {
+        newErrors.subTipo = 'El sub-tipo es obligatorio para licores';
+      }
+
+      if (formData.tipo === 'vino') {
+        if (!formData.marca.trim()) {
+          newErrors.marca = 'La marca es obligatoria para vinos';
+        }
+        if (!formData.origen.trim()) {
+          newErrors.origen = 'El origen es obligatorio para vinos';
+        }
+      }
+
+      if (formData.tipo === 'cerveza' && !formData.marca.trim()) {
+        newErrors.marca = 'La marca es obligatoria para cervezas';
+      }
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleInputChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value, type } = e.target;
+    let processedValue = value;
+
+    // Procesar valores numéricos
+    if (type === 'number') {
+      processedValue = value === '' ? 0 : Number(value);
+    }
+
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: processedValue
     }));
-  };
 
-  const handleProviderInputChange = (e) => {
-    const { name, value } = e.target;
-    setNewProvider(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
-
-  const handleAddProvider = async (e) => {
-    e.preventDefault();
-    
-    if (!newProvider.nombre.trim()) {
-      setError('El nombre del proveedor es obligatorio');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const providerData = {
-        ...newProvider,
-        tipo: inventoryType, // Asegurar que el proveedor tenga el tipo correcto
-        fecha_creacion: serverTimestamp(),
-        creado_por: currentUser.email
-      };
-
-      const docRef = await addDoc(collection(db, 'providers'), providerData);
-      
-      // Actualizar el formulario para seleccionar el nuevo proveedor
-      setFormData(prev => ({
+    // Limpiar errores cuando el usuario modifica el campo
+    if (errors[name]) {
+      setErrors(prev => ({
         ...prev,
-        proveedor_id: docRef.id
+        [name]: ''
       }));
-
-      // Limpiar el formulario de proveedor
-      setNewProvider({
-        nombre: '',
-        contacto: '',
-        telefono: '',
-        email: '',
-        tipo: inventoryType
-      });
-
-      setShowProviderForm(false);
-      setError('');
-      
-      // Recargar la página para obtener el nuevo proveedor
-      window.location.reload();
-      
-    } catch (error) {
-      console.error('Error adding provider:', error);
-      setError('Error al agregar el proveedor');
     }
-    setLoading(false);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Validaciones básicas
-    if (!formData.nombre.trim()) {
-      setError('El nombre del producto es obligatorio');
+    if (!validateForm()) {
       return;
     }
 
-    if (!canEditAllFields && editingItem) {
-      // Para usuarios con permisos limitados, solo validar stock
-      if (!formData.stock || isNaN(Number(formData.stock)) || Number(formData.stock) < 0) {
-        setError('Ingrese un stock válido (número mayor o igual a 0)');
-        return;
-      }
-    } else {
-      // Validaciones completas para admin/manager
-      if (!formData.tipo) {
-        setError('Seleccione un tipo de producto');
-        return;
-      }
-
-      if (!formData.stock || isNaN(Number(formData.stock)) || Number(formData.stock) < 0) {
-        setError('Ingrese un stock válido');
-        return;
-      }
-
-      if (!formData.unidad) {
-        setError('Seleccione una unidad');
-        return;
-      }
-
-      if (!formData.umbral_low || isNaN(Number(formData.umbral_low)) || Number(formData.umbral_low) < 0) {
-        setError('Ingrese un umbral mínimo válido');
-        return;
-      }
-    }
-
     setLoading(true);
-    setError('');
+    setSubmitError('');
 
     try {
-      const now = new Date();
-      const itemData = {
-        ...formData,
-        stock: Number(formData.stock),
-        precio: formData.precio ? Number(formData.precio) : 0,
-        umbral_low: formData.umbral_low ? Number(formData.umbral_low) : 0,
-        ultima_actualizacion: now,
-        actualizado_por: currentUser.email,
-        tipo_inventario: inventoryType // Asegurar que se guarde el tipo correcto
-      };
+      const timestamp = new Date();
+      const updatedBy = user.email;
 
-      let historialData = {
-        item_nombre: formData.nombre,
-        usuario: currentUser.email,
-        fecha: serverTimestamp(),
-        tipo_inventario: inventoryType
-      };
-
-      if (editingItem) {
+      if (isEditing) {
         // Actualizar item existente
-        const itemRef = doc(db, 'inventario', editingItem.id);
-        
-        if (!canEditAllFields) {
-          // Solo actualizar stock para usuarios limitados
-          const limitedUpdate = {
-            stock: Number(formData.stock),
-            ultima_actualizacion: now,
-            actualizado_por: currentUser.email
-          };
-          await updateDoc(itemRef, limitedUpdate);
-          
-          historialData = {
-            ...historialData,
-            tipo: 'actualizacion_stock',
-            stock_anterior: editingItem.stock,
-            stock_nuevo: formData.stock,
-            detalles: `Stock actualizado de ${editingItem.stock} a ${formData.stock} ${editingItem.unidad}`
-          };
-        } else {
-          // Actualización completa para admin/manager
-          await updateDoc(itemRef, itemData);
-          
-          historialData = {
-            ...historialData,
-            tipo: 'actualizacion',
-            detalles: `Producto actualizado en inventario de ${inventoryType}`
-          };
+        const updateData = canEditAllFields 
+          ? {
+              ...formData,
+              ultima_actualizacion: timestamp,
+              actualizado_por: updatedBy
+            }
+          : {
+              // Solo actualizar stock si no es admin/manager
+              stock: formData.stock,
+              ultima_actualizacion: timestamp,
+              actualizado_por: updatedBy
+            };
+
+        await updateDoc(doc(db, 'inventario', item.id), updateData);
+
+        // Registrar en historial
+        if (formData.stock !== item.stock) {
+          const change = formData.stock - item.stock;
+          await addDoc(collection(db, 'historial'), {
+            item_id: item.id,
+            accion: change > 0 ? 'agregado' : 'vendido',
+            cantidad: Math.abs(change),
+            fecha: timestamp,
+            usuario: updatedBy,
+            motivo: canEditAllFields ? 'Edición completa' : 'Actualización de stock'
+          });
         }
+
       } else {
-        // Crear nuevo item
-        itemData.fecha_creacion = now;
-        itemData.creado_por = currentUser.email;
-        
-        await addDoc(collection(db, 'inventario'), itemData);
-        
-        historialData = {
-          ...historialData,
-          tipo: 'creacion',
-          detalles: `Nuevo producto agregado al inventario de ${inventoryType}`
+        // Crear nuevo item (solo admin/manager)
+        if (!canEditAllFields) {
+          throw new Error('No tienes permisos para crear nuevos ítems');
+        }
+
+        const newItemData = {
+          ...formData,
+          creado_en: timestamp,
+          creado_por: updatedBy,
+          ultima_actualizacion: timestamp
         };
+
+        const docRef = await addDoc(collection(db, 'inventario'), newItemData);
+
+        // Registrar en historial
+        await addDoc(collection(db, 'historial'), {
+          item_id: docRef.id,
+          accion: 'creado',
+          cantidad: formData.stock,
+          fecha: timestamp,
+          usuario: updatedBy
+        });
       }
 
-      // Registrar en historial
-      await addDoc(collection(db, 'historial'), historialData);
+      onSuccess && onSuccess();
+      onHide();
 
-      onSuccess();
     } catch (error) {
       console.error('Error saving item:', error);
-      setError('Error al guardar el producto');
+      setSubmitError(error.message || 'Error al guardar el ítem');
     }
-    
+
     setLoading(false);
   };
 
+  const getFormTitle = () => {
+    if (isEditing) {
+      return canEditAllFields ? 'Editar Ítem' : 'Actualizar Stock';
+    }
+    return 'Nuevo Ítem';
+  };
+
   return (
-    <div>
-      {error && (
-        <Alert variant="danger" className="mb-3">
-          {error}
-        </Alert>
-      )}
+    <Modal show={show} onHide={onHide} size="lg" centered>
+      <Modal.Header closeButton>
+        <Modal.Title>{getFormTitle()}</Modal.Title>
+      </Modal.Header>
 
       <Form onSubmit={handleSubmit}>
-        {/* Header del formulario */}
-        <div className="mb-4">
-          <div className="d-flex align-items-center mb-2">
-            {inventoryType === 'bar' ? (
-              <FaWineBottle className="me-2 text-primary" />
-            ) : (
-              <FaUtensils className="me-2 text-success" />
-            )}
-            <h5 className="mb-0">
-              {editingItem ? 'Editar Producto' : 'Nuevo Producto'} - 
-              <Badge bg={inventoryType === 'bar' ? 'primary' : 'success'} className="ms-2">
-                {inventoryType === 'bar' ? 'Bar' : 'Cocina'}
-              </Badge>
-            </h5>
-          </div>
-          
-          {!canEditAllFields && editingItem && (
-            <Alert variant="info" className="mb-3">
-              <small>
-                Solo puedes actualizar el stock de este producto.
-                Para modificar otros campos, contacta al administrador.
-              </small>
+        <Modal.Body>
+          {submitError && (
+            <Alert variant="danger">{submitError}</Alert>
+          )}
+
+          {!canEditAllFields && (
+            <Alert variant="info">
+              <strong>Modo Limitado:</strong> Solo puedes actualizar el stock del ítem.
             </Alert>
           )}
-        </div>
 
-        <Row>
-          {/* Información básica */}
-          <Col md={6}>
-            <Form.Group className="mb-3">
-              <Form.Label>Nombre del Producto *</Form.Label>
-              <Form.Control
-                type="text"
-                name="nombre"
-                value={formData.nombre}
-                onChange={handleInputChange}
-                placeholder="Ej: Whisky Jack Daniels"
-                disabled={!canEditAllFields && editingItem}
-                required
-              />
-            </Form.Group>
-          </Col>
-
-          <Col md={6}>
-            <Form.Group className="mb-3">
-              <Form.Label>Marca</Form.Label>
-              <Form.Control
-                type="text"
-                name="marca"
-                value={formData.marca}
-                onChange={handleInputChange}
-                placeholder="Ej: Jack Daniels"
-                disabled={!canEditAllFields && editingItem}
-              />
-            </Form.Group>
-          </Col>
-
-          <Col md={6}>
-            <Form.Group className="mb-3">
-              <Form.Label>Tipo *</Form.Label>
-              <Form.Select
-                name="tipo"
-                value={formData.tipo}
-                onChange={handleInputChange}
-                disabled={!canEditAllFields && editingItem}
-                required
-              >
-                <option value="">Seleccionar tipo</option>
-                {getTypeOptions().map((tipo) => (
-                  <option key={tipo} value={tipo}>{tipo}</option>
-                ))}
-              </Form.Select>
-            </Form.Group>
-          </Col>
-
-          <Col md={6}>
-            <Form.Group className="mb-3">
-              <Form.Label>Proveedor</Form.Label>
-              <InputGroup>
-                <Form.Select
-                  name="proveedor_id"
-                  value={formData.proveedor_id}
-                  onChange={handleInputChange}
-                  disabled={!canEditAllFields && editingItem}
-                >
-                  <option value="">Sin proveedor</option>
-                  {filteredProviders.map((provider) => (
-                    <option key={provider.id} value={provider.id}>
-                      {provider.nombre}
-                    </option>
-                  ))}
-                </Form.Select>
-                {canEditAllFields && (
-                  <Button
-                    variant="outline-secondary"
-                    onClick={() => setShowProviderForm(true)}
-                    disabled={loading}
-                  >
-                    <FaPlus />
-                  </Button>
-                )}
-              </InputGroup>
-              <Form.Text className="text-muted">
-                Proveedores disponibles para {inventoryType === 'bar' ? 'bar' : 'cocina'}
-              </Form.Text>
-            </Form.Group>
-          </Col>
-
-          {/* Stock y unidades */}
-          <Col md={4}>
-            <Form.Group className="mb-3">
-              <Form.Label>Stock Actual *</Form.Label>
-              <Form.Control
-                type="number"
-                name="stock"
-                value={formData.stock}
-                onChange={handleInputChange}
-                placeholder="0"
-                min="0"
-                step="0.01"
-                required
-              />
-            </Form.Group>
-          </Col>
-
-          <Col md={4}>
-            <Form.Group className="mb-3">
-              <Form.Label>Unidad *</Form.Label>
-              <Form.Select
-                name="unidad"
-                value={formData.unidad}
-                onChange={handleInputChange}
-                disabled={!canEditAllFields && editingItem}
-                required
-              >
-                <option value="">Seleccionar unidad</option>
-                {getUnitOptions().map((unidad) => (
-                  <option key={unidad} value={unidad}>{unidad}</option>
-                ))}
-              </Form.Select>
-            </Form.Group>
-          </Col>
-
-          <Col md={4}>
-            <Form.Group className="mb-3">
-              <Form.Label>Umbral Mínimo *</Form.Label>
-              <Form.Control
-                type="number"
-                name="umbral_low"
-                value={formData.umbral_low}
-                onChange={handleInputChange}
-                placeholder="0"
-                min="0"
-                step="0.01"
-                disabled={!canEditAllFields && editingItem}
-                required
-              />
-              <Form.Text className="text-muted">
-                Alerta cuando el stock baje de este nivel
-              </Form.Text>
-            </Form.Group>
-          </Col>
-
-          {/* Precio */}
-          <Col md={6}>
-            <Form.Group className="mb-3">
-              <Form.Label>Precio Unitario (opcional)</Form.Label>
-              <InputGroup>
-                <InputGroup.Text>$</InputGroup.Text>
-                <Form.Control
-                  type="number"
-                  name="precio"
-                  value={formData.precio}
-                  onChange={handleInputChange}
-                  placeholder="0.00"
-                  min="0"
-                  step="0.01"
-                  disabled={!canEditAllFields && editingItem}
-                />
-              </InputGroup>
-            </Form.Group>
-          </Col>
-
-          <Col md={6}>
-            <Form.Group className="mb-3">
-              <Form.Label>Valor Total del Stock</Form.Label>
-              <InputGroup>
-                <InputGroup.Text>$</InputGroup.Text>
+          <Row>
+            <Col md={6}>
+              <Form.Group className="mb-3">
+                <Form.Label>Nombre *</Form.Label>
                 <Form.Control
                   type="text"
-                  value={
-                    formData.stock && formData.precio 
-                      ? (Number(formData.stock) * Number(formData.precio)).toLocaleString()
-                      : '0'
-                  }
-                  disabled
-                  className="bg-light"
+                  name="nombre"
+                  value={formData.nombre}
+                  onChange={handleInputChange}
+                  disabled={!canEditAllFields}
+                  isInvalid={!!errors.nombre}
+                  placeholder="Ej: Whiskey Jack Daniel's"
+                  maxLength="100"
+                  required={canEditAllFields}
                 />
-              </InputGroup>
-              <Form.Text className="text-muted">
-                Calculado automáticamente
-              </Form.Text>
-            </Form.Group>
-          </Col>
-        </Row>
+                <Form.Control.Feedback type="invalid">
+                  {errors.nombre}
+                </Form.Control.Feedback>
+              </Form.Group>
+            </Col>
 
-        {/* Información adicional para productos existentes */}
-        {editingItem && (
-          <Row className="mt-3">
-            <Col md={12}>
-              <div className="bg-light p-3 rounded">
-                <h6 className="mb-2">Información del Producto</h6>
-                <Row>
-                  <Col md={4}>
-                    <small className="text-muted">Creado por:</small><br/>
-                    <small>{editingItem.creado_por || 'N/A'}</small>
-                  </Col>
-                  <Col md={4}>
-                    <small className="text-muted">Fecha de creación:</small><br/>
-                    <small>
-                      {editingItem.fecha_creacion?.toDate ? 
-                        editingItem.fecha_creacion.toDate().toLocaleDateString() : 
-                        'N/A'
-                      }
-                    </small>
-                  </Col>
-                  <Col md={4}>
-                    <small className="text-muted">Última actualización:</small><br/>
-                    <small>
-                      {editingItem.ultima_actualizacion?.toDate ? 
-                        editingItem.ultima_actualizacion.toDate().toLocaleDateString() : 
-                        'N/A'
-                      }
-                    </small>
-                  </Col>
-                </Row>
-              </div>
+            <Col md={6}>
+              <Form.Group className="mb-3">
+                <Form.Label>Tipo *</Form.Label>
+                <Form.Select
+                  name="tipo"
+                  value={formData.tipo}
+                  onChange={handleInputChange}
+                  disabled={!canEditAllFields}
+                  required={canEditAllFields}
+                >
+                  <option value="licor">Licor</option>
+                  <option value="vino">Vino</option>
+                  <option value="cerveza">Cerveza</option>
+                  <option value="otros">Otros</option>
+                </Form.Select>
+              </Form.Group>
             </Col>
           </Row>
-        )}
 
-        {/* Botones */}
-        <div className="d-flex justify-content-end gap-2 mt-4">
-          <Button 
-            variant="secondary" 
-            onClick={onCancel}
-            disabled={loading}
-          >
-            <FaTimes className="me-1" />
-            Cancelar
-          </Button>
-          <Button 
-            variant="primary" 
-            type="submit"
-            disabled={loading}
-          >
-            {loading ? (
-              <>
-                <span className="spinner-border spinner-border-sm me-2" />
-                Guardando...
-              </>
-            ) : (
-              <>
-                <FaSave className="me-1" />
-                {editingItem ? 'Actualizar' : 'Guardar'}
-              </>
-            )}
-          </Button>
-        </div>
-      </Form>
-
-      {/* Modal para agregar proveedor */}
-      <Modal 
-        show={showProviderForm} 
-        onHide={() => setShowProviderForm(false)}
-        centered
-      >
-        <Modal.Header closeButton>
-          <Modal.Title>
-            <FaTruck className="me-2" />
-            Nuevo Proveedor - {inventoryType === 'bar' ? 'Bar' : 'Cocina'}
-          </Modal.Title>
-        </Modal.Header>
-        <Form onSubmit={handleAddProvider}>
-          <Modal.Body>
-            <Alert variant="info" className="mb-3">
-              <small>
-                Este proveedor será creado específicamente para el inventario de {' '}
-                <strong>{inventoryType === 'bar' ? 'bar' : 'cocina'}</strong>.
-              </small>
-            </Alert>
-
+          {formData.tipo === 'licor' && (
             <Row>
-              <Col md={12}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Nombre del Proveedor *</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="nombre"
-                    value={newProvider.nombre}
-                    onChange={handleProviderInputChange}
-                    placeholder="Ej: Distribuidora Los Andes"
-                    required
-                  />
-                </Form.Group>
-              </Col>
-
               <Col md={6}>
                 <Form.Group className="mb-3">
-                  <Form.Label>Persona de Contacto</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="contacto"
-                    value={newProvider.contacto}
-                    onChange={handleProviderInputChange}
-                    placeholder="Ej: Juan Pérez"
-                  />
-                </Form.Group>
-              </Col>
-
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Teléfono</Form.Label>
-                  <Form.Control
-                    type="tel"
-                    name="telefono"
-                    value={newProvider.telefono}
-                    onChange={handleProviderInputChange}
-                    placeholder="Ej: +54 11 1234-5678"
-                  />
-                </Form.Group>
-              </Col>
-
-              <Col md={12}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Email</Form.Label>
-                  <Form.Control
-                    type="email"
-                    name="email"
-                    value={newProvider.email}
-                    onChange={handleProviderInputChange}
-                    placeholder="Ej: ventas@distribuidora.com"
-                  />
+                  <Form.Label>Sub-tipo *</Form.Label>
+                  <Form.Select
+                    name="subTipo"
+                    value={formData.subTipo}
+                    onChange={handleInputChange}
+                    disabled={!canEditAllFields}
+                    isInvalid={!!errors.subTipo}
+                    required={canEditAllFields}
+                  >
+                    <option value="">Seleccione...</option>
+                    <option value="whiskey">Whiskey</option>
+                    <option value="vodka">Vodka</option>
+                    <option value="gin">Gin</option>
+                    <option value="ron">Ron</option>
+                    <option value="tequila">Tequila</option>
+                    <option value="cognac">Cognac</option>
+                    <option value="licor">Licor Dulce</option>
+                    <option value="otro">Otro</option>
+                  </Form.Select>
+                  <Form.Control.Feedback type="invalid">
+                    {errors.subTipo}
+                  </Form.Control.Feedback>
                 </Form.Group>
               </Col>
             </Row>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button 
-              variant="secondary" 
-              onClick={() => setShowProviderForm(false)}
-              disabled={loading}
-            >
-              Cancelar
-            </Button>
-            <Button 
-              variant="primary" 
-              type="submit"
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <span className="spinner-border spinner-border-sm me-2" />
-                  Guardando...
-                </>
-              ) : (
-                <>
-                  <FaPlus className="me-1" />
-                  Agregar Proveedor
-                </>
+          )}
+
+          {(formData.tipo === 'vino' || formData.tipo === 'cerveza') && (
+            <Row>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Marca *</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="marca"
+                    value={formData.marca}
+                    onChange={handleInputChange}
+                    disabled={!canEditAllFields}
+                    isInvalid={!!errors.marca}
+                    placeholder="Ej: Bodega Catena"
+                    maxLength="50"
+                    required={canEditAllFields}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {errors.marca}
+                  </Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+              {formData.tipo === 'vino' && (
+                <Col md={6}>
+                  <Form.Group className="mb-3">
+                    <Form.Label>Origen *</Form.Label>
+                    <Form.Control
+                      type="text"
+                      name="origen"
+                      value={formData.origen}
+                      onChange={handleInputChange}
+                      disabled={!canEditAllFields}
+                      isInvalid={!!errors.origen}
+                      placeholder="Ej: Mendoza, Argentina"
+                      maxLength="50"
+                      required={canEditAllFields}
+                    />
+                    <Form.Control.Feedback type="invalid">
+                      {errors.origen}
+                    </Form.Control.Feedback>
+                  </Form.Group>
+                </Col>
               )}
-            </Button>
-          </Modal.Footer>
-        </Form>
-      </Modal>
-    </div>
+            </Row>
+          )}
+
+          <Row>
+            <Col md={6}>
+              <Form.Group className="mb-3">
+                <Form.Label>Stock Actual *</Form.Label>
+                <Form.Control
+                  type="number"
+                  name="stock"
+                  value={formData.stock}
+                  onChange={handleInputChange}
+                  min="0"
+                  max="10000"
+                  step="0.01"
+                  isInvalid={!!errors.stock}
+                  required
+                />
+                <Form.Control.Feedback type="invalid">
+                  {errors.stock}
+                </Form.Control.Feedback>
+              </Form.Group>
+            </Col>
+
+            {canEditAllFields && (
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Umbral Mínimo *</Form.Label>
+                  <Form.Control
+                    type="number"
+                    name="umbral_low"
+                    value={formData.umbral_low}
+                    onChange={handleInputChange}
+                    min="0"
+                    max="1000"
+                    step="0.01"
+                    isInvalid={!!errors.umbral_low}
+                    placeholder="5"
+                    required={canEditAllFields}
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {errors.umbral_low}
+                  </Form.Control.Feedback>
+                  <Form.Text className="text-muted">
+                    Cantidad mínima antes de alerta
+                  </Form.Text>
+                </Form.Group>
+              </Col>
+            )}
+          </Row>
+
+          {canEditAllFields && (
+            <Row>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Precio Unitario</Form.Label>
+                  <Form.Control
+                    type="number"
+                    name="precio"
+                    value={formData.precio}
+                    onChange={handleInputChange}
+                    min="0"
+                    max="100000"
+                    step="0.01"
+                    isInvalid={!!errors.precio}
+                    placeholder="0.00"
+                  />
+                  <Form.Control.Feedback type="invalid">
+                    {errors.precio}
+                  </Form.Control.Feedback>
+                  <Form.Text className="text-muted">
+                    Precio unitario en pesos
+                  </Form.Text>
+                </Form.Group>
+              </Col>
+            </Row>
+          )}
+
+          {/* CAMPO DE PROVEEDOR - SOLO PARA ADMIN/MANAGER */}
+          {canEditAllFields && (
+            <Row>
+              <Col md={12}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Proveedor</Form.Label>
+                  <Form.Select
+                    name="proveedor_id"
+                    value={formData.proveedor_id}
+                    onChange={handleInputChange}
+                  >
+                    <option value="">Sin proveedor asignado</option>
+                    {providers && providers.length > 0 ? (
+                      providers
+                        .filter(provider => provider.activo !== false)
+                        .map(provider => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.nombre}
+                            {provider.contacto ? ` - ${provider.contacto}` : ''}
+                          </option>
+                        ))
+                    ) : (
+                      <option disabled>No hay proveedores disponibles</option>
+                    )}
+                  </Form.Select>
+                  <Form.Text className="text-muted">
+                    Selecciona el proveedor de este producto (opcional)
+                  </Form.Text>
+                </Form.Group>
+              </Col>
+            </Row>
+          )}
+
+          {canEditAllFields && (
+            <Row>
+              <Col>
+                <Form.Group className="mb-3">
+                  <Form.Label>Descripción</Form.Label>
+                  <Form.Control
+                    as="textarea"
+                    rows={2}
+                    name="descripcion"
+                    value={formData.descripcion}
+                    onChange={handleInputChange}
+                    maxLength="500"
+                    placeholder="Descripción adicional del producto (opcional)"
+                  />
+                  <Form.Text className="text-muted">
+                    {formData.descripcion.length}/500 caracteres
+                  </Form.Text>
+                </Form.Group>
+              </Col>
+            </Row>
+          )}
+        </Modal.Body>
+
+        <Modal.Footer>
+          <Button variant="secondary" onClick={onHide} disabled={loading}>
+            Cancelar
+          </Button>
+          <Button variant="primary" type="submit" disabled={loading}>
+            {loading && <Spinner as="span" animation="border" size="sm" className="me-2" />}
+            {isEditing ? 'Actualizar' : 'Crear'} {canEditAllFields ? 'Ítem' : 'Stock'}
+          </Button>
+        </Modal.Footer>
+      </Form>
+    </Modal>
   );
 };
 
-export default ItemForm;
+export default InventoryItemForm;

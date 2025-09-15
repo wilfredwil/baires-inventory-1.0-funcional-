@@ -131,8 +131,8 @@ const BarInventory = ({ onBack, user, userRole }) => {
 
     // Cargar proveedores
     const providersQuery = query(
-      collection(db, 'proveedores'),
-      orderBy('nombre', 'asc')
+  collection(db, 'providers'),
+  orderBy('nombre', 'asc')
     );
 
     const unsubscribeProviders = onSnapshot(
@@ -288,6 +288,7 @@ case 'order-sheet':
     const totalValue = itemsToInclude.reduce((sum, item) => sum + ((item.precio || 0) * (item.stock || 0)), 0);
     const lowStockCount = itemsToInclude.filter(item => item.stock <= (item.umbral_low || 5) && item.stock > 0).length;
     const outOfStockCount = itemsToInclude.filter(item => item.stock === 0).length;
+    const importantCount = itemsToInclude.filter(item => item.importante === true).length;
 
     // Generar contenido de la tabla
     let tableContent = '';
@@ -1110,14 +1111,14 @@ case 'order-sheet':
 
       {/* Modal para agregar/editar items */}
       <InventoryItemForm
-        show={showItemModal}
-        onHide={() => setShowItemModal(false)}
-        item={editingItem}
-        onSuccess={handleItemSuccess}
-        user={user}
-        userRole={userRole}
-        inventoryType="bar"
-      />
+  show={showItemModal}
+  onHide={() => setShowItemModal(false)}
+  item={editingItem}
+  onSuccess={handleItemSuccess}
+  user={user}
+  userRole={userRole}
+  providers={providers}
+/>
     </Container>
   );
 };
