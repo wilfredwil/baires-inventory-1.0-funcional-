@@ -64,15 +64,15 @@ const KitchenInventory = () => {
     return 'normal';
   };
 
-  // Actualizar estados de items
-  useEffect(() => {
-    setItems(prevItems => 
-      prevItems.map(item => ({
-        ...item,
-        status: getItemStatus(item.expirationDate)
-      }))
-    );
-  }, []);
+  // CORRECCIÓN: Comentar el useEffect problemático
+  // useEffect(() => {
+  //   setItems(prevItems => 
+  //     prevItems.map(item => ({
+  //       ...item,
+  //       status: getItemStatus(item.expirationDate)
+  //     }))
+  //   );
+  // }, []);
 
   const [newItem, setNewItem] = useState({
     name: '',
@@ -402,7 +402,6 @@ const KitchenInventory = () => {
                   <Form.Label>Fecha de Compra</Form.Label>
                   <Form.Control
                     type="date"
-                    required
                     value={newItem.purchaseDate}
                     onChange={(e) => setNewItem({...newItem, purchaseDate: e.target.value})}
                     style={{ borderRadius: '6px' }}
