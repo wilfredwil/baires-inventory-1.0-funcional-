@@ -39,7 +39,8 @@ import {
   serverTimestamp,
   getDocs
 } from 'firebase/firestore';
-import { db } from '../config/firebase';
+import { db } from '../firebase';
+import '../styles/shifts.css';
 
 const SchedulePublishing = ({ shifts, employees, user, userRole }) => {
   // Estados

@@ -1,282 +1,355 @@
-/* src/styles/shifts.css */
+/* Agrega estos estilos a tu src/styles/shifts.css */
 
-/* Estilos generales para el módulo de horarios */
-.shift-management {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-}
-
-/* Calendario de turnos */
-.shift-calendar {
-  overflow-x: auto;
-}
-
-.shift-calendar .table {
-  min-width: 800px;
-}
-
-.shift-calendar .table td {
-  min-height: 100px;
-  vertical-align: top;
-  border: 1px solid #dee2e6;
-  background: rgba(255, 255, 255, 0.8);
-}
-
-/* Cards de turnos en el calendario */
-.shift-card {
-  border-radius: 8px;
-  margin-bottom: 4px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-size: 0.75rem;
-  line-height: 1.2;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.shift-card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-.shift-card.morning {
-  background: linear-gradient(135deg, #74b9ff, #0984e3);
-  color: white;
-}
-
-.shift-card.afternoon {
-  background: linear-gradient(135deg, #fdcb6e, #e17055);
-  color: white;
-}
-
-.shift-card.night {
-  background: linear-gradient(135deg, #6c5ce7, #2d3436);
-  color: white;
-}
-
-.shift-card.completed {
-  background: linear-gradient(135deg, #00b894, #00a085) !important;
-  opacity: 0.8;
-}
-
-.shift-card.cancelled {
-  background: linear-gradient(135deg, #d63031, #74b9ff) !important;
-  opacity: 0.7;
-  text-decoration: line-through;
-}
-
-/* Indicadores de estado */
-.shift-status-indicator {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #00b894;
-}
-
-.shift-status-indicator.in-progress {
-  background: #fdcb6e;
-  animation: pulse 2s infinite;
-}
-
-.shift-status-indicator.cancelled {
-  background: #d63031;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-/* Navegación de semanas */
-.week-navigation {
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 12px;
-  padding: 0.5rem;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-.week-navigation .btn {
-  border-radius: 8px;
-  font-weight: 500;
-}
-
-/* Tabs personalizados */
-.nav-tabs .nav-link {
+/* Contenedor principal del horario estilo 7shifts */
+.schedule-card {
   border: none;
-  border-radius: 12px 12px 0 0;
-  background: rgba(255, 255, 255, 0.6);
-  color: #6c757d;
-  font-weight: 500;
-  margin-right: 0.25rem;
-  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  overflow: hidden;
 }
 
-.nav-tabs .nav-link.active {
+.schedule-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px;
+  border: none;
+}
+
+/* Grid principal estilo 7shifts */
+.schedule-grid-7shifts {
+  background: #f8f9fa;
+}
+
+.days-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: #dee2e6;
+}
+
+/* Columna de cada día */
+.day-column {
   background: white;
-  color: #10B981;
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+  min-height: 500px;
+  display: flex;
+  flex-direction: column;
 }
 
-.nav-tabs .nav-link:hover {
-  background: rgba(255, 255, 255, 0.8);
-  transform: translateY(-1px);
+.day-column.today {
+  background: linear-gradient(135deg, #e8f5e9, #f1f8e9);
+  box-shadow: inset 0 0 0 2px #4caf50;
 }
 
-/* Notas de turno */
-.shift-note {
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 12px;
-  border-left: 4px solid #10B981;
-  padding: 1rem;
-  margin-bottom: 1rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  transition: all 0.2s ease;
+/* Header de cada día */
+.day-header {
+  background: linear-gradient(135deg, #495057, #6c757d);
+  color: white;
+  padding: 15px 10px;
+  text-align: center;
+  border-bottom: 1px solid #dee2e6;
 }
 
-.shift-note:hover {
-  transform: translateX(2px);
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+.day-column.today .day-header {
+  background: linear-gradient(135deg, #4caf50, #66bb6a);
 }
 
-.shift-note.priority-high {
-  border-left-color: #ffc107;
-  background: rgba(255, 193, 7, 0.05);
-}
-
-.shift-note.priority-urgent {
-  border-left-color: #dc3545;
-  background: rgba(220, 53, 69, 0.05);
-  animation: priority-pulse 3s infinite;
-}
-
-@keyframes priority-pulse {
-  0%, 100% { background: rgba(220, 53, 69, 0.05); }
-  50% { background: rgba(220, 53, 69, 0.1); }
-}
-
-/* Badges de prioridad y categoría */
-.priority-badge {
-  font-size: 0.7rem;
-  padding: 0.2rem 0.4rem;
-  border-radius: 6px;
-  font-weight: 600;
+.day-name {
+  font-weight: 700;
+  font-size: 0.9rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  margin-bottom: 5px;
 }
 
-.category-badge {
-  font-size: 0.7rem;
-  padding: 0.2rem 0.4rem;
-  border-radius: 6px;
-  background: rgba(108, 117, 125, 0.1);
-  color: #6c757d;
-  border: 1px solid rgba(108, 117, 125, 0.2);
-}
-
-/* Formularios */
-.shift-form .form-floating > .form-control:focus {
-  border-color: #10B981;
-  box-shadow: 0 0 0 0.2rem rgba(16, 185, 129, 0.25);
-}
-
-.shift-form .form-floating > label {
-  color: #6c757d;
-}
-
-/* Tabla de empleados */
-.employee-table .table th {
-  background: linear-gradient(135deg, #10B981, #059669);
-  color: white;
-  border: none;
+.day-date {
+  font-size: 1.2rem;
   font-weight: 600;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  margin-bottom: 5px;
 }
 
-.employee-table .table td {
-  border-color: rgba(16, 185, 129, 0.1);
-  vertical-align: middle;
+.day-stats {
+  font-size: 0.75rem;
+  opacity: 0.9;
 }
 
-.employee-table .table tr:hover {
-  background: rgba(16, 185, 129, 0.05);
+/* Secciones de turnos (mañana/noche) */
+.shift-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  border-bottom: 1px solid #e9ecef;
 }
 
-/* Indicador de horas trabajadas */
-.hours-indicator {
-  display: inline-block;
-  padding: 0.25rem 0.5rem;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.hours-indicator.low {
-  background: rgba(220, 53, 69, 0.1);
-  color: #dc3545;
-  border: 1px solid rgba(220, 53, 69, 0.2);
-}
-
-.hours-indicator.normal {
-  background: rgba(16, 185, 129, 0.1);
-  color: #10B981;
-  border: 1px solid rgba(16, 185, 129, 0.2);
-}
-
-.hours-indicator.high {
-  background: rgba(255, 193, 7, 0.1);
-  color: #ffc107;
-  border: 1px solid rgba(255, 193, 7, 0.2);
-}
-
-/* Modales */
-.modal-header {
-  background: linear-gradient(135deg, #10B981, #059669);
-  color: white;
+.shift-section:last-child {
   border-bottom: none;
 }
 
-.modal-header .btn-close {
-  filter: brightness(0) invert(1);
+.morning-section {
+  background: linear-gradient(135deg, #fff8e1, #ffecb3);
+  border-left: 4px solid #ffc107;
+}
+
+.night-section {
+  background: linear-gradient(135deg, #f3e5f5, #e1bee7);
+  border-left: 4px solid #6f42c1;
+}
+
+/* Headers de tipo de turno */
+.shift-type-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.morning-header {
+  background: linear-gradient(135deg, #ffc107, #ffb300);
+  color: #212529;
+}
+
+.night-header {
+  background: linear-gradient(135deg, #6f42c1, #59359a);
+  color: white;
+}
+
+/* Contenedor de turnos */
+.shifts-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Bloques de turnos individuales */
+.shift-block {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.shift-block:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-color: #007bff;
+}
+
+.morning-shift {
+  border-left: 4px solid #ffc107;
+  background: linear-gradient(135deg, #fff8e1, #ffffff);
+}
+
+.morning-shift:hover {
+  border-left-color: #ffb300;
+  background: linear-gradient(135deg, #fff3c4, #fffef7);
+}
+
+.night-shift {
+  border-left: 4px solid #6f42c1;
+  background: linear-gradient(135deg, #f3e5f5, #ffffff);
+}
+
+.night-shift:hover {
+  border-left-color: #59359a;
+  background: linear-gradient(135deg, #e1bee7, #faf5ff);
+}
+
+/* Contenido del bloque de turno */
+.employee-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #495057;
+  margin-bottom: 4px;
+  line-height: 1.2;
+}
+
+.shift-time {
+  font-size: 0.8rem;
+  color: #6c757d;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.shift-position {
+  font-size: 0.75rem;
+  color: #007bff;
+  font-weight: 500;
+  text-transform: capitalize;
+  margin-bottom: 4px;
+}
+
+.shift-position .text-muted.small {
+  font-size: 0.65rem;
+  font-style: italic;
+  color: #6c757d !important;
+}
+
+/* Acciones del turno */
+.shift-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.shift-block:hover .shift-actions {
+  opacity: 1;
+}
+
+/* Botones de agregar turno */
+.add-shift-btn {
+  width: 100%;
+  height: 40px;
+  border: 2px dashed #ccc !important;
+  background: transparent !important;
+  color: #6c757d !important;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  margin-top: auto;
+  font-weight: 600;
+}
+
+.morning-add:hover {
+  border-color: #ffc107 !important;
+  background: rgba(255, 193, 7, 0.1) !important;
+  color: #212529 !important;
+}
+
+.night-add:hover {
+  border-color: #6f42c1 !important;
+  background: rgba(111, 66, 193, 0.1) !important;
+  color: #6f42c1 !important;
+}
+
+/* Badges en el modal */
+.badge.bg-warning {
+  color: #212529 !important;
+}
+
+/* Botones del modal */
+.btn-warning.active,
+.btn-warning:active {
+  background: #ffc107 !important;
+  border-color: #ffc107 !important;
+  color: #212529 !important;
+}
+
+.btn-dark.active,
+.btn-dark:active {
+  background: #212529 !important;
+  border-color: #212529 !important;
 }
 
 /* Responsive */
+@media (max-width: 1200px) {
+  .days-header {
+    grid-template-columns: repeat(7, minmax(140px, 1fr));
+  }
+  
+  .day-header {
+    padding: 12px 8px;
+  }
+  
+  .shift-section {
+    padding: 8px;
+  }
+}
+
+@media (max-width: 992px) {
+  .days-header {
+    grid-template-columns: repeat(7, minmax(120px, 1fr));
+    gap: 0;
+  }
+  
+  .day-header {
+    padding: 10px 5px;
+  }
+  
+  .day-name {
+    font-size: 0.8rem;
+  }
+  
+  .day-date {
+    font-size: 1rem;
+  }
+  
+  .shift-block {
+    padding: 8px;
+  }
+  
+  .employee-name {
+    font-size: 0.8rem;
+  }
+  
+  .shift-time {
+    font-size: 0.75rem;
+  }
+}
+
 @media (max-width: 768px) {
-  .shift-calendar .table {
+  /* En móviles, mostrar solo 3 días por fila */
+  .days-header {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .day-column:nth-child(n+4) {
+    order: 1;
+  }
+  
+  .shift-section {
+    min-height: 200px;
+  }
+  
+  .shift-type-header {
+    font-size: 0.75rem;
+    padding: 6px 8px;
+  }
+  
+  .shift-block {
+    padding: 6px;
+  }
+  
+  .employee-name {
     font-size: 0.75rem;
   }
   
-  .shift-card {
-    font-size: 0.65rem;
-    padding: 0.25rem;
-  }
-  
-  .week-navigation {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  
-  .nav-tabs {
-    flex-direction: column;
-  }
-  
-  .nav-tabs .nav-link {
-    text-align: center;
-    margin-right: 0;
-    margin-bottom: 0.25rem;
+  .shift-time {
+    font-size: 0.7rem;
   }
 }
 
-/* Animaciones de entrada */
-.shift-fade-in {
-  animation: fadeInUp 0.3s ease-out;
+@media (max-width: 576px) {
+  /* En pantallas muy pequeñas, una columna */
+  .days-header {
+    grid-template-columns: 1fr;
+  }
+  
+  .day-column {
+    min-height: 300px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  
+  .schedule-grid-7shifts {
+    padding: 10px;
+  }
 }
 
-@keyframes fadeInUp {
+/* Animaciones */
+@keyframes slideInUp {
   from {
     opacity: 0;
     transform: translateY(20px);
@@ -287,43 +360,46 @@
   }
 }
 
-/* Estados de carga */
-.shift-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 200px;
-  color: #6c757d;
+.shift-block {
+  animation: slideInUp 0.3s ease;
 }
 
-.shift-loading .spinner-border {
-  color: #10B981;
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
 }
 
-/* Tooltip personalizado para turnos */
+.add-shift-btn:hover {
+  animation: pulse 0.5s ease;
+}
+
+/* Indicadores de estado */
+.shift-block.confirmed {
+  border-left-width: 6px;
+}
+
+.shift-block.pending {
+  opacity: 0.8;
+  border-style: dashed;
+}
+
+.shift-block.cancelled {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+/* Tooltips y overlays */
 .shift-tooltip {
-  position: relative;
-}
-
-.shift-tooltip::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
   background: rgba(0, 0, 0, 0.8);
   color: white;
-  padding: 0.5rem;
-  border-radius: 4px;
-  font-size: 0.7rem;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  position: absolute;
   z-index: 1000;
-}
-
-.shift-tooltip:hover::after {
-  opacity: 1;
+  white-space: nowrap;
 }

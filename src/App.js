@@ -89,7 +89,7 @@ import InventoryItemForm from './components/InventoryItemForm';
 import AdvancedUserManagement from './components/AdvancedUserManagement';
 import ProviderManagement from './components/ProviderManagement';
 import KitchenInventory from './components/KitchenInventory';
-import SeparatedShiftManagement from './components/SeparatedShiftManagement';
+import ShiftManagement from './components/ShiftManagement';
 import UserProfile from './components/UserProfile';
 import EmployeeDirectory from './components/EmployeeDirectory';
 import DashboardWidgets from './components/DashboardWidgets';
@@ -401,12 +401,12 @@ const handleLogin = async (email, password) => {
       
       case 'shifts':
         return (
-          <SeparatedShiftManagement
-            user={user}
-            userRole={userRole}
-            onBack={() => setCurrentView('dashboard')}
-          />
-        );
+          <ShiftManagement 
+          onBack={() => setCurrentView('dashboard')}
+          user={user}
+           userRole={userRole}
+           />
+      );
       
       case 'messaging':
         return (
