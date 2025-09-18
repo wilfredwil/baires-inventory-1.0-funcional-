@@ -44,71 +44,65 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
 
-  // Definir roles según departamento
+  // ROLES ACTUALIZADOS SEGÚN TU RESTAURANTE
   const rolesByDepartment = {
     FOH: [
-      { value: 'server', label: 'Mesero/a' },
       { value: 'host', label: 'Host/Hostess' },
+      { value: 'server', label: 'Mesero/a' },
+      { value: 'server_senior', label: 'Mesero/a Senior' },
       { value: 'bartender', label: 'Bartender' },
-      { value: 'waiter', label: 'Camarero/a Senior' },
-      { value: 'cashier', label: 'Cajero/a' },
-      { value: 'floor_manager', label: 'Supervisor de Sala' }
+      { value: 'bartender_head', label: 'Bartender Principal' },
+      { value: 'runner', label: 'Runner' },
+      { value: 'busser', label: 'Busser' },
+      { value: 'manager', label: 'Manager' }
     ],
     BOH: [
-      { value: 'chef', label: 'Chef' },
-      { value: 'sous_chef', label: 'Sous Chef' },
-      { value: 'cook', label: 'Cocinero/a' },
-      { value: 'prep_cook', label: 'Ayudante de Cocina' },
       { value: 'dishwasher', label: 'Lavaplatos' },
-      { value: 'kitchen_manager', label: 'Jefe de Cocina' }
+      { value: 'prep_cook', label: 'Ayudante de Cocina' },
+      { value: 'line_cook', label: 'Cocinero de Línea' },
+      { value: 'cook', label: 'Cocinero/a' },
+      { value: 'sous_chef', label: 'Sous Chef' },
+      { value: 'chef', label: 'Chef/Manager de Cocina' }
     ],
     ADMIN: [
-      { value: 'admin', label: 'Administrador' },
-      { value: 'manager', label: 'Gerente General' },
-      { value: 'assistant_manager', label: 'Subgerente' },
-      { value: 'supervisor', label: 'Supervisor' }
+      { value: 'admin', label: 'Administrador del Sistema' }
     ]
   };
 
-  // Lógica de permisos automática según rol
+  // FUNCIÓN PARA OBTENER COLORES POR POSICIÓN (NUEVA)
+  const getPositionColor = (role) => {
+    const colors = {
+      // FOH
+      'host': '#3498db',
+      'server': '#27ae60',
+      'server_senior': '#229954',
+      'bartender': '#9b59b6',
+      'bartender_head': '#8e44ad',
+      'runner': '#1abc9c',
+      'busser': '#16a085',
+      'manager': '#e67e22',
+      
+      // BOH
+      'dishwasher': '#95a5a6',
+      'prep_cook': '#e74c3c',
+      'line_cook': '#c0392b',
+      'cook': '#d35400',
+      'sous_chef': '#e67e22',
+      'chef': '#f39c12',
+      
+      // ADMIN
+      'admin': '#2c3e50'
+    };
+    return colors[role] || '#95a5a6';
+  };
+
+  // PERMISOS ACTUALIZADOS PARA NUEVOS ROLES
   const getPermissionsByRole = (role) => {
     const permissionsMap = {
-      // ADMIN - Acceso completo
-      'admin': {
-        canAccessPOS: true,
-        canManageInventory: true,
-        canViewReports: true,
-        canManageStaff: true
-      },
-      'manager': {
-        canAccessPOS: true,
-        canManageInventory: true,
-        canViewReports: true,
-        canManageStaff: true
-      },
-      'assistant_manager': {
-        canAccessPOS: true,
-        canManageInventory: true,
-        canViewReports: true,
-        canManageStaff: false
-      },
-      'supervisor': {
+      // FOH roles
+      'host': {
         canAccessPOS: true,
         canManageInventory: false,
-        canViewReports: true,
-        canManageStaff: false
-      },
-
-      // FOH - Acceso según responsabilidades
-      'floor_manager': {
-        canAccessPOS: true,
-        canManageInventory: false,
-        canViewReports: true,
-        canManageStaff: false
-      },
-      'bartender': {
-        canAccessPOS: true,
-        canManageInventory: true, // Para gestionar inventario de bar
         canViewReports: false,
         canManageStaff: false
       },
@@ -118,45 +112,45 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
         canViewReports: false,
         canManageStaff: false
       },
-      'waiter': {
+      'server_senior': {
         canAccessPOS: true,
         canManageInventory: false,
+        canViewReports: true,
+        canManageStaff: false
+      },
+      'bartender': {
+        canAccessPOS: true,
+        canManageInventory: true,
         canViewReports: false,
         canManageStaff: false
       },
-      'host': {
+      'bartender_head': {
+        canAccessPOS: true,
+        canManageInventory: true,
+        canViewReports: true,
+        canManageStaff: false
+      },
+      'runner': {
         canAccessPOS: false,
         canManageInventory: false,
         canViewReports: false,
         canManageStaff: false
       },
-      'cashier': {
-        canAccessPOS: true,
+      'busser': {
+        canAccessPOS: false,
         canManageInventory: false,
         canViewReports: false,
         canManageStaff: false
+      },
+      'manager': {
+        canAccessPOS: true,
+        canManageInventory: true,
+        canViewReports: true,
+        canManageStaff: true
       },
 
-      // BOH - Acceso según jerarquía
-      'chef': {
-        canAccessPOS: false,
-        canManageInventory: true,
-        canViewReports: true,
-        canManageStaff: false
-      },
-      'sous_chef': {
-        canAccessPOS: false,
-        canManageInventory: true,
-        canViewReports: false,
-        canManageStaff: false
-      },
-      'kitchen_manager': {
-        canAccessPOS: false,
-        canManageInventory: true,
-        canViewReports: true,
-        canManageStaff: false
-      },
-      'cook': {
+      // BOH roles
+      'dishwasher': {
         canAccessPOS: false,
         canManageInventory: false,
         canViewReports: false,
@@ -168,11 +162,37 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
         canViewReports: false,
         canManageStaff: false
       },
-      'dishwasher': {
+      'line_cook': {
         canAccessPOS: false,
         canManageInventory: false,
         canViewReports: false,
         canManageStaff: false
+      },
+      'cook': {
+        canAccessPOS: false,
+        canManageInventory: false,
+        canViewReports: false,
+        canManageStaff: false
+      },
+      'sous_chef': {
+        canAccessPOS: false,
+        canManageInventory: true,
+        canViewReports: false,
+        canManageStaff: false
+      },
+      'chef': {
+        canAccessPOS: false,
+        canManageInventory: true,
+        canViewReports: true,
+        canManageStaff: true
+      },
+
+      // ADMIN
+      'admin': {
+        canAccessPOS: true,
+        canManageInventory: true,
+        canViewReports: true,
+        canManageStaff: true
       }
     };
 
@@ -481,7 +501,7 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                       value={formData.email}
                       onChange={handleInputChange}
                       isInvalid={!!errors.email}
-                      placeholder="empleado@restaurante.com"
+                      placeholder="email@restaurante.com"
                     />
                     <Form.Control.Feedback type="invalid">
                       {errors.email}
@@ -497,32 +517,6 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                       value={formData.phone}
                       onChange={handleInputChange}
                       placeholder="+1 (555) 123-4567"
-                    />
-                  </Form.Group>
-                </Col>
-              </Row>
-
-              <Row>
-                <Col md={6}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Fecha de Nacimiento</Form.Label>
-                    <Form.Control
-                      type="date"
-                      name="personalInfo.birthDate"
-                      value={formData.personalInfo.birthDate}
-                      onChange={handleInputChange}
-                    />
-                  </Form.Group>
-                </Col>
-                <Col md={6}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Dirección</Form.Label>
-                    <Form.Control
-                      type="text"
-                      name="personalInfo.address"
-                      value={formData.personalInfo.address}
-                      onChange={handleInputChange}
-                      placeholder="Dirección completa"
                     />
                   </Form.Group>
                 </Col>
@@ -621,29 +615,25 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                   <Form.Group className="mb-3">
                     <Form.Label>
                       <FaMoneyBillWave className="me-2" />
-                      Salario por Hora
+                      Salario por Hora (USD)
                     </Form.Label>
-                    <InputGroup>
-                      <InputGroup.Text>$</InputGroup.Text>
-                      <Form.Control
-                        type="number"
-                        name="workInfo.hourlyRate"
-                        value={formData.workInfo.hourlyRate}
-                        onChange={handleInputChange}
-                        placeholder="15.00"
-                        step="0.25"
-                        min="7.25"
-                      />
-                      <InputGroup.Text>USD</InputGroup.Text>
-                    </InputGroup>
-                    <Form.Text className="text-muted">
-                      Salario mínimo federal: $7.25/hora
-                    </Form.Text>
+                    <Form.Control
+                      type="number"
+                      name="workInfo.hourlyRate"
+                      value={formData.workInfo.hourlyRate}
+                      onChange={handleInputChange}
+                      placeholder="15.00"
+                      min="0"
+                      step="0.25"
+                    />
                   </Form.Group>
                 </Col>
                 <Col md={4}>
                   <Form.Group className="mb-3">
-                    <Form.Label>Fecha de Inicio</Form.Label>
+                    <Form.Label>
+                      <FaClock className="me-2" />
+                      Fecha de Inicio
+                    </Form.Label>
                     <Form.Control
                       type="date"
                       name="workInfo.startDate"
@@ -654,112 +644,27 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                 </Col>
               </Row>
 
-              <Row>
-                <Col md={6}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>
-                      <FaClock className="me-2" />
-                      Horas por Semana
-                    </Form.Label>
-                    <Form.Control
-                      type="number"
-                      name="workInfo.schedule.hoursPerWeek"
-                      value={formData.workInfo.schedule.hoursPerWeek}
-                      onChange={handleInputChange}
-                      placeholder="40"
-                      min="1"
-                      max="48"
+              {/* Días de trabajo */}
+              <Form.Group className="mb-3">
+                <Form.Label>Días Disponibles para Trabajar</Form.Label>
+                <div className="d-flex flex-wrap gap-2">
+                  {weekDays.map(day => (
+                    <Form.Check
+                      key={day.value}
+                      type="checkbox"
+                      id={`workDay-${day.value}`}
+                      label={day.label}
+                      checked={formData.workInfo.schedule.workDays.includes(day.value)}
+                      onChange={() => handleWorkDaysChange(day.value)}
+                      className="me-3"
                     />
-                  </Form.Group>
-                </Col>
-                <Col md={6}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Días de Disponibilidad</Form.Label>
-                    <div className="d-flex flex-wrap gap-2">
-                      {weekDays.map(day => (
-                        <Form.Check
-                          key={day.value}
-                          type="checkbox"
-                          id={`day-${day.value}`}
-                          label={day.label}
-                          checked={formData.workInfo.schedule.workDays.includes(day.value)}
-                          onChange={() => handleWorkDaysChange(day.value)}
-                          className="me-3"
-                        />
-                      ))}
-                    </div>
-                    <Form.Text className="text-muted">
-                      Selecciona los días en que el empleado está disponible para trabajar
-                    </Form.Text>
-                  </Form.Group>
-                </Col>
-              </Row>
+                  ))}
+                </div>
+              </Form.Group>
             </Card.Body>
           </Card>
 
-          {/* Permisos Automáticos */}
-          <Card className="mb-4">
-            <Card.Header>
-              <h5 className="mb-0">Permisos del Sistema (Automáticos)</h5>
-            </Card.Header>
-            <Card.Body>
-              <Alert variant="success" className="mb-3">
-                <strong>🔒 Seguridad Automática:</strong> Los permisos se asignan automáticamente según el rol para mantener la consistencia y seguridad del sistema.
-              </Alert>
-              <Row>
-                <Col md={6}>
-                  <div className="d-flex align-items-center mb-2">
-                    <Form.Check
-                      type="checkbox"
-                      checked={formData.permissions.canAccessPOS}
-                      disabled
-                      readOnly
-                    />
-                    <span className={`ms-2 ${formData.permissions.canAccessPOS ? 'text-success fw-bold' : 'text-muted'}`}>
-                      {formData.permissions.canAccessPOS ? '✅' : '❌'} Acceso al Sistema POS
-                    </span>
-                  </div>
-                  <div className="d-flex align-items-center mb-2">
-                    <Form.Check
-                      type="checkbox"
-                      checked={formData.permissions.canManageInventory}
-                      disabled
-                      readOnly
-                    />
-                    <span className={`ms-2 ${formData.permissions.canManageInventory ? 'text-success fw-bold' : 'text-muted'}`}>
-                      {formData.permissions.canManageInventory ? '✅' : '❌'} Gestionar Inventario
-                    </span>
-                  </div>
-                </Col>
-                <Col md={6}>
-                  <div className="d-flex align-items-center mb-2">
-                    <Form.Check
-                      type="checkbox"
-                      checked={formData.permissions.canViewReports}
-                      disabled
-                      readOnly
-                    />
-                    <span className={`ms-2 ${formData.permissions.canViewReports ? 'text-success fw-bold' : 'text-muted'}`}>
-                      {formData.permissions.canViewReports ? '✅' : '❌'} Ver Reportes
-                    </span>
-                  </div>
-                  <div className="d-flex align-items-center mb-2">
-                    <Form.Check
-                      type="checkbox"
-                      checked={formData.permissions.canManageStaff}
-                      disabled
-                      readOnly
-                    />
-                    <span className={`ms-2 ${formData.permissions.canManageStaff ? 'text-success fw-bold' : 'text-muted'}`}>
-                      {formData.permissions.canManageStaff ? '✅' : '❌'} Gestionar Personal
-                    </span>
-                  </div>
-                </Col>
-              </Row>
-            </Card.Body>
-          </Card>
-
-          {/* Contacto de Emergencia */}
+          {/* Información de Emergencia */}
           <Card className="mb-4">
             <Card.Header>
               <h5 className="mb-0">Contacto de Emergencia</h5>
@@ -774,7 +679,7 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                       name="personalInfo.emergencyContact.name"
                       value={formData.personalInfo.emergencyContact.name}
                       onChange={handleInputChange}
-                      placeholder="Nombre completo"
+                      placeholder="Nombre del contacto"
                     />
                   </Form.Group>
                 </Col>
@@ -786,39 +691,34 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                       name="personalInfo.emergencyContact.phone"
                       value={formData.personalInfo.emergencyContact.phone}
                       onChange={handleInputChange}
-                      placeholder="+1 (555) 123-4567"
+                      placeholder="+1 (555) 987-6543"
                     />
                   </Form.Group>
                 </Col>
                 <Col md={4}>
                   <Form.Group className="mb-3">
                     <Form.Label>Relación</Form.Label>
-                    <Form.Select
+                    <Form.Control
+                      type="text"
                       name="personalInfo.emergencyContact.relationship"
                       value={formData.personalInfo.emergencyContact.relationship}
                       onChange={handleInputChange}
-                    >
-                      <option value="">Seleccionar...</option>
-                      <option value="spouse">Cónyuge</option>
-                      <option value="parent">Padre/Madre</option>
-                      <option value="sibling">Hermano/a</option>
-                      <option value="friend">Amigo/a</option>
-                      <option value="other">Otro</option>
-                    </Form.Select>
+                      placeholder="Madre, Padre, Esposo/a, etc."
+                    />
                   </Form.Group>
                 </Col>
               </Row>
             </Card.Body>
           </Card>
 
-          {/* Credenciales de Acceso */}
+          {/* Contraseña */}
           <Card className="mb-4">
             <Card.Header>
               <h5 className="mb-0">Credenciales de Acceso</h5>
             </Card.Header>
             <Card.Body>
               <Row>
-                <Col md={8}>
+                <Col md={12}>
                   <Form.Group className="mb-3">
                     <Form.Label>Contraseña Temporal *</Form.Label>
                     <InputGroup>

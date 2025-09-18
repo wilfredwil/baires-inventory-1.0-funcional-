@@ -431,6 +431,21 @@ const handleLogin = async (email, password) => {
           <PublicScheduleViewer onBack={() => setCurrentView('dashboard')} />
         );
       
+      case 'personal':
+        return (
+          <UserProfile
+            show={true}
+            onHide={() => setCurrentView('dashboard')}
+            user={user}
+            userRole={userRole}
+            currentUserData={user}
+            onProfileUpdate={(updatedUser) => {
+              setUser(updatedUser);
+              if (onProfileUpdate) onProfileUpdate(updatedUser);
+            }}
+          />
+        );
+      
       default:
         return (
           <DashboardWidgets
