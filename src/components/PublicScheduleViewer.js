@@ -19,14 +19,28 @@ import {
   FaPhone,
   FaEnvelope,
   FaDownload,
-  FaPrint
+  FaPrint,
+  FaArrowLeft
 } from 'react-icons/fa';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-import { useParams } from 'react-router-dom';
 
-const PublicScheduleViewer = () => {
-  const { scheduleId } = useParams();
+const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
+  // Obtener scheduleId de props o de la URL
+  const getScheduleId = () => {
+    if (propScheduleId) return propScheduleId;
+    
+    // Si no hay prop, intentar obtener de la URL
+    const urlParts = window.location.pathname.split('/');
+    if (urlParts.includes('schedule') && urlParts.includes('view')) {
+      const index = urlParts.indexOf('view');
+      return urlParts[index + 1];
+    }
+    
+    return null;
+  };
+
+  const scheduleId = getScheduleId();
   const [schedule, setSchedule] = useState(null);
   const [shifts, setShifts] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -35,7 +49,15 @@ const PublicScheduleViewer = () => {
 
   useEffect(() => {
     const loadScheduleData = async () => {
+      if (!scheduleId) {
+        setError('ID de horario no encontrado en la URL');
+        setLoading(false);
+        return;
+      }
+
       try {
+        console.log('Cargando horario con ID:', scheduleId);
+        
         // Cargar horario publicado
         const scheduleDoc = await getDoc(doc(db, 'published_schedules', scheduleId));
         
@@ -72,15 +94,13 @@ const PublicScheduleViewer = () => {
 
       } catch (err) {
         console.error('Error loading schedule:', err);
-        setError('Error al cargar el horario');
+        setError('Error al cargar el horario: ' + err.message);
       } finally {
         setLoading(false);
       }
     };
 
-    if (scheduleId) {
-      loadScheduleData();
-    }
+    loadScheduleData();
   }, [scheduleId]);
 
   // Funciones auxiliares
@@ -201,6 +221,12 @@ const PublicScheduleViewer = () => {
         <Alert variant="danger" className="text-center">
           <h4>Error</h4>
           <p>{error}</p>
+          {onBack && (
+            <Button variant="secondary" onClick={onBack} className="mt-2">
+              <FaArrowLeft className="me-1" />
+              Volver
+            </Button>
+          )}
         </Alert>
       </Container>
     );
@@ -212,6 +238,12 @@ const PublicScheduleViewer = () => {
         <Alert variant="warning" className="text-center">
           <h4>Horario no encontrado</h4>
           <p>El enlace puede ser incorrecto o el horario ya no está disponible.</p>
+          {onBack && (
+            <Button variant="secondary" onClick={onBack} className="mt-2">
+              <FaArrowLeft className="me-1" />
+              Volver
+            </Button>
+          )}
         </Alert>
       </Container>
     );
@@ -227,13 +259,27 @@ const PublicScheduleViewer = () => {
         <Card.Header className="bg-primary text-white">
           <Row className="align-items-center">
             <Col>
-              <h3 className="mb-0">
-                <FaCalendarWeek className="me-2" />
-                {schedule.title}
-              </h3>
-              <p className="mb-0 mt-1">
-                {formatDate(schedule.week_start)} - {formatDate(schedule.week_end)}
-              </p>
+              <div className="d-flex align-items-center">
+                {onBack && (
+                  <Button 
+                    variant="light" 
+                    size="sm" 
+                    onClick={onBack}
+                    className="me-3"
+                  >
+                    <FaArrowLeft />
+                  </Button>
+                )}
+                <div>
+                  <h3 className="mb-0">
+                    <FaCalendarWeek className="me-2" />
+                    {schedule.title}
+                  </h3>
+                  <p className="mb-0 mt-1">
+                    {formatDate(schedule.week_start)} - {formatDate(schedule.week_end)}
+                  </p>
+                </div>
+              </div>
             </Col>
             <Col xs="auto" className="d-print-none">
               <Button variant="light" size="sm" onClick={handlePrint} className="me-2">
@@ -262,47 +308,53 @@ const PublicScheduleViewer = () => {
         <Col md={4}>
           <Card className="text-center border-primary">
             <Card.Body>
-              <FaClock size={24} className="text-primary mb-2" />
-              <h4 className="text-primary">{schedule.stats?.totalShifts || 0}</h4>
-              <small className="text-muted">Total de Turnos</small>
+              <div className="text-primary">
+                <FaUsers size={24} />
+              </div>
+              <h5 className="mt-2 mb-0">{[...new Set(shifts.map(s => s.employee_id))].length}</h5>
+              <small className="text-muted">Empleados</small>
             </Card.Body>
           </Card>
         </Col>
         <Col md={4}>
           <Card className="text-center border-success">
             <Card.Body>
-              <FaUsers size={24} className="text-success mb-2" />
-              <h4 className="text-success">{schedule.stats?.employeesCount || 0}</h4>
-              <small className="text-muted">Empleados</small>
+              <div className="text-success">
+                <FaClock size={24} />
+              </div>
+              <h5 className="mt-2 mb-0">{shifts.length}</h5>
+              <small className="text-muted">Total Turnos</small>
             </Card.Body>
           </Card>
         </Col>
         <Col md={4}>
           <Card className="text-center border-warning">
             <Card.Body>
-              <FaClock size={24} className="text-warning mb-2" />
-              <h4 className="text-warning">{schedule.stats?.totalHours || 0}h</h4>
-              <small className="text-muted">Horas Totales</small>
+              <div className="text-warning">
+                <FaCalendarWeek size={24} />
+              </div>
+              <h5 className="mt-2 mb-0">7</h5>
+              <small className="text-muted">Días</small>
             </Card.Body>
           </Card>
         </Col>
       </Row>
 
-      {/* Calendario semanal */}
-      <Card>
-        <Card.Header>
-          <h5 className="mb-0">Horarios de la Semana</h5>
-        </Card.Header>
+      {/* Tabla de horarios para desktop */}
+      <Card className="mb-4 d-none d-md-block">
         <Card.Body className="p-0">
           <div className="table-responsive">
             <Table className="mb-0 schedule-table">
-              <thead className="bg-light">
+              <thead className="table-dark">
                 <tr>
-                  {dayNames.map((day, index) => {
-                    const date = weekDates[index];
+                  {weekDates.map((date, index) => {
+                    const day = dayNames[index];
                     const isToday = date.toDateString() === new Date().toDateString();
                     return (
-                      <th key={day} className={`text-center ${isToday ? 'bg-primary text-white' : ''}`}>
+                      <th 
+                        key={index} 
+                        className={`text-center p-3 ${isToday ? 'bg-primary text-white' : ''}`}
+                      >
                         <div>{day}</div>
                         <small>{date.getDate()}/{date.getMonth() + 1}</small>
                       </th>

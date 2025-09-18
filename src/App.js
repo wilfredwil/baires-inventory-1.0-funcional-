@@ -1,4 +1,4 @@
-// src/App.js - PARTE 1: IMPORTS Y ESTADOS
+// src/App.js - PARTE ACTUALIZADA PARA MANEJAR HORARIOS
 import React, { useState, useEffect } from 'react';
 import { 
   Container, 
@@ -45,7 +45,6 @@ import {
   FaClock,
   FaComments
 } from 'react-icons/fa';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Pie } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -96,7 +95,7 @@ import DashboardWidgets from './components/DashboardWidgets';
 import PublicScheduleViewer from './components/PublicScheduleViewer';
 import CreateUserComponent from './components/CreateUserComponent';
 import BarInventory from './components/BarInventory';
-import LoginForm from './components/LoginForm'; // NUEVO IMPORT
+import LoginForm from './components/LoginForm';
 
 // Styles
 import './styles/improvements.css';
@@ -114,6 +113,7 @@ function App() {
   const [currentView, setCurrentView] = useState('dashboard');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [viewScheduleId, setViewScheduleId] = useState(null);
 
   // Estados para inventario
   const [inventory, setInventory] = useState([]);
@@ -131,159 +131,90 @@ function App() {
   const [itemToDelete, setItemToDelete] = useState(null);
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
 
-  // Estados de login - SIMPLIFICADOS
+  // Estados de login
   const [loginLoading, setLoginLoading] = useState(false);
-  // Eliminamos: loginEmail y loginPassword (ahora los maneja LoginForm)
 
   // Estados de perfil
   const [showProfileModal, setShowProfileModal] = useState(false);
 
-   // Efectos principales
+  // Detectar si la URL tiene un horario para mostrar
   useEffect(() => {
-  const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-    console.log('onAuthStateChanged ejecutado:', firebaseUser?.email);
-    
-    if (firebaseUser) {
-      try {
-        // Usuario normal de Firebase Auth
-        const q = query(collection(db, 'users'), where('email', '==', firebaseUser.email));
-        const querySnapshot = await getDocs(q);
-        
-        if (!querySnapshot.empty) {
-          const userData = querySnapshot.docs[0].data();
-          console.log('Datos del usuario desde Firestore:', userData);
-          setUserRole(userData.role || 'employee');
-          setUser({
-            ...firebaseUser,
-            ...userData,
-            isVirtualUser: false
-          });
-        } else {
-          // Crear entrada básica para usuarios que no están en Firestore
-          console.log('Usuario no encontrado en Firestore, creando entrada...');
-          await addDoc(collection(db, 'users'), {
+    const checkUrlForSchedule = () => {
+      const urlParts = window.location.pathname.split('/');
+      if (urlParts.includes('schedule') && urlParts.includes('view')) {
+        const index = urlParts.indexOf('view');
+        const scheduleId = urlParts[index + 1];
+        if (scheduleId) {
+          setViewScheduleId(scheduleId);
+          setCurrentView('public-schedule');
+        }
+      }
+    };
+
+    checkUrlForSchedule();
+  }, []);
+
+  // Efectos principales
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log('onAuthStateChanged ejecutado:', firebaseUser?.email);
+      
+      if (firebaseUser) {
+        try {
+          // Obtener información adicional del usuario desde Firestore
+          const userDoc = await getDocs(
+            query(collection(db, 'users'), where('email', '==', firebaseUser.email))
+          );
+          
+          let userData = {
             uid: firebaseUser.uid,
             email: firebaseUser.email,
-            role: 'employee',
-            active: true,
-            created_at: new Date(),
-            authCreated: true
-          });
-          setUserRole('employee');
-          setUser(firebaseUser);
-        }
-      } catch (error) {
-        console.error('Error verificando usuario:', error);
-        setError('Error verificando permisos de usuario');
-      }
-    } else {
-      // No hay usuario de Firebase Auth
-      // Verificar si tenemos un usuario virtual en estado
-      if (!user || !user.isVirtualUser) {
-        setUser(null);
-        setUserRole('employee');
-      }
-    }
-    setLoading(false);
-  });
+            displayName: firebaseUser.displayName,
+            role: 'employee'
+          };
 
-  return () => unsubscribe();
-}, []); // Solo dependemos de cambios en Firebase Auth
-
-  // Función de login - MODIFICADA PARA USAR CON LoginForm
-const handleLogin = async (email, password) => {
-  setLoginLoading(true);
-  setError('');
-  
-  try {
-    // PRIMERO: Intentar login normal con Firebase Auth
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      console.log('Usuario logueado normalmente:', userCredential.user.email);
-      return; // Login exitoso, terminar aquí
-    } catch (authError) {
-      console.log('No existe en Auth, verificando Firestore...', authError.code);
-      
-      // Si no existe en Auth, buscar en Firestore
-      if (authError.code === 'auth/user-not-found' || 
-          authError.code === 'auth/invalid-credential' ||
-          authError.code === 'auth/wrong-password') {
-        
-        // Buscar usuario en Firestore por email
-        const usersQuery = query(
-          collection(db, 'users'), 
-          where('email', '==', email)
-        );
-        const querySnapshot = await getDocs(usersQuery);
-        
-        if (!querySnapshot.empty) {
-          const userDoc = querySnapshot.docs[0];
-          const userData = userDoc.data();
-          
-          // Verificar contraseña temporal
-          if (userData.temporaryPassword === password && userData.authCreated === false) {
-            console.log('✅ Usuario encontrado con contraseña temporal válida');
-            
-            // **CREAR EN AUTH SIN CAMBIAR SESIÓN ACTUAL**
-            try {
-              // MÉTODO ALTERNATIVO: Usar Admin SDK o crear directamente
-              // Por ahora, vamos a marcar como "pendiente de activación"
-              
-              await updateDoc(doc(db, 'users', userDoc.id), {
-                loginRequested: true,
-                loginRequestedAt: serverTimestamp(),
-                tempPassword: password // Guardamos para validar después
-              });
-              
-              // Simular login exitoso creando una "sesión virtual"
-              const virtualUser = {
-                uid: userDoc.id,
-                email: userData.email,
-                displayName: userData.displayName,
-                isVirtualUser: true, // Flag para identificar usuarios virtuales
-                ...userData
-              };
-              
-              setUser(virtualUser);
-              setUserRole(userData.role);
-              
-              console.log('✅ Login virtual exitoso para:', userData.displayName);
-              
-              // Mensaje de bienvenida
-              setSuccess(`¡Bienvenido ${userData.displayName}! Tu cuenta está activa.`);
-              setTimeout(() => setSuccess(''), 5000);
-              
-              return; // Login exitoso
-              
-            } catch (createError) {
-              console.error('Error en activación:', createError);
-              throw new Error('Error al activar la cuenta. Contacta al administrador.');
-            }
-          } else if (userData.temporaryPassword === password && userData.authCreated === true) {
-            // El usuario ya fue creado en Auth pero algo falló
-            throw new Error('Cuenta ya activada. Usa tu nueva contraseña o contacta al administrador.');
-          } else {
-            throw new Error('Contraseña incorrecta');
+          if (!userDoc.empty) {
+            const userDocData = userDoc.docs[0].data();
+            userData = {
+              ...userData,
+              ...userDocData
+            };
           }
-        } else {
-          throw new Error('Usuario no encontrado');
+          
+          setUser(userData);
+          setUserRole(userData.role || 'employee');
+          console.log('Usuario logueado correctamente:', userData);
+        } catch (error) {
+          console.error('Error cargando datos del usuario:', error);
+          setError('Error cargando información del usuario');
         }
       } else {
-        // Otros errores de Auth
-        throw authError;
+        setUser(null);
+        setUserRole('employee');
+        console.log('Usuario no autenticado');
       }
-    }
-    
-  } catch (error) {
-    console.error('Error en login:', error);
-    let errorMessage = 'Error al iniciar sesión';
-    
-    if (error.message && !error.code) {
-      // Errores personalizados
-      errorMessage = error.message;
-    } else {
-      // Errores de Firebase
-      switch (error.code) {
+      
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  // Funciones de autenticación
+  const handleLogin = async (email, password) => {
+    setLoginLoading(true);
+    setError('');
+
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      console.log('Login exitoso:', userCredential.user.email);
+      setSuccess('¡Bienvenido!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      console.error('Error en login:', err);
+      let errorMessage = 'Error en el login';
+      
+      switch (err.code) {
         case 'auth/user-not-found':
           errorMessage = 'Usuario no encontrado';
           break;
@@ -293,48 +224,44 @@ const handleLogin = async (email, password) => {
         case 'auth/invalid-email':
           errorMessage = 'Email inválido';
           break;
-        case 'auth/user-disabled':
-          errorMessage = 'Usuario deshabilitado';
-          break;
         case 'auth/too-many-requests':
-          errorMessage = 'Demasiados intentos. Intenta más tarde';
+          errorMessage = 'Demasiados intentos. Intenta más tarde.';
           break;
-        case 'auth/invalid-credential':
-          errorMessage = 'Email o contraseña incorrectos';
+        case 'auth/network-request-failed':
+          errorMessage = 'Error de conexión. Verifica tu internet.';
           break;
         default:
-          errorMessage = 'Error de conexión. Intenta de nuevo.';
+          errorMessage = err.message;
       }
+      
+      setError(errorMessage);
+    } finally {
+      setLoginLoading(false);
     }
-    
-    setError(errorMessage);
-  }
-  
-  setLoginLoading(false);
-};
+  };
 
-  // Función de logout
   const handleLogout = async () => {
-  try {
-    if (user && user.isVirtualUser) {
-      // Logout de usuario virtual
-      setUser(null);
-      setUserRole('employee');
-      setCurrentView('dashboard');
-      console.log('Usuario virtual deslogueado');
-    } else {
-      // Logout normal de Firebase Auth
+    try {
       await signOut(auth);
+      setUser(null);
       setCurrentView('dashboard');
-      console.log('Usuario Firebase deslogueado');
+      setViewScheduleId(null);
+      setError('');
+      setSuccess('');
+      console.log('Logout exitoso');
+    } catch (err) {
+      console.error('Error en logout:', err);
+      setError('Error al cerrar sesión');
     }
-  } catch (error) {
-    console.error('Error en logout:', error);
-    setError('Error al cerrar sesión');
-  }
-};
+  };
 
-  // Limpiar mensajes
+  // Funciones de navegación
+  const navigateToScheduleView = (scheduleId) => {
+    setViewScheduleId(scheduleId);
+    setCurrentView('public-schedule');
+  };
+
+  // Funciones de notificaciones
   const clearError = () => setError('');
   const clearSuccess = () => setSuccess('');
 
@@ -349,7 +276,7 @@ const handleLogin = async (email, password) => {
     );
   }
 
-  // Si no hay usuario, mostrar login - SIMPLIFICADO
+  // Si no hay usuario, mostrar login
   if (!user) {
     return (
       <LoginForm 
@@ -360,7 +287,7 @@ const handleLogin = async (email, password) => {
     );
   }
 
-  // Render de la aplicación principal
+  // Renderizado de vistas
   const renderCurrentView = () => {
     switch (currentView) {
       case 'bar-inventory':
@@ -402,11 +329,12 @@ const handleLogin = async (email, password) => {
       case 'shifts':
         return (
           <ShiftManagement 
-          onBack={() => setCurrentView('dashboard')}
-          user={user}
-           userRole={userRole}
-           />
-      );
+            onBack={() => setCurrentView('dashboard')}
+            user={user}
+            userRole={userRole}
+            onNavigateToScheduleView={navigateToScheduleView}
+          />
+        );
       
       case 'messaging':
         return (
@@ -428,7 +356,17 @@ const handleLogin = async (email, password) => {
       
       case 'public-schedule':
         return (
-          <PublicScheduleViewer onBack={() => setCurrentView('dashboard')} />
+          <PublicScheduleViewer 
+            scheduleId={viewScheduleId} 
+            onBack={() => {
+              setCurrentView('dashboard');
+              setViewScheduleId(null);
+              // Limpiar la URL si llegaron por enlace directo
+              if (window.location.pathname.includes('/schedule/view/')) {
+                window.history.pushState({}, '', '/');
+              }
+            }} 
+          />
         );
       
       case 'personal':
@@ -452,6 +390,7 @@ const handleLogin = async (email, password) => {
             user={user}
             userRole={userRole}
             onNavigate={setCurrentView}
+            onNavigateToScheduleView={navigateToScheduleView}
           />
         );
     }
