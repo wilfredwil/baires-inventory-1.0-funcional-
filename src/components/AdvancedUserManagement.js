@@ -92,6 +92,21 @@ const AdvancedUserManagement = ({ onBack, currentUser, userRole }) => {
           },
           salaryRange: { min: 22, max: 35 }
         },
+         runner: {
+      name: 'Runner',
+      description: 'Entrega comida a las mesas',
+      permissions: {
+        canAccessPOS: false,
+        canViewReports: false,
+        canManageInventory: false,
+        canManageStaff: false,
+        canViewSchedule: true,
+        canManageReservations: false,
+        canAccessFOH: true,
+        canAccessBOH: false
+      },
+      salaryRange: { min: 15, max: 20 }
+    },
         busser: {
           name: 'Busser',
           description: 'Limpia mesas y asiste a meseros',
@@ -923,102 +938,83 @@ const handleCreateUser = async () => {
   }
 };
 
-    case 4: // Confirmación
-  const finalRole = departmentConfig[newUserForm.department].roles[newUserForm.role];
-  const dayNames = {
-    monday: 'Lunes', tuesday: 'Martes', wednesday: 'Miércoles', 
-    thursday: 'Jueves', friday: 'Viernes', saturday: 'Sábado', sunday: 'Domingo'
-  };
-  
-  return (
-    <div>
-      <div className="d-flex align-items-center mb-4">
-        <Button variant="link" className="p-0 me-3" onClick={() => setFormStep(3)}>
-          <FaArrowLeft />
-        </Button>
-        <h4 className="mb-0">Paso 4: Confirmar y Crear Empleado</h4>
-      </div>
+      case 4: // Confirmación
+        const finalRole = departmentConfig[newUserForm.department].roles[newUserForm.role];
+        return (
+          <div>
+            <div className="d-flex align-items-center mb-4">
+              <Button variant="link" className="p-0 me-3" onClick={() => setFormStep(3)}>
+                <FaArrowLeft />
+              </Button>
+              <h4 className="mb-0">Paso 4: Confirmar y Crear Usuario</h4>
+            </div>
 
-      <Card className="mb-4">
-        <Card.Header>
-          <h5>Resumen del Nuevo Empleado</h5>
-        </Card.Header>
-        <Card.Body>
-          <Row>
-            <Col md={6}>
-              <h6>Información Personal:</h6>
-              <ul>
-                <li><strong>Nombre:</strong> {newUserForm.firstName} {newUserForm.lastName}</li>
-                <li><strong>Email:</strong> {newUserForm.email}</li>
-                <li><strong>Teléfono:</strong> {newUserForm.phone || 'No proporcionado'}</li>
-              </ul>
-            </Col>
-            <Col md={6}>
-              <h6>Información Laboral:</h6>
-              <ul>
-                <li><strong>Departamento:</strong> {departmentConfig[newUserForm.department].name}</li>
-                <li><strong>Puesto:</strong> {finalRole.name}</li>
-                <li><strong>Descripción:</strong> {finalRole.description}</li>
-                <li><strong>ID Empleado:</strong> Se generará automáticamente</li>
-              </ul>
-            </Col>
-          </Row>
+            <Card className="mb-4">
+              <Card.Header>
+                <h5>Resumen del Nuevo Usuario</h5>
+              </Card.Header>
+              <Card.Body>
+                <Row>
+                  <Col md={6}>
+                    <h6>Información Personal:</h6>
+                    <ul>
+                      <li><strong>Nombre:</strong> {newUserForm.firstName} {newUserForm.lastName}</li>
+                      <li><strong>Email:</strong> {newUserForm.email}</li>
+                      <li><strong>Teléfono:</strong> {newUserForm.phone || 'No proporcionado'}</li>
+                      <li><strong>Dirección:</strong> {newUserForm.address || 'No proporcionada'}</li>
+                    </ul>
+                  </Col>
+                  <Col md={6}>
+                    <h6>Información Laboral:</h6>
+                    <ul>
+                      <li><strong>Departamento:</strong> {departmentConfig[newUserForm.department].name}</li>
+                      <li><strong>Puesto:</strong> {finalRole.name}</li>
+                      <li><strong>Descripción:</strong> {finalRole.description}</li>
+                    </ul>
+                  </Col>
+                </Row>
 
-          <h6 className="mt-3">Días Disponibles para Trabajar:</h6>
-          <div className="mb-3">
-            {newUserForm.workInfo.schedule.workDays.length > 0 ? (
-              <div className="d-flex flex-wrap gap-1">
-                {newUserForm.workInfo.schedule.workDays.map(day => (
-                  <Badge key={day} bg="primary">{dayNames[day]}</Badge>
-                ))}
-              </div>
-            ) : (
-              <Badge bg="warning">⚠️ No se han seleccionado días</Badge>
-            )}
+                <h6 className="mt-3">Permisos del Sistema:</h6>
+                <Row>
+                  {Object.entries(newUserForm.permissions)
+                    .filter(([key, value]) => value === true)
+                    .map(([key, value]) => (
+                      <Col md={6} key={key}>
+                        <small>✓ {key.replace(/([A-Z])/g, ' $1').toLowerCase()}</small>
+                      </Col>
+                    ))}
+                </Row>
+              </Card.Body>
+            </Card>
+
+            <div className="d-flex justify-content-between">
+              <Button variant="secondary" onClick={() => setFormStep(3)}>
+                Anterior
+              </Button>
+              <Button 
+                variant="success" 
+                onClick={handleCreateUser}
+                disabled={loading}
+                size="lg"
+              >
+                {loading ? (
+                  <>
+                    <Spinner animation="border" size="sm" className="me-2" />
+                    Creando Usuario...
+                  </>
+                ) : (
+                  <>
+                    <FaUserPlus className="me-2" />
+                    Crear Usuario
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
+        );
 
-          <h6>Permisos del Sistema:</h6>
-          <Row>
-            {Object.entries(newUserForm.permissions)
-              .filter(([key, value]) => value === true)
-              .map(([key, value]) => (
-                <Col md={6} key={key}>
-                  <small>✓ {key.replace(/([A-Z])/g, ' $1').toLowerCase()}</small>
-                </Col>
-              ))}
-          </Row>
-        </Card.Body>
-      </Card>
-
-      <Alert variant="warning">
-        <strong>⚠️ Importante:</strong> Se generará una contraseña temporal que debes proporcionar al empleado de forma segura.
-      </Alert>
-
-      <div className="d-flex justify-content-between">
-        <Button variant="secondary" onClick={() => setFormStep(3)}>
-          Anterior
-        </Button>
-        <Button 
-          variant="success" 
-          onClick={handleCreateUser}
-          disabled={loading || newUserForm.workInfo.schedule.workDays.length === 0}
-          size="lg"
-        >
-          {loading ? (
-            <>
-              <Spinner animation="border" size="sm" className="me-2" />
-              Creando Empleado...
-            </>
-          ) : (
-            <>
-              <FaUserPlus className="me-2" />
-              Crear Empleado
-            </>
-          )}
-        </Button>
-      </div>
-    </div>
-  );
+      default:
+        return null;
     }
   };
 

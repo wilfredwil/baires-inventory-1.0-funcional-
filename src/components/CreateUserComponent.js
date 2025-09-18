@@ -44,7 +44,7 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
 
-  // ROLES ACTUALIZADOS SEGÚN TU RESTAURANTE
+  // ROLES ACTUALIZADOS SEGÚN TU RESTAURANTE - CON FOOD RUNNER
   const rolesByDepartment = {
     FOH: [
       { value: 'host', label: 'Host/Hostess' },
@@ -53,6 +53,7 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
       { value: 'bartender', label: 'Bartender' },
       { value: 'bartender_head', label: 'Bartender Principal' },
       { value: 'runner', label: 'Runner' },
+      { value: 'food_runner', label: 'Food Runner' }, // NUEVO!
       { value: 'busser', label: 'Busser' },
       { value: 'manager', label: 'Manager' }
     ],
@@ -69,7 +70,7 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
     ]
   };
 
-  // FUNCIÓN PARA OBTENER COLORES POR POSICIÓN (NUEVA)
+  // FUNCIÓN PARA OBTENER COLORES POR POSICIÓN - CON FOOD RUNNER
   const getPositionColor = (role) => {
     const colors = {
       // FOH
@@ -79,6 +80,7 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
       'bartender': '#9b59b6',
       'bartender_head': '#8e44ad',
       'runner': '#1abc9c',
+      'food_runner': '#17a2b8', // NUEVO COLOR!
       'busser': '#16a085',
       'manager': '#e67e22',
       
@@ -96,7 +98,7 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
     return colors[role] || '#95a5a6';
   };
 
-  // PERMISOS ACTUALIZADOS PARA NUEVOS ROLES
+  // PERMISOS ACTUALIZADOS PARA NUEVOS ROLES - CON FOOD RUNNER
   const getPermissionsByRole = (role) => {
     const permissionsMap = {
       // FOH roles
@@ -131,6 +133,12 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
         canManageStaff: false
       },
       'runner': {
+        canAccessPOS: false,
+        canManageInventory: false,
+        canViewReports: false,
+        canManageStaff: false
+      },
+      'food_runner': { // NUEVOS PERMISOS!
         canAccessPOS: false,
         canManageInventory: false,
         canViewReports: false,
@@ -177,7 +185,7 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
       'sous_chef': {
         canAccessPOS: false,
         canManageInventory: true,
-        canViewReports: false,
+        canViewReports: true,
         canManageStaff: false
       },
       'chef': {
@@ -186,8 +194,8 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
         canViewReports: true,
         canManageStaff: true
       },
-
-      // ADMIN
+      
+      // ADMIN roles
       'admin': {
         canAccessPOS: true,
         canManageInventory: true,
@@ -195,7 +203,7 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
         canManageStaff: true
       }
     };
-
+    
     return permissionsMap[role] || {
       canAccessPOS: false,
       canManageInventory: false,
@@ -204,190 +212,165 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
     };
   };
 
-  // Días de la semana
-  const weekDays = [
-    { value: 'monday', label: 'Lunes' },
-    { value: 'tuesday', label: 'Martes' },
-    { value: 'wednesday', label: 'Miércoles' },
-    { value: 'thursday', label: 'Jueves' },
-    { value: 'friday', label: 'Viernes' },
-    { value: 'saturday', label: 'Sábado' },
-    { value: 'sunday', label: 'Domingo' }
-  ];
-
-  // Generar ID de empleado
+  // Generar ID de empleado único
   const generateEmployeeId = () => {
-    const year = new Date().getFullYear();
-    const dept = formData.workInfo.department;
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `${dept}${year}${random}`;
+    const prefix = formData.workInfo.department || 'EMP';
+    const timestamp = Date.now().toString().slice(-6);
+    return `${prefix}${timestamp}`;
   };
 
-  // Generar contraseña temporal
-  const generatePassword = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$';
-    let password = '';
-    for (let i = 0; i < 10; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return password;
-  };
-
-  // Manejar cambios en el formulario
+  // Manejar cambios en inputs
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
-    const keys = name.split('.');
-
-    if (keys.length === 1) {
-      const newValue = type === 'checkbox' ? checked : value;
-      
-      setFormData(prev => {
-        const updated = {
-          ...prev,
-          [name]: newValue
-        };
-        
-        // Si cambió el rol, actualizar permisos automáticamente
-        if (name === 'role') {
-          updated.permissions = getPermissionsByRole(value);
-        }
-        
-        return updated;
-      });
-    } else if (keys.length === 2) {
+    
+    if (name.includes('.')) {
+      const [section, field] = name.split('.');
       setFormData(prev => ({
         ...prev,
-        [keys[0]]: {
-          ...prev[keys[0]],
-          [keys[1]]: type === 'checkbox' ? checked : value
+        [section]: {
+          ...prev[section],
+          [field]: type === 'checkbox' ? checked : value
         }
       }));
-    } else if (keys.length === 3) {
+    } else {
       setFormData(prev => ({
         ...prev,
-        [keys[0]]: {
-          ...prev[keys[0]],
-          [keys[1]]: {
-            ...prev[keys[0]][keys[1]],
-            [keys[2]]: type === 'checkbox' ? checked : value
+        [name]: type === 'checkbox' ? checked : value
+      }));
+    }
+
+    // Auto-asignar permisos cuando cambia el rol
+    if (name === 'role') {
+      const permissions = getPermissionsByRole(value);
+      setFormData(prev => ({
+        ...prev,
+        permissions
+      }));
+    }
+
+    // Limpiar errores cuando el usuario corrige
+    if (errors[name]) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }));
+    }
+  };
+
+  // Manejar cambios en inputs anidados
+  const handleNestedInputChange = (e, section, subsection = null) => {
+    const { name, value, type, checked } = e.target;
+    const newValue = type === 'checkbox' ? checked : value;
+
+    if (subsection) {
+      setFormData(prev => ({
+        ...prev,
+        [section]: {
+          ...prev[section],
+          [subsection]: {
+            ...prev[section][subsection],
+            [name]: newValue
           }
         }
       }));
-    }
-
-    // Limpiar errores
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
-    }
-  };
-
-  // Manejar cambio de días de trabajo
-  const handleWorkDaysChange = (day) => {
-    setFormData(prev => ({
-      ...prev,
-      workInfo: {
-        ...prev.workInfo,
-        schedule: {
-          ...prev.workInfo.schedule,
-          workDays: prev.workInfo.schedule.workDays.includes(day)
-            ? prev.workInfo.schedule.workDays.filter(d => d !== day)
-            : [...prev.workInfo.schedule.workDays, day]
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [section]: {
+          ...prev[section],
+          [name]: newValue
         }
-      }
-    }));
+      }));
+    }
   };
 
   // Validar formulario
   const validateForm = () => {
     const newErrors = {};
 
-    if (!formData.firstName.trim()) newErrors.firstName = 'Nombre requerido';
-    if (!formData.lastName.trim()) newErrors.lastName = 'Apellido requerido';
-    if (!formData.email.trim()) newErrors.email = 'Email requerido';
-    if (!formData.role) newErrors.role = 'Rol requerido';
-    if (!formData.workInfo.department) newErrors['workInfo.department'] = 'Departamento requerido';
-    if (!formData.password) newErrors.password = 'Contraseña requerida';
+    // Validaciones básicas
+    if (!formData.firstName.trim()) {
+      newErrors.firstName = 'El nombre es obligatorio';
+    }
 
-    // Validar email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (formData.email && !emailRegex.test(formData.email)) {
-      newErrors.email = 'Email inválido';
+    if (!formData.lastName.trim()) {
+      newErrors.lastName = 'El apellido es obligatorio';
+    }
+
+    if (!formData.email.trim()) {
+      newErrors.email = 'El email es obligatorio';
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      newErrors.email = 'El email no es válido';
+    }
+
+    if (!formData.password || formData.password.length < 6) {
+      newErrors.password = 'La contraseña debe tener al menos 6 caracteres';
+    }
+
+    if (!formData.role) {
+      newErrors.role = 'Debe seleccionar un rol';
+    }
+
+    if (!formData.workInfo.department) {
+      newErrors['workInfo.department'] = 'Debe seleccionar un departamento';
+    }
+
+    if (formData.phone && !/^\+?[\d\s\-\(\)]+$/.test(formData.phone)) {
+      newErrors.phone = 'El teléfono no es válido';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // Enviar formulario
-  const handleSubmit = async (e) => {
+  // Crear usuario
+  const handleCreateUser = async (e) => {
     e.preventDefault();
     
-    if (!validateForm()) return;
+    if (!validateForm()) {
+      return;
+    }
 
     setLoading(true);
+    setErrors({});
 
     try {
-      // Generar ID de empleado si no existe
-      const employeeId = formData.workInfo.employeeId || generateEmployeeId();
-      
-      // Crear usuario en Authentication
+      // Crear usuario en Firebase Auth
       const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        formData.email,
+        auth, 
+        formData.email, 
         formData.password
       );
 
-      // Preparar datos del usuario
+      const newUser = userCredential.user;
+
+      // Generar ID de empleado si no existe
+      const employeeId = formData.workInfo.employeeId || generateEmployeeId();
+
+      // Preparar datos para Firestore
       const userData = {
-        uid: userCredential.user.uid,
+        uid: newUser.uid,
         email: formData.email,
         firstName: formData.firstName,
         lastName: formData.lastName,
         displayName: `${formData.firstName} ${formData.lastName}`,
-        phone: formData.phone,
+        phone: formData.phone || '',
         role: formData.role,
         workInfo: {
           ...formData.workInfo,
-          employeeId,
-          startDate: formData.workInfo.startDate || new Date().toISOString().split('T')[0]
+          employeeId
         },
         permissions: formData.permissions,
         personalInfo: formData.personalInfo,
+        status: 'active',
         createdAt: serverTimestamp(),
-        createdBy: currentUser?.email || 'system',
-        updatedAt: serverTimestamp(),
-        status: 'active'
+        createdBy: currentUser.email
       };
 
       // Guardar en Firestore
       await addDoc(collection(db, 'users'), userData);
 
-      // Mensaje de éxito
-      const successMessage = `
-✅ USUARIO CREADO EXITOSAMENTE
-
-📋 INFORMACIÓN DEL NUEVO EMPLEADO:
-• Nombre: ${formData.firstName} ${formData.lastName}
-• Email: ${formData.email}
-• ID Empleado: ${employeeId}
-• Departamento: ${formData.workInfo.department}
-• Rol: ${formData.role}
-• Salario: $${formData.workInfo.hourlyRate}/hora USD
-
-🔐 CREDENCIALES DE ACCESO:
-• Email: ${formData.email}
-• Contraseña temporal: ${formData.password}
-
-⚠️ IMPORTANTE: 
-- Envía estas credenciales al empleado de forma segura
-- El empleado debe cambiar su contraseña en el primer acceso
-- Guarda esta información para tus registros`;
-
-      if (onSuccess) {
-        onSuccess(successMessage);
-      }
-
-      // Reset formulario
+      // Resetear formulario
       setFormData({
         firstName: '',
         lastName: '',
@@ -422,38 +405,51 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
         password: ''
       });
 
+      onSuccess(`Usuario ${formData.firstName} ${formData.lastName} creado exitosamente`);
       onHide();
 
     } catch (error) {
-      console.error('Error creando usuario:', error);
-      if (onError) {
-        onError(`Error al crear usuario: ${error.message}`);
+      console.error('Error creating user:', error);
+      let errorMessage = 'Error al crear el usuario';
+      
+      switch (error.code) {
+        case 'auth/email-already-in-use':
+          errorMessage = 'Este email ya está registrado';
+          break;
+        case 'auth/weak-password':
+          errorMessage = 'La contraseña es muy débil';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'El email no es válido';
+          break;
+        default:
+          errorMessage = error.message;
       }
+      
+      onError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Modal show={show} onHide={onHide} size="xl" centered>
+    <Modal show={show} onHide={onHide} size="lg" backdrop="static">
       <Modal.Header closeButton>
         <Modal.Title>
           <FaUser className="me-2" />
-          Crear Nuevo Personal FOH/BOH
+          Crear Nuevo Usuario
         </Modal.Title>
       </Modal.Header>
 
-      <Form onSubmit={handleSubmit}>
-        <Modal.Body style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-          <Alert variant="info" className="mb-4">
-            <strong>Formulario Optimizado FOH/BOH</strong><br/>
-            Salario por hora en USD • Permisos automáticos según rol • Sin campos redundantes
-          </Alert>
-
+      <Form onSubmit={handleCreateUser}>
+        <Modal.Body>
           {/* Información Personal */}
           <Card className="mb-4">
             <Card.Header>
-              <h5 className="mb-0">Información Personal</h5>
+              <h6 className="mb-0">
+                <FaUser className="me-2" />
+                Información Personal
+              </h6>
             </Card.Header>
             <Card.Body>
               <Row>
@@ -501,7 +497,7 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                       value={formData.email}
                       onChange={handleInputChange}
                       isInvalid={!!errors.email}
-                      placeholder="email@restaurante.com"
+                      placeholder="email@ejemplo.com"
                     />
                     <Form.Control.Feedback type="invalid">
                       {errors.email}
@@ -516,21 +512,51 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                       name="phone"
                       value={formData.phone}
                       onChange={handleInputChange}
-                      placeholder="+1 (555) 123-4567"
+                      isInvalid={!!errors.phone}
+                      placeholder="+1 234 567 8900"
                     />
+                    <Form.Control.Feedback type="invalid">
+                      {errors.phone}
+                    </Form.Control.Feedback>
                   </Form.Group>
                 </Col>
               </Row>
+
+              <Form.Group className="mb-3">
+                <Form.Label>Contraseña Temporal *</Form.Label>
+                <InputGroup>
+                  <Form.Control
+                    type={showPassword ? 'text' : 'password'}
+                    name="password"
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    isInvalid={!!errors.password}
+                    placeholder="Mínimo 6 caracteres"
+                  />
+                  <Button
+                    variant="outline-secondary"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? <FaEyeSlash /> : <FaEye />}
+                  </Button>
+                  <Form.Control.Feedback type="invalid">
+                    {errors.password}
+                  </Form.Control.Feedback>
+                </InputGroup>
+                <Form.Text className="text-muted">
+                  El empleado podrá cambiar esta contraseña en su primer acceso
+                </Form.Text>
+              </Form.Group>
             </Card.Body>
           </Card>
 
           {/* Información Laboral */}
           <Card className="mb-4">
             <Card.Header>
-              <h5 className="mb-0">
+              <h6 className="mb-0">
                 <FaBuilding className="me-2" />
                 Información Laboral
-              </h5>
+              </h6>
             </Card.Header>
             <Card.Body>
               <Row>
@@ -615,17 +641,19 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                   <Form.Group className="mb-3">
                     <Form.Label>
                       <FaMoneyBillWave className="me-2" />
-                      Salario por Hora (USD)
+                      Salario por Hora
                     </Form.Label>
-                    <Form.Control
-                      type="number"
-                      name="workInfo.hourlyRate"
-                      value={formData.workInfo.hourlyRate}
-                      onChange={handleInputChange}
-                      placeholder="15.00"
-                      min="0"
-                      step="0.25"
-                    />
+                    <InputGroup>
+                      <InputGroup.Text>$</InputGroup.Text>
+                      <Form.Control
+                        type="number"
+                        step="0.50"
+                        name="workInfo.hourlyRate"
+                        value={formData.workInfo.hourlyRate}
+                        onChange={handleInputChange}
+                        placeholder="15.00"
+                      />
+                    </InputGroup>
                   </Form.Group>
                 </Col>
                 <Col md={4}>
@@ -643,31 +671,13 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                   </Form.Group>
                 </Col>
               </Row>
-
-              {/* Días de trabajo */}
-              <Form.Group className="mb-3">
-                <Form.Label>Días Disponibles para Trabajar</Form.Label>
-                <div className="d-flex flex-wrap gap-2">
-                  {weekDays.map(day => (
-                    <Form.Check
-                      key={day.value}
-                      type="checkbox"
-                      id={`workDay-${day.value}`}
-                      label={day.label}
-                      checked={formData.workInfo.schedule.workDays.includes(day.value)}
-                      onChange={() => handleWorkDaysChange(day.value)}
-                      className="me-3"
-                    />
-                  ))}
-                </div>
-              </Form.Group>
             </Card.Body>
           </Card>
 
-          {/* Información de Emergencia */}
-          <Card className="mb-4">
+          {/* Información de Contacto de Emergencia */}
+          <Card>
             <Card.Header>
-              <h5 className="mb-0">Contacto de Emergencia</h5>
+              <h6 className="mb-0">Contacto de Emergencia</h6>
             </Card.Header>
             <Card.Body>
               <Row>
@@ -676,9 +686,9 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                     <Form.Label>Nombre</Form.Label>
                     <Form.Control
                       type="text"
-                      name="personalInfo.emergencyContact.name"
+                      name="name"
                       value={formData.personalInfo.emergencyContact.name}
-                      onChange={handleInputChange}
+                      onChange={(e) => handleNestedInputChange(e, 'personalInfo', 'emergencyContact')}
                       placeholder="Nombre del contacto"
                     />
                   </Form.Group>
@@ -688,70 +698,30 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
                     <Form.Label>Teléfono</Form.Label>
                     <Form.Control
                       type="tel"
-                      name="personalInfo.emergencyContact.phone"
+                      name="phone"
                       value={formData.personalInfo.emergencyContact.phone}
-                      onChange={handleInputChange}
-                      placeholder="+1 (555) 987-6543"
+                      onChange={(e) => handleNestedInputChange(e, 'personalInfo', 'emergencyContact')}
+                      placeholder="+1 234 567 8900"
                     />
                   </Form.Group>
                 </Col>
                 <Col md={4}>
                   <Form.Group className="mb-3">
                     <Form.Label>Relación</Form.Label>
-                    <Form.Control
-                      type="text"
-                      name="personalInfo.emergencyContact.relationship"
+                    <Form.Select
+                      name="relationship"
                       value={formData.personalInfo.emergencyContact.relationship}
-                      onChange={handleInputChange}
-                      placeholder="Madre, Padre, Esposo/a, etc."
-                    />
-                  </Form.Group>
-                </Col>
-              </Row>
-            </Card.Body>
-          </Card>
-
-          {/* Contraseña */}
-          <Card className="mb-4">
-            <Card.Header>
-              <h5 className="mb-0">Credenciales de Acceso</h5>
-            </Card.Header>
-            <Card.Body>
-              <Row>
-                <Col md={12}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Contraseña Temporal *</Form.Label>
-                    <InputGroup>
-                      <Form.Control
-                        type={showPassword ? "text" : "password"}
-                        name="password"
-                        value={formData.password}
-                        onChange={handleInputChange}
-                        isInvalid={!!errors.password}
-                        placeholder="Contraseña temporal para el empleado"
-                      />
-                      <Button
-                        variant="outline-secondary"
-                        onClick={() => setShowPassword(!showPassword)}
-                      >
-                        {showPassword ? <FaEyeSlash /> : <FaEye />}
-                      </Button>
-                      <Button
-                        variant="outline-success"
-                        onClick={() => setFormData(prev => ({
-                          ...prev,
-                          password: generatePassword()
-                        }))}
-                      >
-                        Generar
-                      </Button>
-                    </InputGroup>
-                    <Form.Control.Feedback type="invalid">
-                      {errors.password}
-                    </Form.Control.Feedback>
-                    <Form.Text className="text-muted">
-                      El empleado deberá cambiar esta contraseña en su primer acceso.
-                    </Form.Text>
+                      onChange={(e) => handleNestedInputChange(e, 'personalInfo', 'emergencyContact')}
+                    >
+                      <option value="">Seleccionar...</option>
+                      <option value="padre">Padre</option>
+                      <option value="madre">Madre</option>
+                      <option value="conyuge">Cónyuge</option>
+                      <option value="hermano">Hermano/a</option>
+                      <option value="hijo">Hijo/a</option>
+                      <option value="amigo">Amigo/a</option>
+                      <option value="otro">Otro</option>
+                    </Form.Select>
                   </Form.Group>
                 </Col>
               </Row>
@@ -763,8 +733,8 @@ const CreateUserComponent = ({ show, onHide, onSuccess, onError, currentUser }) 
           <Button variant="secondary" onClick={onHide} disabled={loading}>
             Cancelar
           </Button>
-          <Button type="submit" variant="primary" disabled={loading}>
-            {loading ? 'Creando Usuario...' : 'Crear Usuario FOH/BOH'}
+          <Button variant="primary" type="submit" disabled={loading}>
+            {loading ? 'Creando...' : 'Crear Usuario'}
           </Button>
         </Modal.Footer>
       </Form>

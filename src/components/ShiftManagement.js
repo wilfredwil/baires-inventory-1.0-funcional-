@@ -1,14 +1,14 @@
-// src/components/ShiftManagement.js - VERSIÓN CORREGIDA
+// src/components/ShiftManagement.js - CON FUNCIONALIDADES MEJORADAS
 import React, { useState, useEffect } from 'react';
 import { 
   Container, Row, Col, Card, Button, Form, Modal, Badge, Alert, 
-  Tabs, Tab, Spinner 
+  Tabs, Tab, Spinner, Dropdown, ButtonGroup
 } from 'react-bootstrap';
 import { 
   FaCalendarAlt, FaPlus, FaEdit, FaTrash, FaClock, FaUsers, FaShare, 
   FaEye, FaBuilding, FaCopy, FaExclamationTriangle, FaCheckCircle,
   FaConciergeBell, FaUtensils, FaArrowLeft, FaSun, FaMoon,
-  FaCalendarWeek, FaDollarSign, FaChartBar
+  FaCalendarWeek, FaDollarSign, FaChartBar, FaHistory, FaStar
 } from 'react-icons/fa';
 import { 
   collection, addDoc, onSnapshot, updateDoc, deleteDoc, doc, query, 
@@ -40,20 +40,52 @@ const SHIFT_TYPES = {
   }
 };
 
-// Configuración de posiciones por departamento
+// Configuración ACTUALIZADA de posiciones por departamento con más roles
 const POSITIONS = {
   FOH: [
-    { value: 'server', label: 'Mesero' },
-    { value: 'bartender', label: 'Bartender' },
-    { value: 'host', label: 'Anfitrión' },
-    { value: 'manager', label: 'Manager' }
+    { value: 'host', label: 'Host/Hostess', priority: 1 },
+    { value: 'server', label: 'Mesero/a', priority: 2 },
+    { value: 'server_senior', label: 'Mesero/a Senior', priority: 3 },
+    { value: 'bartender', label: 'Bartender', priority: 4 },
+    { value: 'bartender_head', label: 'Bartender Principal', priority: 5 },
+    { value: 'runner', label: 'Runner', priority: 6 },
+    { value: 'food_runner', label: 'Food Runner', priority: 7 },
+    { value: 'busser', label: 'Busser', priority: 8 },
+    { value: 'manager', label: 'Manager', priority: 9 }
   ],
   BOH: [
-    { value: 'chef', label: 'Chef' },
-    { value: 'cook', label: 'Cocinero' },
-    { value: 'dishwasher', label: 'Lavaplatos' },
-    { value: 'prep', label: 'Preparador' }
+    { value: 'dishwasher', label: 'Lavaplatos', priority: 1 },
+    { value: 'prep_cook', label: 'Ayudante de Cocina', priority: 2 },
+    { value: 'line_cook', label: 'Cocinero de Línea', priority: 3 },
+    { value: 'cook', label: 'Cocinero/a', priority: 4 },
+    { value: 'sous_chef', label: 'Sous Chef', priority: 5 },
+    { value: 'chef', label: 'Chef/Manager de Cocina', priority: 6 }
   ]
+};
+
+// Función para obtener colores por rol
+const getPositionColor = (role) => {
+  const colors = {
+    // FOH
+    'host': '#3498db',
+    'server': '#27ae60',
+    'server_senior': '#229954',
+    'bartender': '#9b59b6',
+    'bartender_head': '#8e44ad',
+    'runner': '#1abc9c',
+    'food_runner': '#17a2b8', // Nuevo color para Food Runner
+    'busser': '#16a085',
+    'manager': '#e67e22',
+    
+    // BOH
+    'dishwasher': '#95a5a6',
+    'prep_cook': '#e74c3c',
+    'line_cook': '#c0392b',
+    'cook': '#d35400',
+    'sous_chef': '#e67e22',
+    'chef': '#f39c12'
+  };
+  return colors[role] || '#95a5a6';
 };
 
 // Helper functions
@@ -70,6 +102,11 @@ const getDayName = (dayValue) => {
   return dayMap[dayValue] || dayValue;
 };
 
+// Helper para obtener nombres de días (siempre domingo a sábado)
+const getDayNames = () => {
+  return ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+};
+
 const ShiftManagement = ({ user, userRole, onBack }) => {
   // Estados principales
   const [shifts, setShifts] = useState([]);
@@ -83,6 +120,18 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
   const [currentWeek, setCurrentWeek] = useState(new Date());
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [editingShift, setEditingShift] = useState(null);
+  
+  // Estados para funcionalidades nuevas
+  const [showCopyWeekModal, setShowCopyWeekModal] = useState(false);
+  const [copyWeekForm, setCopyWeekForm] = useState({
+    sourceWeek: '',
+    targetWeek: '',
+    copyOptions: {
+      copyEmployees: true,
+      copyTimes: true,
+      copyNotes: false
+    }
+  });
   
   // Estados adicionales para publicación rápida
   const [showQuickPublishModal, setShowQuickPublishModal] = useState(false);
@@ -149,10 +198,9 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
   const getWeekDates = (startDate) => {
     const dates = [];
     const start = new Date(startDate);
-    // Empezar el lunes
-    const day = start.getDay();
-    const diff = start.getDate() - day + (day === 0 ? -6 : 1);
-    start.setDate(diff);
+    
+    // Siempre empezar el domingo
+    start.setDate(start.getDate() - start.getDay());
     
     for (let i = 0; i < 7; i++) {
       const date = new Date(start);
@@ -188,6 +236,50 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
     return employee?.role || '';
   };
 
+  // NUEVA FUNCIÓN: Obtener turnos por fecha, tipo y agrupados por rol
+  const getShiftsByDateAndTypeGroupedByRole = (date, department, shiftType) => {
+    const dateStr = date.toISOString().split('T')[0];
+    const dayShifts = shifts.filter(shift => 
+      shift.date === dateStr && 
+      shift.department === department &&
+      shift.shift_type === shiftType
+    );
+
+    // Agrupar por rol y ordenar por prioridad
+    const groupedShifts = {};
+    const positions = POSITIONS[department] || [];
+    
+    dayShifts.forEach(shift => {
+      // Intentar obtener el rol de diferentes fuentes
+      let employeeRole = shift.position || // Primero la posición del turno
+                       getEmployeeRole(shift.employee_id) || // Luego el rol del empleado 
+                       shift.role || // Luego el campo role del turno
+                       'other'; // Por último, 'other'
+      
+      if (!groupedShifts[employeeRole]) {
+        groupedShifts[employeeRole] = [];
+      }
+      groupedShifts[employeeRole].push(shift);
+    });
+
+    // Ordenar grupos por prioridad de posición
+    const sortedGroups = {};
+    positions.forEach(position => {
+      if (groupedShifts[position.value]) {
+        sortedGroups[position.value] = groupedShifts[position.value];
+      }
+    });
+
+    // Agregar roles que no están en la configuración al final
+    Object.keys(groupedShifts).forEach(role => {
+      if (!sortedGroups[role]) {
+        sortedGroups[role] = groupedShifts[role];
+      }
+    });
+
+    return sortedGroups;
+  };
+
   const getShiftsByDateAndType = (date, department, shiftType) => {
     const dateStr = date.toISOString().split('T')[0];
     return shifts.filter(shift => 
@@ -205,7 +297,117 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
     );
   };
 
-  // Handlers
+  // NUEVA FUNCIÓN: Copiar semana anterior
+  const handleCopyPreviousWeek = async () => {
+    try {
+      const currentWeekDates = getWeekDates(currentWeek);
+      const previousWeekDates = getWeekDates(new Date(currentWeek.getTime() - 7 * 24 * 60 * 60 * 1000));
+      
+      // Obtener turnos de la semana anterior para el departamento actual
+      const currentDepartment = activeTab.toUpperCase();
+      const previousWeekShifts = shifts.filter(shift => {
+        const shiftDate = new Date(shift.date);
+        return shiftDate >= previousWeekDates[0] && 
+               shiftDate <= previousWeekDates[6] && 
+               shift.department === currentDepartment;
+      });
+
+      if (previousWeekShifts.length === 0) {
+        setError('No se encontraron turnos en la semana anterior para copiar');
+        return;
+      }
+
+      let copiedCount = 0;
+      const copyPromises = [];
+
+      for (const shift of previousWeekShifts) {
+        // Calcular la fecha correspondiente en la semana actual
+        const originalDate = new Date(shift.date);
+        const dayIndex = originalDate.getDay();
+        const newDate = currentWeekDates[dayIndex === 0 ? 6 : dayIndex - 1]; // Ajustar domingo
+        const newDateStr = newDate.toISOString().split('T')[0];
+
+        // Verificar si ya existe un turno similar
+        const existingShift = shifts.find(s => 
+          s.date === newDateStr &&
+          s.employee_id === shift.employee_id &&
+          s.shift_type === shift.shift_type &&
+          s.department === shift.department
+        );
+
+        if (!existingShift) {
+          const newShift = {
+            ...shift,
+            id: undefined, // Remover el ID para crear uno nuevo
+            date: newDateStr,
+            created_at: serverTimestamp(),
+            copied_from: shift.id,
+            notes: shift.notes ? `${shift.notes} (Copiado)` : 'Copiado de semana anterior'
+          };
+
+          copyPromises.push(addDoc(collection(db, 'shifts'), newShift));
+          copiedCount++;
+        }
+      }
+
+      await Promise.all(copyPromises);
+      
+      setSuccess(`Se copiaron ${copiedCount} turnos de la semana anterior`);
+      setTimeout(() => setSuccess(''), 3000);
+
+    } catch (err) {
+      console.error('Error copying previous week:', err);
+      setError('Error al copiar la semana anterior: ' + err.message);
+    }
+  };
+
+  // NUEVA FUNCIÓN: Crear template de la semana
+  const handleCreateTemplate = async () => {
+    try {
+      const currentWeekDates = getWeekDates(currentWeek);
+      const currentDepartment = activeTab.toUpperCase();
+      
+      // Obtener turnos de la semana actual
+      const weekShifts = shifts.filter(shift => {
+        const shiftDate = new Date(shift.date);
+        return shiftDate >= currentWeekDates[0] && 
+               shiftDate <= currentWeekDates[6] && 
+               shift.department === currentDepartment;
+      });
+
+      if (weekShifts.length === 0) {
+        setError('No hay turnos en esta semana para crear un template');
+        return;
+      }
+
+      // Crear template en Firestore (colección 'schedule_templates')
+      const templateData = {
+        name: `Template ${currentDepartment} - ${new Date().toLocaleDateString('es-ES')}`,
+        department: currentDepartment,
+        created_by: user.email,
+        created_at: serverTimestamp(),
+        shifts_template: weekShifts.map(shift => ({
+          day_of_week: new Date(shift.date).getDay(),
+          shift_type: shift.shift_type,
+          start_time: shift.start_time,
+          end_time: shift.end_time,
+          position: shift.position,
+          employee_role: getEmployeeRole(shift.employee_id),
+          notes: shift.notes || ''
+        }))
+      };
+
+      await addDoc(collection(db, 'schedule_templates'), templateData);
+      setSuccess('Template creado exitosamente');
+      setTimeout(() => setSuccess(''), 3000);
+
+    } catch (err) {
+      console.error('Error creating template:', err);
+      setError('Error al crear el template: ' + err.message);
+    }
+  };
+
+  // Handlers existentes
   const handleShiftFormChange = (e) => {
     const { name, value } = e.target;
     let newForm = { ...shiftForm, [name]: value };
@@ -221,50 +423,26 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
     if (name === 'employee_id') {
       const employee = employees.find(emp => emp.id === value);
       if (employee) {
-        newForm.department = employee.workInfo?.department || activeTab.toUpperCase();
-        
-        // Auto-llenar la posición con el rol del empleado
-        const employeeRole = employee.role;
-        newForm.position = employeeRole || '';
-        
-        // Si el empleado tiene una posición específica en workInfo, usar esa
-        if (employee.workInfo?.position) {
-          newForm.position = employee.workInfo.position;
-        }
+        newForm.department = employee.workInfo?.department || 'FOH';
+        newForm.position = employee.role || '';
       }
     }
 
     setShiftForm(newForm);
   };
 
-  const handleCreateShift = async (e) => {
+  const handleSubmitShift = async (e) => {
     e.preventDefault();
     
-    if (!shiftForm.employee_id || !shiftForm.date || !shiftForm.shift_type) {
-      setError('Empleado, fecha y tipo de turno son obligatorios');
-      return;
-    }
-
     try {
       const employee = employees.find(emp => emp.id === shiftForm.employee_id);
-      
-      // Verificar que no haya conflictos
-      const existingShifts = shifts.filter(shift => 
-        shift.employee_id === shiftForm.employee_id && 
-        shift.date === shiftForm.date &&
-        shift.id !== editingShift?.id
-      );
-
-      if (existingShifts.length > 0) {
-        setError('Este empleado ya tiene un turno asignado para este día');
-        return;
-      }
-
       const shiftData = {
         ...shiftForm,
-        employee_name: employee.displayName || `${employee.firstName} ${employee.lastName}`,
-        employee_role: employee.role,
-        employee_department: employee.workInfo?.department,
+        // Asegurar que guardamos toda la información necesaria
+        employee_name: employee ? (employee.displayName || `${employee.firstName} ${employee.lastName}`) : '',
+        employee_role: employee?.role || shiftForm.position || '',
+        employee_department: employee?.workInfo?.department || shiftForm.department,
+        role: employee?.role || shiftForm.position || '', // Campo adicional para compatibilidad
         created_at: serverTimestamp(),
         created_by: user.email
       };
@@ -272,8 +450,7 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
       if (editingShift) {
         await updateDoc(doc(db, 'shifts', editingShift.id), {
           ...shiftData,
-          updated_at: serverTimestamp(),
-          updated_by: user.email
+          updated_at: serverTimestamp()
         });
         setSuccess('Turno actualizado exitosamente');
       } else {
@@ -281,38 +458,38 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
         setSuccess('Turno creado exitosamente');
       }
 
-      setShiftForm({
-        employee_id: '',
-        date: '',
-        shift_type: 'morning',
-        start_time: '',
-        end_time: '',
-        position: '',
-        department: activeTab.toUpperCase(),
-        notes: '',
-        status: 'scheduled'
-      });
-      setEditingShift(null);
       setShowShiftModal(false);
+      setEditingShift(null);
+      resetShiftForm();
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
-      setError('Error al procesar el turno: ' + err.message);
+      console.error('Error saving shift:', err);
+      setError('Error al guardar el turno: ' + err.message);
     }
   };
 
-  const handleEditShift = (shift) => {
-    setEditingShift(shift);
+  const resetShiftForm = () => {
     setShiftForm({
-      employee_id: shift.employee_id,
-      date: shift.date,
-      shift_type: shift.shift_type || 'morning',
-      start_time: shift.start_time,
-      end_time: shift.end_time,
-      position: shift.position || '',
-      department: shift.department,
-      notes: shift.notes || '',
-      status: shift.status || 'scheduled'
+      employee_id: '',
+      date: '',
+      shift_type: 'morning',
+      start_time: '',
+      end_time: '',
+      position: '',
+      department: 'FOH',
+      notes: '',
+      status: 'scheduled'
     });
+  };
+
+  const openShiftModal = (shift = null, prefillData = {}) => {
+    if (shift) {
+      setEditingShift(shift);
+      setShiftForm({ ...shift });
+    } else {
+      resetShiftForm();
+      setShiftForm(prev => ({ ...prev, ...prefillData }));
+    }
     setShowShiftModal(true);
   };
 
@@ -341,6 +518,25 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
     const weekEnd = weekDates[6].toISOString().split('T')[0];
     const currentDepartment = activeTab.toUpperCase();
     
+    console.log('=== PREPARANDO PUBLICACIÓN ===');
+    console.log('currentWeek (estado):', currentWeek);
+    console.log('weekDates calculadas:', weekDates.map(d => d.toDateString()));
+    console.log('weekStart (string):', weekStart);
+    console.log('weekEnd (string):', weekEnd);
+    console.log('Departamento actual:', currentDepartment);
+    
+    // Verificar qué turnos existen en el calendario visible
+    const visibleShifts = [];
+    weekDates.forEach(date => {
+      const dateStr = date.toISOString().split('T')[0];
+      const dayShifts = shifts.filter(s => s.date === dateStr && s.department === currentDepartment);
+      visibleShifts.push(...dayShifts);
+      console.log(`Turnos para ${dateStr} (${currentDepartment}):`, dayShifts.length);
+    });
+    
+    console.log('Total turnos visibles en calendario:', visibleShifts.length);
+    console.log('=== FIN PREPARACIÓN ===');
+    
     setPublishForm({
       week_start: weekStart,
       week_end: weekEnd,
@@ -367,16 +563,47 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
       const weekDates = getWeekDates(currentWeek);
       const currentDepartment = activeTab.toUpperCase();
       
+      console.log('Buscando turnos para publicar:', {
+        weekStart: weekDates[0],
+        weekEnd: weekDates[6],
+        department: currentDepartment,
+        totalShifts: shifts.length
+      });
+      
+      // Mostrar TODOS los turnos para debug
+      console.log('=== TODOS LOS TURNOS EN BASE DE DATOS ===');
+      shifts.forEach(shift => {
+        console.log(`Turno: ${shift.date} | Dept: ${shift.department || 'SIN_DEPT'} | Empleado: ${shift.employee_id} | Pos: ${shift.position}`);
+      });
+      console.log('=== FIN LISTA TURNOS ===');
+      
       // Obtener turnos de la semana actual para este departamento
+      // Usar comparación de strings para las fechas para evitar problemas de timezone
+      const weekStartStr = weekDates[0].toISOString().split('T')[0];
+      const weekEndStr = weekDates[6].toISOString().split('T')[0];
+      
       const weekShifts = shifts.filter(shift => {
-        const shiftDate = new Date(shift.date);
-        return shiftDate >= weekDates[0] && 
-               shiftDate <= weekDates[6] && 
-               shift.department === currentDepartment;
+        const shiftDateStr = shift.date; // Ya viene como string 'YYYY-MM-DD'
+        const inDateRange = shiftDateStr >= weekStartStr && shiftDateStr <= weekEndStr;
+        const inDepartment = shift.department === currentDepartment;
+        
+        if (inDateRange && inDepartment) {
+          console.log('Turno incluido:', {
+            date: shift.date,
+            employee: shift.employee_id,
+            department: shift.department,
+            position: shift.position
+          });
+        }
+        
+        return inDateRange && inDepartment;
       });
 
+      console.log('Turnos encontrados para publicar:', weekShifts.length);
+      console.log('Rango de fechas buscado:', { weekStartStr, weekEndStr });
+
       if (weekShifts.length === 0) {
-        setError('No hay turnos para publicar en esta semana');
+        setError(`No hay turnos para publicar en el departamento ${currentDepartment} para esta semana (${weekDates[0].toLocaleDateString('es-ES')} - ${weekDates[6].toLocaleDateString('es-ES')})`);
         return;
       }
 
@@ -408,9 +635,17 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
         reminder_sent: false
       };
 
+      console.log('Datos del horario a publicar:', {
+        title: scheduleData.title,
+        week_start: scheduleData.week_start,
+        week_end: scheduleData.week_end,
+        department: scheduleData.department,
+        shiftsCount: scheduleData.shifts_included.length
+      });
+
       // Crear el documento del horario publicado y obtener su referencia
       const docRef = await addDoc(collection(db, 'published_schedules'), scheduleData);
-      const scheduleId = docRef.id; // Ahora tenemos el ID real del documento
+      const scheduleId = docRef.id;
 
       // Notificar empleados si está habilitado
       if (publishForm.notify_employees) {
@@ -422,14 +657,14 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
             type: 'schedule_published',
             title: 'Nuevo Horario Publicado',
             message: `Se ha publicado el horario ${currentDepartment} para la semana del ${weekDates[0].toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}`,
-            schedule_id: scheduleId, // Usar el ID real del documento creado
+            schedule_id: scheduleId,
             read: false,
             created_at: serverTimestamp()
           });
         }
       }
 
-      setSuccess(`Horario ${currentDepartment} publicado exitosamente`);
+      setSuccess(`Horario ${currentDepartment} publicado exitosamente con ${weekShifts.length} turnos`);
       setShowQuickPublishModal(false);
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
@@ -451,358 +686,465 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
 
   return (
     <Container fluid className="px-4">
-      {/* Header */}
-      <Row className="mb-4">
-        <Col>
-          <div className="d-flex justify-content-between align-items-center mb-3">
-            <div className="d-flex align-items-center">
-              {onBack && (
-                <Button variant="outline-secondary" onClick={onBack} className="me-3">
-                  <FaArrowLeft />
-                </Button>
-              )}
-              <h2 className="mb-0">
-                <FaCalendarWeek className="me-2" />
-                Gestión de Horarios
-              </h2>
-            </div>
-            <Button 
-              variant="primary" 
-              onClick={() => {
-                setShiftForm({
-                  ...shiftForm,
-                  department: currentDepartment,
-                  shift_type: 'morning',
-                  start_time: SHIFT_TYPES.morning.defaultStart,
-                  end_time: SHIFT_TYPES.morning.defaultEnd
-                });
-                setShowShiftModal(true);
-              }}
-            >
-              <FaPlus className="me-1" />
-              Nuevo Turno
-            </Button>
+      {/* Header con funcionalidades nuevas */}
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <div className="d-flex align-items-center">
+          <Button variant="outline-secondary" onClick={onBack} className="me-3">
+            <FaArrowLeft />
+          </Button>
+          <div>
+            <h2 className="mb-0">
+              <FaClock className="me-2" />
+              Gestión de Turnos
+            </h2>
+            <p className="text-muted mb-0">
+              Semana del {weekDates[0].toLocaleDateString('es-ES')} al {weekDates[6].toLocaleDateString('es-ES')}
+            </p>
           </div>
+        </div>
+        
+        <div className="d-flex gap-2">
+          {/* Botón para copiar semana anterior */}
+          <Button 
+            variant="outline-info" 
+            onClick={handleCopyPreviousWeek}
+            disabled={userRole === 'employee'}
+          >
+            <FaHistory className="me-1" />
+            Copiar Semana Anterior
+          </Button>
+          
+          {/* Botón para crear template */}
+          <Button 
+            variant="outline-warning" 
+            onClick={handleCreateTemplate}
+            disabled={userRole === 'employee'}
+          >
+            <FaStar className="me-1" />
+            Crear Template
+          </Button>
 
-          {/* Alertas */}
-          {error && <Alert variant="danger" onClose={() => setError('')} dismissible>{error}</Alert>}
-          {success && <Alert variant="success" onClose={() => setSuccess('')} dismissible>{success}</Alert>}
-        </Col>
-      </Row>
+          <Button 
+            variant="primary" 
+            onClick={() => openShiftModal(null, { 
+              department: currentDepartment, 
+              date: weekDates[0].toISOString().split('T')[0] 
+            })}
+            disabled={userRole === 'employee'}
+          >
+            <FaPlus className="me-1" />
+            Nuevo Turno
+          </Button>
+          
+          <Button variant="success" onClick={handleQuickPublish}>
+            <FaShare className="me-1" />
+            Publicar
+          </Button>
+        </div>
+      </div>
+
+      {/* Alertas */}
+      {error && <Alert variant="danger" className="mb-3">{error}</Alert>}
+      {success && <Alert variant="success" className="mb-3">{success}</Alert>}
+
+      {/* Navegación de semanas */}
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <Button variant="outline-secondary" onClick={() => changeWeek(-1)}>
+          <FaArrowLeft className="me-1" />
+          Semana Anterior
+        </Button>
+        
+        <div className="text-center">
+          <h4 className="mb-0">
+            {weekDates[0].toLocaleDateString('es-ES', { month: 'long', day: 'numeric' })} - 
+            {weekDates[6].toLocaleDateString('es-ES', { month: 'long', day: 'numeric', year: 'numeric' })}
+          </h4>
+          <small className="text-muted">
+            Domingo {weekDates[0].getDate()} a Sábado {weekDates[6].getDate()}
+          </small>
+        </div>
+        
+        <Button variant="outline-secondary" onClick={() => changeWeek(1)}>
+          Semana Siguiente
+          <FaArrowLeft className="ms-1" style={{ transform: 'rotate(180deg)' }} />
+        </Button>
+      </div>
 
       {/* Tabs por departamento */}
-      <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k)} className="mb-4">
-        {canManageFOH() && (
-          <Tab eventKey="foh" title={
-            <span><FaConciergeBell className="me-1" />Front of House</span>
-          } />
-        )}
-        
-        {canManageBOH() && (
-          <Tab eventKey="boh" title={
-            <span><FaUtensils className="me-1" />Back of House</span>
-          } />
-        )}
-        
-        <Tab eventKey="published" title={
-          <span><FaShare className="me-1" />Horarios Publicados</span>
-        }>
-          <SchedulePublishing 
-            user={user} 
-            userRole={userRole} 
-            shifts={shifts}
-            employees={employees}
-          />
+      <Tabs
+        activeKey={activeTab}
+        onSelect={setActiveTab}
+        className="mb-4"
+        justify
+      >
+        <Tab 
+          eventKey="foh" 
+          title={
+            <span>
+              <FaConciergeBell className="me-2" />
+              Front of House
+            </span>
+          }
+        >
+          {/* Contenido FOH con separación por roles */}
+          <div className="schedule-grid">
+            {Object.values(SHIFT_TYPES).map(shiftType => (
+              <Card key={shiftType.name} className="mb-4">
+                <Card.Header 
+                  className="d-flex align-items-center justify-content-between"
+                  style={{ backgroundColor: shiftType.color, color: shiftType.textColor }}
+                >
+                  <div className="d-flex align-items-center">
+                    <shiftType.icon className="me-2" />
+                    <strong>Turno {shiftType.name}</strong>
+                    <small className="ms-2">
+                      ({shiftType.defaultStart} - {shiftType.defaultEnd})
+                    </small>
+                  </div>
+                </Card.Header>
+                
+                <Card.Body className="p-0">
+                  <div className="table-responsive">
+                    <table className="table table-bordered mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th style={{ width: '150px' }}>Día</th>
+                          {weekDates.map((date, index) => {
+                            const dayNames = getDayNames();
+                            return (
+                              <th key={index} className="text-center">
+                                <div className="small">{dayNames[index]}</div>
+                                <div className="fw-bold">{date.getDate()}</div>
+                              </th>
+                            );
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="table-secondary fw-bold">
+                            {shiftType.name}
+                          </td>
+                          {weekDates.map((date, index) => {
+                            const groupedShifts = getShiftsByDateAndTypeGroupedByRole(
+                              date, 'FOH', Object.keys(SHIFT_TYPES).find(key => SHIFT_TYPES[key].name === shiftType.name)
+                            );
+                            
+                            return (
+                              <td key={index} className="p-2" style={{ minHeight: '120px', verticalAlign: 'top' }}>
+                                {Object.keys(groupedShifts).length === 0 ? (
+                                  <div className="text-center text-muted small">
+                                    Sin turnos
+                                  </div>
+                                ) : (
+                                  <div>
+                                    {Object.entries(groupedShifts).map(([role, roleShifts], roleIndex) => {
+                                      const positionInfo = POSITIONS.FOH.find(p => p.value === role);
+                                      const roleLabel = positionInfo?.label || role;
+                                      
+                                      return (
+                                        <div key={role} className="mb-2">
+                                          {/* Separador de rol */}
+                                          {roleIndex > 0 && <hr className="my-2" style={{ borderColor: '#dee2e6' }} />}
+                                          
+                                          {/* Etiqueta de rol */}
+                                          <div 
+                                            className="small fw-bold text-center mb-1 px-2 py-1 rounded"
+                                            style={{ 
+                                              backgroundColor: getPositionColor(role),
+                                              color: 'white',
+                                              fontSize: '0.7rem'
+                                            }}
+                                          >
+                                            {roleLabel}
+                                          </div>
+                                          
+                                          {/* Empleados del rol */}
+                                          {roleShifts.map(shift => (
+                                            <div 
+                                              key={shift.id}
+                                              className="shift-item mb-1 p-1 rounded cursor-pointer"
+                                              style={{ 
+                                                backgroundColor: '#f8f9fa',
+                                                border: `2px solid ${getPositionColor(role)}`,
+                                                fontSize: '0.75rem'
+                                              }}
+                                              onClick={() => openShiftModal(shift)}
+                                            >
+                                              <div className="fw-bold">
+                                                {getEmployeeName(shift.employee_id)}
+                                              </div>
+                                              <div className="text-muted">
+                                                {formatTime(shift.start_time)} - {formatTime(shift.end_time)}
+                                              </div>
+                                              {shift.notes && (
+                                                <div className="small text-success">
+                                                  📝 {shift.notes.substring(0, 20)}...
+                                                </div>
+                                              )}
+                                              
+                                              {/* Botones de acción */}
+                                              <div className="d-flex justify-content-end mt-1">
+                                                <Button 
+                                                  size="sm" 
+                                                  variant="outline-primary" 
+                                                  className="me-1 px-1 py-0"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    openShiftModal(shift);
+                                                  }}
+                                                >
+                                                  <FaEdit size={10} />
+                                                </Button>
+                                                <Button 
+                                                  size="sm" 
+                                                  variant="outline-danger"
+                                                  className="px-1 py-0"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeleteShift(shift.id);
+                                                  }}
+                                                >
+                                                  <FaTrash size={10} />
+                                                </Button>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                
+                                {/* Botón para agregar turno */}
+                                <Button 
+                                  size="sm" 
+                                  variant="outline-secondary" 
+                                  className="w-100 mt-2"
+                                  onClick={() => openShiftModal(null, {
+                                    department: 'FOH',
+                                    date: date.toISOString().split('T')[0],
+                                    shift_type: Object.keys(SHIFT_TYPES).find(key => SHIFT_TYPES[key].name === shiftType.name)
+                                  })}
+                                >
+                                  <FaPlus size={10} />
+                                </Button>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </Card.Body>
+              </Card>
+            ))}
+          </div>
+        </Tab>
+
+        <Tab 
+          eventKey="boh" 
+          title={
+            <span>
+              <FaUtensils className="me-2" />
+              Back of House
+            </span>
+          }
+        >
+          {/* Contenido BOH con separación por roles - Similar estructura */}
+          <div className="schedule-grid">
+            {Object.values(SHIFT_TYPES).map(shiftType => (
+              <Card key={shiftType.name} className="mb-4">
+                <Card.Header 
+                  className="d-flex align-items-center justify-content-between"
+                  style={{ backgroundColor: shiftType.color, color: shiftType.textColor }}
+                >
+                  <div className="d-flex align-items-center">
+                    <shiftType.icon className="me-2" />
+                    <strong>Turno {shiftType.name}</strong>
+                    <small className="ms-2">
+                      ({shiftType.defaultStart} - {shiftType.defaultEnd})
+                    </small>
+                  </div>
+                </Card.Header>
+                
+                <Card.Body className="p-0">
+                  <div className="table-responsive">
+                    <table className="table table-bordered mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th style={{ width: '150px' }}>Día</th>
+                          {weekDates.map((date, index) => {
+                            const dayNames = getDayNames();
+                            return (
+                              <th key={index} className="text-center">
+                                <div className="small">{dayNames[index]}</div>
+                                <div className="fw-bold">{date.getDate()}</div>
+                              </th>
+                            );
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="table-secondary fw-bold">
+                            {shiftType.name}
+                          </td>
+                          {weekDates.map((date, index) => {
+                            const groupedShifts = getShiftsByDateAndTypeGroupedByRole(
+                              date, 'BOH', Object.keys(SHIFT_TYPES).find(key => SHIFT_TYPES[key].name === shiftType.name)
+                            );
+                            
+                            return (
+                              <td key={index} className="p-2" style={{ minHeight: '120px', verticalAlign: 'top' }}>
+                                {Object.keys(groupedShifts).length === 0 ? (
+                                  <div className="text-center text-muted small">
+                                    Sin turnos
+                                  </div>
+                                ) : (
+                                  <div>
+                                    {Object.entries(groupedShifts).map(([role, roleShifts], roleIndex) => {
+                                      const positionInfo = POSITIONS.BOH.find(p => p.value === role);
+                                      const roleLabel = positionInfo?.label || role;
+                                      
+                                      return (
+                                        <div key={role} className="mb-2">
+                                          {/* Separador de rol */}
+                                          {roleIndex > 0 && <hr className="my-2" style={{ borderColor: '#dee2e6' }} />}
+                                          
+                                          {/* Etiqueta de rol */}
+                                          <div 
+                                            className="small fw-bold text-center mb-1 px-2 py-1 rounded"
+                                            style={{ 
+                                              backgroundColor: getPositionColor(role),
+                                              color: 'white',
+                                              fontSize: '0.7rem'
+                                            }}
+                                          >
+                                            {roleLabel}
+                                          </div>
+                                          
+                                          {/* Empleados del rol */}
+                                          {roleShifts.map(shift => (
+                                            <div 
+                                              key={shift.id}
+                                              className="shift-item mb-1 p-1 rounded cursor-pointer"
+                                              style={{ 
+                                                backgroundColor: '#f8f9fa',
+                                                border: `2px solid ${getPositionColor(role)}`,
+                                                fontSize: '0.75rem'
+                                              }}
+                                              onClick={() => openShiftModal(shift)}
+                                            >
+                                              <div className="fw-bold">
+                                                {getEmployeeName(shift.employee_id)}
+                                              </div>
+                                              <div className="text-muted">
+                                                {formatTime(shift.start_time)} - {formatTime(shift.end_time)}
+                                              </div>
+                                              {shift.notes && (
+                                                <div className="small text-success">
+                                                  📝 {shift.notes.substring(0, 20)}...
+                                                </div>
+                                              )}
+                                              
+                                              {/* Botones de acción */}
+                                              <div className="d-flex justify-content-end mt-1">
+                                                <Button 
+                                                  size="sm" 
+                                                  variant="outline-primary" 
+                                                  className="me-1 px-1 py-0"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    openShiftModal(shift);
+                                                  }}
+                                                >
+                                                  <FaEdit size={10} />
+                                                </Button>
+                                                <Button 
+                                                  size="sm" 
+                                                  variant="outline-danger"
+                                                  className="px-1 py-0"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDeleteShift(shift.id);
+                                                  }}
+                                                >
+                                                  <FaTrash size={10} />
+                                                </Button>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                
+                                {/* Botón para agregar turno */}
+                                <Button 
+                                  size="sm" 
+                                  variant="outline-secondary" 
+                                  className="w-100 mt-2"
+                                  onClick={() => openShiftModal(null, {
+                                    department: 'BOH',
+                                    date: date.toISOString().split('T')[0],
+                                    shift_type: Object.keys(SHIFT_TYPES).find(key => SHIFT_TYPES[key].name === shiftType.name)
+                                  })}
+                                >
+                                  <FaPlus size={10} />
+                                </Button>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </Card.Body>
+              </Card>
+            ))}
+          </div>
         </Tab>
       </Tabs>
 
-      {/* Vista del horario por departamento */}
-      {(activeTab === 'foh' || activeTab === 'boh') && (
-        <>
-          {/* Navegación de semana */}
-          <Row className="mb-4">
-            <Col md={8}>
-              <div className="d-flex align-items-center gap-3">
-                <Button variant="outline-secondary" onClick={() => changeWeek(-1)}>
-                  ‹ Anterior
-                </Button>
-                <h4 className="mb-0">
-                  {weekDates[0].toLocaleDateString('es-ES', { month: 'long', day: 'numeric' })} - {' '}
-                  {weekDates[6].toLocaleDateString('es-ES', { month: 'long', day: 'numeric', year: 'numeric' })}
-                </h4>
-                <Button variant="outline-secondary" onClick={() => changeWeek(1)}>
-                  Siguiente ›
-                </Button>
-                <Button variant="outline-info" onClick={() => setCurrentWeek(new Date())}>
-                  Hoy
-                </Button>
-              </div>
-            </Col>
-            <Col md={4} className="text-end">
-              <div className="d-flex gap-2 justify-content-end align-items-center">
-                <Badge bg="info" className="me-2">
-                  {currentDepartment === 'FOH' ? 'Front of House' : 'Back of House'}
-                </Badge>
-                {(userRole === 'admin' || userRole === 'manager') && (
-                  <Button
-                    variant="success"
-                    size="sm"
-                    onClick={handleQuickPublish}
-                    className="d-flex align-items-center"
-                  >
-                    <FaShare className="me-1" />
-                    Publicar Semana
-                  </Button>
-                )}
-              </div>
-            </Col>
-          </Row>
-
-          {/* Calendario estilo 7shifts */}
-          <Card className="schedule-card">
-            <Card.Header className="schedule-header">
-              <div className="d-flex justify-content-between align-items-center">
-                <h5 className="mb-0">
-                  Horarios {currentDepartment} - Semana
-                </h5>
-                <div className="d-flex gap-2">
-                  <Badge bg="warning" className="d-flex align-items-center">
-                    <FaSun className="me-1" />
-                    Mañana (11:00 - 17:00)
-                  </Badge>
-                  <Badge bg="dark" className="d-flex align-items-center">
-                    <FaMoon className="me-1" />
-                    Noche (16:30 - 23:00)
-                  </Badge>
-                </div>
-              </div>
-            </Card.Header>
-            <Card.Body className="p-0">
-              <div className="schedule-grid-7shifts">
-                {/* Header de días */}
-                <div className="days-header">
-                  {weekDates.map(date => {
-                    const isToday = date.toDateString() === new Date().toDateString();
-                    const morningShifts = getShiftsByDateAndType(date, currentDepartment, 'morning');
-                    const nightShifts = getShiftsByDateAndType(date, currentDepartment, 'night');
-                    
-                    return (
-                      <div key={date.toISOString()} className={`day-column ${isToday ? 'today' : ''}`}>
-                        <div className="day-header">
-                          <div className="day-name">
-                            {getDayName(getDayValue(date))}
-                          </div>
-                          <div className="day-date">
-                            {date.getDate()}/{date.getMonth() + 1}
-                          </div>
-                          <div className="day-stats">
-                            <small className="text-muted">
-                              {morningShifts.length + nightShifts.length} turnos
-                            </small>
-                          </div>
-                        </div>
-
-                        {/* TURNO DE MAÑANA */}
-                        <div className="shift-section morning-section">
-                          <div className="shift-type-header morning-header">
-                            <FaSun className="me-1" />
-                            Mañana
-                            <Badge bg="light" text="dark" className="ms-1">
-                              {morningShifts.length}
-                            </Badge>
-                          </div>
-                          <div className="shifts-container">
-                            {morningShifts.map(shift => (
-                              <div
-                                key={shift.id}
-                                className="shift-block morning-shift"
-                                onClick={() => handleEditShift(shift)}
-                              >
-                                <div className="employee-name">
-                                  {getEmployeeName(shift.employee_id)}
-                                </div>
-                                <div className="shift-time">
-                                  {formatTime(shift.start_time)} - {formatTime(shift.end_time)}
-                                </div>
-                                {shift.position && (
-                                  <div className="shift-position">
-                                    {POSITIONS[currentDepartment]?.find(p => p.value === shift.position)?.label || shift.position}
-                                    {shift.position !== getEmployeeRole(shift.employee_id) && (
-                                      <span className="text-muted small"> (temporal)</span>
-                                    )}
-                                  </div>
-                                )}
-                                <div className="shift-actions">
-                                  <Button
-                                    size="sm"
-                                    variant="link"
-                                    className="text-danger p-0"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteShift(shift.id);
-                                    }}
-                                  >
-                                    <FaTrash />
-                                  </Button>
-                                </div>
-                              </div>
-                            ))}
-                            
-                            {/* Botón agregar turno mañana */}
-                            <Button
-                              variant="outline-warning"
-                              size="sm"
-                              className="add-shift-btn morning-add"
-                              onClick={() => {
-                                setShiftForm({
-                                  employee_id: '',
-                                  date: date.toISOString().split('T')[0],
-                                  shift_type: 'morning',
-                                  start_time: SHIFT_TYPES.morning.defaultStart,
-                                  end_time: SHIFT_TYPES.morning.defaultEnd,
-                                  position: '',
-                                  department: currentDepartment,
-                                  notes: '',
-                                  status: 'scheduled'
-                                });
-                                setShowShiftModal(true);
-                              }}
-                            >
-                              <FaPlus />
-                            </Button>
-                          </div>
-                        </div>
-
-                        {/* TURNO DE NOCHE */}
-                        <div className="shift-section night-section">
-                          <div className="shift-type-header night-header">
-                            <FaMoon className="me-1" />
-                            Noche
-                            <Badge bg="light" text="dark" className="ms-1">
-                              {nightShifts.length}
-                            </Badge>
-                          </div>
-                          <div className="shifts-container">
-                            {nightShifts.map(shift => (
-                              <div
-                                key={shift.id}
-                                className="shift-block night-shift"
-                                onClick={() => handleEditShift(shift)}
-                              >
-                                <div className="employee-name">
-                                  {getEmployeeName(shift.employee_id)}
-                                </div>
-                                <div className="shift-time">
-                                  {formatTime(shift.start_time)} - {formatTime(shift.end_time)}
-                                </div>
-                                {shift.position && (
-                                  <div className="shift-position">
-                                    {POSITIONS[currentDepartment]?.find(p => p.value === shift.position)?.label || shift.position}
-                                    {shift.position !== getEmployeeRole(shift.employee_id) && (
-                                      <span className="text-muted small"> (temporal)</span>
-                                    )}
-                                  </div>
-                                )}
-                                <div className="shift-actions">
-                                  <Button
-                                    size="sm"
-                                    variant="link"
-                                    className="text-danger p-0"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteShift(shift.id);
-                                    }}
-                                  >
-                                    <FaTrash />
-                                  </Button>
-                                </div>
-                              </div>
-                            ))}
-                            
-                            {/* Botón agregar turno noche */}
-                            <Button
-                              variant="outline-dark"
-                              size="sm"
-                              className="add-shift-btn night-add"
-                              onClick={() => {
-                                setShiftForm({
-                                  employee_id: '',
-                                  date: date.toISOString().split('T')[0],
-                                  shift_type: 'night',
-                                  start_time: SHIFT_TYPES.night.defaultStart,
-                                  end_time: SHIFT_TYPES.night.defaultEnd,
-                                  position: '',
-                                  department: currentDepartment,
-                                  notes: '',
-                                  status: 'scheduled'
-                                });
-                                setShowShiftModal(true);
-                              }}
-                            >
-                              <FaPlus />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </Card.Body>
-          </Card>
-        </>
-      )}
-
       {/* Modal para crear/editar turno */}
-      <Modal show={showShiftModal} onHide={() => {
-        setShowShiftModal(false);
-        setEditingShift(null);
-      }} size="lg">
+      <Modal show={showShiftModal} onHide={() => setShowShiftModal(false)} size="lg">
         <Modal.Header closeButton>
           <Modal.Title>
-            {editingShift ? 'Editar Turno' : 'Crear Nuevo Turno'}
-            <Badge bg={activeTab === 'foh' ? 'warning' : 'info'} className="ms-2">
-              {currentDepartment}
-            </Badge>
+            {editingShift ? 'Editar Turno' : 'Nuevo Turno'}
           </Modal.Title>
         </Modal.Header>
-        <Modal.Body>
-          <Form onSubmit={handleCreateShift}>
+        <Form onSubmit={handleSubmitShift}>
+          <Modal.Body>
             <Row>
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>Empleado *</Form.Label>
                   <Form.Select
+                    name="employee_id"
                     value={shiftForm.employee_id}
                     onChange={handleShiftFormChange}
-                    name="employee_id"
                     required
                   >
                     <option value="">Seleccionar empleado...</option>
-                    {getAvailableEmployees(currentDepartment).map(emp => (
+                    {getAvailableEmployees(shiftForm.department).map(emp => (
                       <option key={emp.id} value={emp.id}>
                         {emp.displayName || `${emp.firstName} ${emp.lastName}`} - {emp.role}
                       </option>
                     ))}
                   </Form.Select>
-                  {shiftForm.employee_id && (
-                    <Form.Text className="text-success">
-                      ✅ Posición auto-asignada: {shiftForm.position}
-                      {shiftForm.position !== employees.find(e => e.id === shiftForm.employee_id)?.role && 
-                        ' (modificada para este turno)'
-                      }
-                    </Form.Text>
-                  )}
                 </Form.Group>
               </Col>
+              
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>Fecha *</Form.Label>
                   <Form.Control
                     type="date"
+                    name="date"
                     value={shiftForm.date}
                     onChange={handleShiftFormChange}
-                    name="date"
                     required
                   />
                 </Form.Group>
@@ -810,52 +1152,63 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
             </Row>
 
             <Row>
-              <Col md={4}>
+              <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>Tipo de Turno *</Form.Label>
-                  <div className="d-flex gap-2">
-                    <Button
-                      variant={shiftForm.shift_type === 'morning' ? 'warning' : 'outline-warning'}
-                      onClick={() => handleShiftFormChange({
-                        target: { name: 'shift_type', value: 'morning' }
-                      })}
-                      className="flex-fill"
-                    >
-                      <FaSun className="me-1" />
-                      Mañana
-                    </Button>
-                    <Button
-                      variant={shiftForm.shift_type === 'night' ? 'dark' : 'outline-dark'}
-                      onClick={() => handleShiftFormChange({
-                        target: { name: 'shift_type', value: 'night' }
-                      })}
-                      className="flex-fill"
-                    >
-                      <FaMoon className="me-1" />
-                      Noche
-                    </Button>
-                  </div>
+                  <Form.Select
+                    name="shift_type"
+                    value={shiftForm.shift_type}
+                    onChange={handleShiftFormChange}
+                    required
+                  >
+                    {Object.entries(SHIFT_TYPES).map(([key, type]) => (
+                      <option key={key} value={key}>
+                        {type.name} ({type.defaultStart} - {type.defaultEnd})
+                      </option>
+                    ))}
+                  </Form.Select>
                 </Form.Group>
               </Col>
-              <Col md={4}>
+              
+              <Col md={6}>
                 <Form.Group className="mb-3">
-                  <Form.Label>Hora de inicio</Form.Label>
+                  <Form.Label>Departamento *</Form.Label>
+                  <Form.Select
+                    name="department"
+                    value={shiftForm.department}
+                    onChange={handleShiftFormChange}
+                    required
+                  >
+                    <option value="FOH">Front of House</option>
+                    <option value="BOH">Back of House</option>
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+            </Row>
+
+            <Row>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Hora Inicio *</Form.Label>
                   <Form.Control
                     type="time"
+                    name="start_time"
                     value={shiftForm.start_time}
                     onChange={handleShiftFormChange}
-                    name="start_time"
+                    required
                   />
                 </Form.Group>
               </Col>
-              <Col md={4}>
+              
+              <Col md={6}>
                 <Form.Group className="mb-3">
-                  <Form.Label>Hora de fin</Form.Label>
+                  <Form.Label>Hora Final *</Form.Label>
                   <Form.Control
                     type="time"
+                    name="end_time"
                     value={shiftForm.end_time}
                     onChange={handleShiftFormChange}
-                    name="end_time"
+                    required
                   />
                 </Form.Group>
               </Col>
@@ -864,46 +1217,33 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
             <Row>
               <Col md={6}>
                 <Form.Group className="mb-3">
-                  <Form.Label>
-                    Posición 
-                    {shiftForm.employee_id && (
-                      <small className="text-muted ms-1">
-                        (Puedes cambiarla para este turno)
-                      </small>
-                    )}
-                  </Form.Label>
+                  <Form.Label>Posición</Form.Label>
                   <Form.Select
+                    name="position"
                     value={shiftForm.position}
                     onChange={handleShiftFormChange}
-                    name="position"
                   >
                     <option value="">Seleccionar posición...</option>
-                    {POSITIONS[currentDepartment]?.map(pos => (
+                    {POSITIONS[shiftForm.department]?.map(pos => (
                       <option key={pos.value} value={pos.value}>
                         {pos.label}
                       </option>
                     ))}
                   </Form.Select>
-                  {shiftForm.employee_id && shiftForm.position && (
-                    <Form.Text className="text-info">
-                      💼 Posición original del empleado: {
-                        employees.find(e => e.id === shiftForm.employee_id)?.role || 'No especificada'
-                      }
-                    </Form.Text>
-                  )}
                 </Form.Group>
               </Col>
+              
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label>Estado</Form.Label>
                   <Form.Select
+                    name="status"
                     value={shiftForm.status}
                     onChange={handleShiftFormChange}
-                    name="status"
                   >
                     <option value="scheduled">Programado</option>
                     <option value="confirmed">Confirmado</option>
-                    <option value="pending">Pendiente</option>
+                    <option value="cancelled">Cancelado</option>
                   </Form.Select>
                 </Form.Group>
               </Col>
@@ -913,123 +1253,81 @@ const ShiftManagement = ({ user, userRole, onBack }) => {
               <Form.Label>Notas</Form.Label>
               <Form.Control
                 as="textarea"
-                rows={2}
+                rows={3}
+                name="notes"
                 value={shiftForm.notes}
                 onChange={handleShiftFormChange}
-                name="notes"
-                placeholder="Notas adicionales sobre el turno..."
+                placeholder="Notas adicionales..."
               />
             </Form.Group>
-
-            <div className="d-flex justify-content-end gap-2">
-              <Button variant="secondary" onClick={() => setShowShiftModal(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" variant="primary">
-                <FaCheckCircle className="me-1" />
-                {editingShift ? 'Actualizar' : 'Crear'} Turno
-              </Button>
-            </div>
-          </Form>
-        </Modal.Body>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowShiftModal(false)}>
+              Cancelar
+            </Button>
+            <Button variant="primary" type="submit">
+              {editingShift ? 'Actualizar' : 'Crear'} Turno
+            </Button>
+          </Modal.Footer>
+        </Form>
       </Modal>
 
       {/* Modal para publicación rápida */}
       <Modal show={showQuickPublishModal} onHide={() => setShowQuickPublishModal(false)} size="lg">
         <Modal.Header closeButton>
-          <Modal.Title>
-            <FaShare className="me-2" />
-            Publicar Horario {currentDepartment}
-          </Modal.Title>
+          <Modal.Title>Publicar Horarios - {currentDepartment}</Modal.Title>
         </Modal.Header>
-        <Modal.Body>
-          <Alert variant="info">
-            <FaCalendarWeek className="me-2" />
-            <strong>Semana seleccionada:</strong> {weekDates[0].toLocaleDateString('es-ES', { 
-              weekday: 'long', day: 'numeric', month: 'long' 
-            })} - {weekDates[6].toLocaleDateString('es-ES', { 
-              weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' 
-            })}
-          </Alert>
-
-          {/* Resumen de turnos */}
-          <Card className="mb-3">
-            <Card.Header>
-              <h6 className="mb-0">Resumen de Turnos {currentDepartment}</h6>
-            </Card.Header>
-            <Card.Body>
-              <Row>
-                {weekDates.map(date => {
-                  const morningShifts = getShiftsByDateAndType(date, currentDepartment, 'morning');
-                  const nightShifts = getShiftsByDateAndType(date, currentDepartment, 'night');
-                  const totalShifts = morningShifts.length + nightShifts.length;
-                  
-                  return (
-                    <Col key={date.toISOString()} className="text-center mb-2">
-                      <div className="small fw-bold">{getDayName(getDayValue(date))}</div>
-                      <div className="small text-muted">{date.getDate()}/{date.getMonth() + 1}</div>
-                      <Badge bg={totalShifts > 0 ? 'success' : 'secondary'}>
-                        {totalShifts} turnos
-                      </Badge>
-                      {totalShifts > 0 && (
-                        <div className="small mt-1">
-                          <Badge bg="warning" size="sm" className="me-1">{morningShifts.length}M</Badge>
-                          <Badge bg="dark" size="sm">{nightShifts.length}N</Badge>
-                        </div>
-                      )}
-                    </Col>
-                  );
-                })}
-              </Row>
-            </Card.Body>
-          </Card>
-
-          <Form onSubmit={handleSubmitQuickPublish}>
+        <Form onSubmit={handleSubmitQuickPublish}>
+          <Modal.Body>
             <Form.Group className="mb-3">
-              <Form.Label>Título del Horario</Form.Label>
+              <Form.Label>Título</Form.Label>
               <Form.Control
                 type="text"
+                name="title"
                 value={publishForm.title}
                 onChange={handlePublishFormChange}
-                name="title"
                 required
               />
             </Form.Group>
 
             <Form.Group className="mb-3">
-              <Form.Label>Mensaje para los Empleados</Form.Label>
+              <Form.Label>Mensaje</Form.Label>
               <Form.Control
                 as="textarea"
                 rows={3}
+                name="message"
                 value={publishForm.message}
                 onChange={handlePublishFormChange}
-                name="message"
-                placeholder="Mensaje opcional para incluir en la notificación..."
               />
             </Form.Group>
 
-            <Form.Group className="mb-3">
-              <Form.Check
-                type="checkbox"
-                label="Notificar empleados por email/notificación"
-                checked={publishForm.notify_employees}
-                onChange={handlePublishFormChange}
-                name="notify_employees"
-              />
-            </Form.Group>
-
-            <div className="d-flex justify-content-end gap-2">
-              <Button variant="secondary" onClick={() => setShowQuickPublishModal(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" variant="success">
-                <FaShare className="me-1" />
-                Publicar Horario
-              </Button>
-            </div>
-          </Form>
-        </Modal.Body>
+            <Form.Check
+              type="checkbox"
+              name="notify_employees"
+              checked={publishForm.notify_employees}
+              onChange={handlePublishFormChange}
+              label="Notificar a empleados por email"
+            />
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowQuickPublishModal(false)}>
+              Cancelar
+            </Button>
+            <Button variant="success" type="submit">
+              <FaShare className="me-1" />
+              Publicar Horarios
+            </Button>
+          </Modal.Footer>
+        </Form>
       </Modal>
+
+      {/* Componente de publicación */}
+      <SchedulePublishing 
+        user={user} 
+        userRole={userRole} 
+        shifts={shifts} 
+        employees={employees} 
+      />
     </Container>
   );
 };

@@ -69,9 +69,18 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
 
         const scheduleData = { id: scheduleDoc.id, ...scheduleDoc.data() };
         setSchedule(scheduleData);
+        
+        console.log('Horario cargado:', {
+          title: scheduleData.title,
+          week_start: scheduleData.week_start,
+          week_end: scheduleData.week_end,
+          shifts_included: scheduleData.shifts_included?.length || 0
+        });
 
         // Cargar turnos incluidos
         if (scheduleData.shifts_included && scheduleData.shifts_included.length > 0) {
+          console.log('Buscando turnos con IDs:', scheduleData.shifts_included);
+          
           const shiftsQuery = query(
             collection(db, 'shifts'),
             where('__name__', 'in', scheduleData.shifts_included)
@@ -81,7 +90,19 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
             id: doc.id,
             ...doc.data()
           }));
+          
+          console.log('Turnos encontrados:', shiftsData.length);
+          console.log('Turnos detalle:', shiftsData.map(s => ({
+            id: s.id,
+            date: s.date,
+            employee: s.employee_id,
+            position: s.position || s.employee_role || s.role
+          })));
+          
           setShifts(shiftsData);
+        } else {
+          console.log('No hay shifts_included en el horario');
+          setShifts([]);
         }
 
         // Cargar información de empleados
@@ -91,6 +112,8 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
           ...doc.data()
         })).filter(emp => emp.active !== false);
         setEmployees(employeesData);
+        
+        console.log('Empleados cargados:', employeesData.length);
 
       } catch (err) {
         console.error('Error loading schedule:', err);
@@ -134,15 +157,27 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
 
   const getShiftsByDate = (date) => {
     const dateStr = date.toISOString().split('T')[0];
-    return shifts.filter(shift => shift.date === dateStr).sort((a, b) => {
+    const dayShifts = shifts.filter(shift => shift.date === dateStr);
+    
+    console.log(`Turnos para ${dateStr}:`, dayShifts.length);
+    if (dayShifts.length > 0) {
+      console.log('Detalle turnos:', dayShifts.map(s => ({
+        employee: s.employee_id,
+        position: s.position || s.employee_role || s.role,
+        time: `${s.start_time}-${s.end_time}`
+      })));
+    }
+    
+    return dayShifts.sort((a, b) => {
       return a.start_time?.localeCompare(b.start_time) || 0;
     });
   };
 
   const getWeekDates = (startDate) => {
     const dates = [];
+    
+    // Usar directamente la fecha de inicio del horario (ya es domingo)
     const start = new Date(startDate);
-    start.setDate(start.getDate() - start.getDay()); // Comenzar en domingo
     
     for (let i = 0; i < 7; i++) {
       const date = new Date(start);
@@ -158,6 +193,31 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
     if (hour >= 6 && hour < 14) return 'primary'; // Mañana
     if (hour >= 14 && hour < 22) return 'warning'; // Tarde
     return 'dark'; // Noche
+  };
+
+  // NUEVA FUNCIÓN: Obtener color específico por rol/posición
+  const getPositionColorForPublic = (position) => {
+    const colors = {
+      // FOH
+      'host': '#3498db',
+      'server': '#27ae60',
+      'server_senior': '#229954',
+      'bartender': '#9b59b6',
+      'bartender_head': '#8e44ad',
+      'runner': '#1abc9c',
+      'food_runner': '#17a2b8', // Nuevo color para Food Runner
+      'busser': '#16a085',
+      'manager': '#e67e22',
+      
+      // BOH
+      'dishwasher': '#95a5a6',
+      'prep_cook': '#e74c3c',
+      'line_cook': '#c0392b',
+      'cook': '#d35400',
+      'sous_chef': '#e67e22',
+      'chef': '#f39c12'
+    };
+    return colors[position] || '#6c757d'; // Color por defecto
   };
 
   const handlePrint = () => {
@@ -187,7 +247,7 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
       } else {
         dayShifts.forEach(shift => {
           content += `${formatTime(shift.start_time)} - ${formatTime(shift.end_time)} | `;
-          content += `${getEmployeeName(shift.employee_id)} | ${shift.position}\n`;
+          content += `${getEmployeeName(shift.employee_id)} | ${shift.position || shift.employee_role || shift.role || 'Empleado'}\n`;
         });
         content += '\n';
       }
@@ -251,6 +311,14 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
 
   const weekDates = getWeekDates(new Date(schedule.week_start));
   const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  
+  // Debug: mostrar información de las fechas
+  console.log('=== INFORMACIÓN DEL HORARIO PÚBLICO ===');
+  console.log('Schedule week_start:', schedule.week_start);
+  console.log('Schedule week_end:', schedule.week_end);
+  console.log('WeekDates calculadas:', weekDates.map(d => d.toISOString().split('T')[0]));
+  console.log('Total shifts disponibles:', shifts.length);
+  console.log('=== FIN INFO ===');
 
   return (
     <Container fluid className="py-4 schedule-viewer">
@@ -376,7 +444,13 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
                           dayShifts.map(shift => (
                             <div
                               key={shift.id}
-                              className={`shift-card bg-${getShiftClass(shift.start_time)} text-white p-2 mb-1 rounded`}
+                              className="shift-card p-2 mb-1 rounded"
+                              style={{ 
+                                backgroundColor: getPositionColorForPublic(shift.position || shift.employee_role || shift.role),
+                                color: 'white',
+                                fontSize: '0.75rem',
+                                border: '1px solid rgba(0,0,0,0.1)'
+                              }}
                             >
                               <div className="small">
                                 <strong>{getEmployeeName(shift.employee_id)}</strong>
@@ -386,7 +460,7 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
                               </div>
                               <div className="small">
                                 <Badge bg="light" text="dark">
-                                  {shift.position}
+                                  {shift.position || shift.employee_role || shift.role || 'Empleado'}
                                 </Badge>
                               </div>
                               {shift.notes && (
@@ -424,12 +498,19 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
                   <div className="row">
                     {dayShifts.map(shift => (
                       <div key={shift.id} className="col-12 mb-2">
-                        <div className={`card bg-${getShiftClass(shift.start_time)} text-white`}>
+                        <div 
+                          className="card"
+                          style={{ 
+                            backgroundColor: getPositionColorForPublic(shift.position || shift.employee_role || shift.role),
+                            color: 'white',
+                            border: '1px solid rgba(0,0,0,0.1)'
+                          }}
+                        >
                           <div className="card-body p-2">
                             <div className="d-flex justify-content-between">
                               <strong>{getEmployeeName(shift.employee_id)}</strong>
                               <Badge bg="light" text="dark">
-                                {shift.position}
+                                {shift.position || shift.employee_role || shift.role || 'Empleado'}
                               </Badge>
                             </div>
                             <div className="small">
