@@ -236,14 +236,14 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
       });
 
       setUserStats({
-        totalShifts: shiftsSnapshot.docs.length,
-        hoursWorked: Math.round(totalHours * 10) / 10,
-        monthlyHours: Math.round(monthlyHours * 10) / 10,
-        lateDays: 0, // Implementar lógica de tardanzas
-        rating: 4.5,
-        punctualityScore: 95,
-        completedTasks: 124
-      });
+  totalShifts: shiftsSnapshot.docs.length,
+  hoursWorked: Math.round(totalHours * 10) / 10,
+  monthlyHours: Math.round(monthlyHours * 10) / 10,
+  lateDays: 0, // No implementado aún
+  rating: 0, // No implementado aún - se podría calcular desde evaluaciones
+  punctualityScore: 0, // No implementado aún - se podría calcular desde check-ins
+  completedTasks: 0 // No implementado aún - se podría calcular desde un sistema de tareas
+});
     } catch (err) {
       console.error('Error loading stats:', err);
       setUserStats({
@@ -451,14 +451,19 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
   };
 
   const getRoleConfig = () => {
-    const configs = {
-      admin: { color: 'danger', icon: FaShieldAlt, label: 'Administrador' },
-      manager: { color: 'primary', icon: FaUserTie, label: 'Gerente' },
-      bartender: { color: 'success', icon: FaUser, label: 'Bartender' },
-      waiter: { color: 'warning', icon: FaUser, label: 'Mesero' }
-    };
-    return configs[userRole] || configs.waiter;
+  // CORRECCIÓN: Usar el rol del currentUserData, no del usuario logueado
+  const currentRole = currentUserData?.role || profileData?.role || 'waiter';
+  
+  const configs = {
+    admin: { color: 'danger', icon: FaShieldAlt, label: 'Administrador' },
+    manager: { color: 'primary', icon: FaUserTie, label: 'Gerente' },
+    bartender: { color: 'success', icon: FaUser, label: 'Bartender' },
+    waiter: { color: 'warning', icon: FaUser, label: 'Mesero' },
+    cocinero: { color: 'info', icon: FaUser, label: 'Cocinero' }
   };
+  
+  return configs[currentRole] || configs.waiter;
+};
 
   // Componente de Overview Tab
   const OverviewTab = () => {
@@ -563,71 +568,62 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
                     <h4 className="mb-1">{userStats.hoursWorked}h</h4>
                     <small className="text-light opacity-75">Horas Trabajadas</small>
                   </div>
-                  <div className="d-flex align-items-center justify-content-center">
-                    <FaStar className="text-warning me-1" />
-                    <span className="fw-bold">{userStats.rating}</span>
-                    <small className="text-light opacity-75 ms-2">Calificación</small>
-                  </div>
+                  <div className="text-center">
+  <Badge 
+    bg={profileData.workInfo?.status === 'active' ? 'success' : 'secondary'} 
+    className="px-3 py-2"
+    style={{ fontSize: '0.9rem' }}
+  >
+    {profileData.workInfo?.status === 'active' ? 'Activo' : 'Inactivo'}
+  </Badge>
+</div>
                 </div>
               </Col>
             </Row>
           </Card.Body>
         </Card>
 
-        {/* Stats Cards */}
-        <Row>
-          <Col md={3}>
-            <Card className="border-0 shadow-sm h-100 hover-card">
-              <Card.Body className="text-center">
-                <div className="rounded-circle bg-primary bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3"
-                     style={{ width: '60px', height: '60px' }}>
-                  <FaClock className="text-primary" size={24} />
-                </div>
-                <h4 className="text-primary mb-1">{userStats.monthlyHours}h</h4>
-                <small className="text-muted">Este Mes</small>
-              </Card.Body>
-            </Card>
-          </Col>
-          
-          <Col md={3}>
-            <Card className="border-0 shadow-sm h-100 hover-card">
-              <Card.Body className="text-center">
-                <div className="rounded-circle bg-success bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3"
-                     style={{ width: '60px', height: '60px' }}>
-                  <FaAward className="text-success" size={24} />
-                </div>
-                <h4 className="text-success mb-1">{userStats.punctualityScore}%</h4>
-                <small className="text-muted">Puntualidad</small>
-              </Card.Body>
-            </Card>
-          </Col>
-          
-          <Col md={3}>
-            <Card className="border-0 shadow-sm h-100 hover-card">
-              <Card.Body className="text-center">
-                <div className="rounded-circle bg-warning bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3"
-                     style={{ width: '60px', height: '60px' }}>
-                  <FaTrophy className="text-warning" size={24} />
-                </div>
-                <h4 className="text-warning mb-1">{userStats.completedTasks}</h4>
-                <small className="text-muted">Tareas Completadas</small>
-              </Card.Body>
-            </Card>
-          </Col>
-          
-          <Col md={3}>
-            <Card className="border-0 shadow-sm h-100 hover-card">
-              <Card.Body className="text-center">
-                <div className="rounded-circle bg-info bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3"
-                     style={{ width: '60px', height: '60px' }}>
-                  <FaChartLine className="text-info" size={24} />
-                </div>
-                <h4 className="text-info mb-1">{userStats.lateDays}</h4>
-                <small className="text-muted">Días de Retraso</small>
-              </Card.Body>
-            </Card>
-          </Col>
-        </Row>
+        {/* Stats Cards - Solo métricas reales */}
+<Row>
+  <Col md={4}>
+    <Card className="border-0 shadow-sm h-100 hover-card">
+      <Card.Body className="text-center">
+        <div className="rounded-circle bg-primary bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3"
+             style={{ width: '60px', height: '60px' }}>
+          <FaClock className="text-primary" size={24} />
+        </div>
+        <h4 className="text-primary mb-1">{userStats.monthlyHours}h</h4>
+        <small className="text-muted">Horas Este Mes</small>
+      </Card.Body>
+    </Card>
+  </Col>
+  
+  <Col md={4}>
+    <Card className="border-0 shadow-sm h-100 hover-card">
+      <Card.Body className="text-center">
+        <div className="rounded-circle bg-success bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3"
+             style={{ width: '60px', height: '60px' }}>
+          <FaCalendarAlt className="text-success" size={24} />
+        </div>
+        <h4 className="text-success mb-1">{userStats.totalShifts}</h4>
+        <small className="text-muted">Turnos Totales</small>
+      </Card.Body>
+    </Card>
+  </Col>
+  
+  <Col md={4}>
+    <Card className="border-0 shadow-sm h-100 hover-card">
+      <Card.Body className="text-center">
+        <div className="rounded-circle bg-info bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3"
+             style={{ width: '60px', height: '60px' }}>
+          <FaChartLine className="text-info" size={24} />
+        </div>
+        <h4 className="text-info mb-1">{userStats.hoursWorked}h</h4>
+        <small className="text-muted">Horas Totales</small>
+      </Card.Body>
+    </Card>
+  </Col>
+</Row>
 
         {/* Quick Info */}
         <Row>
@@ -1113,32 +1109,16 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
             <h6 className="mb-0">Estadísticas de Desempeño</h6>
           </Card.Header>
           <Card.Body>
-            <div className="mb-4">
-              <div className="d-flex justify-content-between align-items-center mb-2">
-                <span>Puntualidad</span>
-                <span className="fw-bold">{userStats.punctualityScore}%</span>
-              </div>
-              <ProgressBar 
-                now={userStats.punctualityScore} 
-                variant={userStats.punctualityScore > 90 ? 'success' : userStats.punctualityScore > 70 ? 'warning' : 'danger'}
-                style={{ height: '8px' }}
-              />
-            </div>
-
-            <div className="mb-4">
-              <div className="d-flex justify-content-between align-items-center mb-2">
-                <span>Calificación General</span>
-                <span className="fw-bold">{userStats.rating}/5</span>
-              </div>
-              <div className="d-flex">
-                {[1, 2, 3, 4, 5].map(star => (
-                  <FaStar 
-                    key={star} 
-                    className={star <= userStats.rating ? 'text-warning' : 'text-muted'} 
-                  />
-                ))}
-              </div>
-            </div>
+            <Alert variant="info" className="mb-4">
+  <h6 className="alert-heading">📊 Métricas Avanzadas</h6>
+  <p className="mb-2">Las siguientes métricas estarán disponibles próximamente:</p>
+  <ul className="mb-0 small">
+    <li>Sistema de evaluaciones y calificaciones</li>
+    <li>Tracking de puntualidad automático</li>
+    <li>Sistema de tareas y objetivos</li>
+    <li>Análisis de productividad</li>
+  </ul>
+</Alert>
 
             <div className="text-center pt-3 border-top">
               <div className="row g-3">
