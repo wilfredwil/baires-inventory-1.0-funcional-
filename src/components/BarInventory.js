@@ -1,4 +1,4 @@
-// src/components/BarInventory.js - VERSIÓN COMPLETA CON CORRECCIONES
+// src/components/BarInventory.js - VERSIÓN COMPLETA CON REPORTE LOW STOCK POR PROVEEDOR
 import React, { useState, useEffect } from 'react';
 import {
   Container, Row, Col, Card, Button, Form, Modal, Alert, Badge,
@@ -23,6 +23,8 @@ import {
 } from 'chart.js';
 import InventoryItemForm from './InventoryItemForm';
 import { exportCriticalStockToPDF, exportImportantProductsToPDF, exportOrderSheetToPDF } from '../utils/pdfExport';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 // Registrar componentes de Chart.js
 ChartJS.register(
@@ -168,9 +170,6 @@ const BarInventory = ({ onBack, user, userRole }) => {
     // Cargar proveedores una vez
     loadProviders();
 
-    // Cargar proveedores una vez
-    loadProviders();
-
     // Auto-cargar después de un pequeño delay
     const timer = setTimeout(() => {
       console.log('🔍 Iniciando carga automática tras delay');
@@ -217,28 +216,28 @@ const BarInventory = ({ onBack, user, userRole }) => {
         exportCriticalStockToPDF(inventory);
         return; // Salir aquí ya que la nueva función maneja todo
       
-        case 'important-products':
-  console.log('DEBUG - Ejecutando caso important-products');
-  try {
-    exportImportantProductsToPDF(inventory);
-    console.log('DEBUG - PDF de productos importantes generado exitosamente');
-  } catch (error) {
-    console.error('Error generando PDF de productos importantes:', error);
-    alert('Error al generar PDF de productos importantes: ' + error.message);
-  }
-  return; // Salir aquí ya que la función maneja todo
+      case 'important-products':
+        console.log('DEBUG - Ejecutando caso important-products');
+        try {
+          exportImportantProductsToPDF(inventory);
+          console.log('DEBUG - PDF de productos importantes generado exitosamente');
+        } catch (error) {
+          console.error('Error generando PDF de productos importantes:', error);
+          alert('Error al generar PDF de productos importantes: ' + error.message);
+        }
+        return; // Salir aquí ya que la función maneja todo
 
-case 'order-sheet':
-  console.log('DEBUG - Ejecutando caso order-sheet');
-  try {
-    exportOrderSheetToPDF(inventory);
-    console.log('DEBUG - PDF de lista de compras generado exitosamente');
-  } catch (error) {
-    console.error('Error generando PDF de lista de compras:', error);
-    alert('Error al generar PDF de lista de compras: ' + error.message);
-  }
-  return; // Salir aquí ya que la función maneja todo
-  
+      case 'order-sheet':
+        console.log('DEBUG - Ejecutando caso order-sheet');
+        try {
+          exportOrderSheetToPDF(inventory);
+          console.log('DEBUG - PDF de lista de compras generado exitosamente');
+        } catch (error) {
+          console.error('Error generando PDF de lista de compras:', error);
+          alert('Error al generar PDF de lista de compras: ' + error.message);
+        }
+        return; // Salir aquí ya que la función maneja todo
+      
       case 'category':
         itemsToInclude = inventory.filter(item => 
           (item.tipo?.toLowerCase() === filterValue) || 
@@ -250,10 +249,16 @@ case 'order-sheet':
         break;
       
       case 'provider':
-        itemsToInclude = inventory.filter(item => item.proveedor_id === filterValue);
-        const providerInfo = providers.find(p => p.id === filterValue);
-        reportTitle = `Reporte por Proveedor: ${providerInfo?.nombre || 'Proveedor'}`;
-        reportSubtitle = `${itemsToInclude.length} productos - Orden de compra sugerida`;
+        if (filterValue === 'sin-proveedor') {
+          itemsToInclude = inventory.filter(item => !item.proveedor_id || item.proveedor_id.trim() === '');
+          reportTitle = 'Reporte por Productos Sin Proveedor Asignado';
+          reportSubtitle = `${itemsToInclude.length} productos sin proveedor`;
+        } else {
+          itemsToInclude = inventory.filter(item => item.proveedor_id === filterValue);
+          const providerInfo = providers.find(p => p.id === filterValue);
+          reportTitle = `Reporte por Proveedor: ${providerInfo?.empresa || providerInfo?.nombre || 'Proveedor'}`;
+          reportSubtitle = `${itemsToInclude.length} productos - Orden de compra sugerida`;
+        }
         break;
     }
 
@@ -262,72 +267,38 @@ case 'order-sheet':
       return;
     }
 
-    // Función para agrupar productos
-    const groupItems = (items, groupBy) => {
-      const grouped = {};
-      items.forEach(item => {
-        let groupKey;
-        if (groupBy === 'category') {
-          groupKey = item.tipo || 'Sin Categoría';
-        } else if (groupBy === 'provider') {
-          const provider = providers.find(p => p.id === item.proveedor_id);
-          groupKey = provider?.nombre || 'Sin Proveedor';
-        }
-        
-        if (!grouped[groupKey]) {
-          grouped[groupKey] = [];
-        }
-        grouped[groupKey].push(item);
-      });
-      
-      // Ordenar cada grupo alfabéticamente
-      Object.keys(grouped).forEach(key => {
-        grouped[key].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-      });
-      
-      return grouped;
-    };
+    // Generar HTML para el reporte
+    const currentDate = new Date().toLocaleDateString('es-AR', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
 
-    // Determinar si agrupar y cómo
-    let groupedItems = null;
-    let shouldGroup = false;
-    
-    if (type === 'complete' || type === 'low-stock' || type === 'out-of-stock') {
-      groupedItems = groupItems(itemsToInclude, 'category');
-      shouldGroup = true;
-    }
-
-    const printWindow = window.open('', '_blank');
-    const currentDate = new Date().toLocaleDateString('es-ES');
-    const currentTime = new Date().toLocaleTimeString('es-ES');
-
-    const totalValue = itemsToInclude.reduce((sum, item) => sum + ((item.precio || 0) * (item.stock || 0)), 0);
-    const lowStockCount = itemsToInclude.filter(item => item.stock <= (item.umbral_low || 5) && item.stock > 0).length;
-    const outOfStockCount = itemsToInclude.filter(item => item.stock === 0).length;
-    const importantCount = itemsToInclude.filter(item => item.importante === true).length;
-
-    // Generar contenido de la tabla
     let tableContent = '';
     
-    if (shouldGroup && groupedItems) {
-      // Mostrar agrupado por categorías
-      const sortedGroups = Object.keys(groupedItems).sort();
-      
-      sortedGroups.forEach(groupName => {
-        const groupItems = groupedItems[groupName];
-        const groupTotal = groupItems.reduce((sum, item) => sum + ((item.precio || 0) * (item.stock || 0)), 0);
-        
-        // Header del grupo
+    // Agrupar por categoría para reporte completo
+    if (type === 'complete') {
+      const groupedByCategory = {};
+      itemsToInclude.forEach(item => {
+        const category = item.tipo || 'Sin categoría';
+        if (!groupedByCategory[category]) {
+          groupedByCategory[category] = [];
+        }
+        groupedByCategory[category].push(item);
+      });
+
+      Object.keys(groupedByCategory).forEach(category => {
         tableContent += `
-          <tr style="background-color: #007bff; color: white;">
-            <td colspan="7" style="font-weight: bold; font-size: 14px; padding: 12px 8px;">
-              🍷 ${groupName.toUpperCase()} (${groupItems.length} productos - $${groupTotal.toLocaleString()})
+          <tr style="background: #f8f9fa;">
+            <td colspan="7" style="font-weight: bold; font-size: 1.1em; padding: 15px; color: #495057;">
+              📦 ${category.toUpperCase()} (${groupedByCategory[category].length} productos)
             </td>
           </tr>
         `;
         
-        // Productos del grupo
-        groupItems.forEach(item => {
+        groupedByCategory[category].forEach(item => {
           const stockClass = item.stock === 0 ? 'stock-out' : 
                            item.stock <= (item.umbral_low || 5) ? 'stock-low' : 'stock-normal';
           const stockStatus = item.stock === 0 ? 'Sin Stock' : 
@@ -374,168 +345,67 @@ case 'order-sheet':
     // Agregar información adicional para reportes de proveedor
     let providerInfo = '';
     if (type === 'provider') {
-      const provider = providers.find(p => p.id === filterValue);
-      if (provider) {
+      if (filterValue === 'sin-proveedor') {
         providerInfo = `
-          <div style="background: #f8f9fa; padding: 20px; margin-bottom: 20px; border-radius: 8px; border-left: 4px solid #007bff;">
-            <h3 style="margin: 0 0 10px 0; color: #007bff;">📞 Información del Proveedor</h3>
-            <p><strong>Empresa:</strong> ${provider.nombre}</p>
-            ${provider.contacto ? `<p><strong>Contacto:</strong> ${provider.contacto}</p>` : ''}
-            ${provider.telefono ? `<p><strong>Teléfono:</strong> ${provider.telefono}</p>` : ''}
-            ${provider.email ? `<p><strong>Email:</strong> ${provider.email}</p>` : ''}
-            <p style="margin-top: 15px; padding: 10px; background: #e3f2fd; border-radius: 4px; color: #1976d2;">
-              💡 <strong>Sugerencia:</strong> Este reporte puede ser usado como base para generar una orden de compra.
+          <div style="background: #f8f9fa; padding: 20px; margin-bottom: 20px; border-radius: 8px; border-left: 4px solid #dc3545;">
+            <h3 style="margin: 0 0 10px 0; color: #dc3545;">📦 Productos Sin Proveedor</h3>
+            <p><strong>Categoría:</strong> Productos sin proveedor asignado</p>
+            <p><strong>Nota:</strong> Estos productos necesitan que se les asigne un proveedor para futuras órdenes de compra.</p>
+            <p style="margin-top: 15px; padding: 10px; background: #fff3cd; border-radius: 4px; color: #856404;">
+              ⚠️ <strong>Acción requerida:</strong> Asignar proveedores a estos productos para mejorar la gestión de inventario.
             </p>
           </div>
         `;
+      } else {
+        const provider = providers.find(p => p.id === filterValue);
+        if (provider) {
+          providerInfo = `
+            <div style="background: #f8f9fa; padding: 20px; margin-bottom: 20px; border-radius: 8px; border-left: 4px solid #007bff;">
+              <h3 style="margin: 0 0 10px 0; color: #007bff;">📞 Información del Proveedor</h3>
+              <p><strong>Empresa:</strong> ${provider.empresa || provider.nombre}</p>
+              ${provider.contacto ? `<p><strong>Contacto:</strong> ${provider.contacto}</p>` : ''}
+              ${provider.telefono ? `<p><strong>Teléfono:</strong> ${provider.telefono}</p>` : ''}
+              ${provider.email ? `<p><strong>Email:</strong> ${provider.email}</p>` : ''}
+              <p style="margin-top: 15px; padding: 10px; background: #e3f2fd; border-radius: 4px; color: #1976d2;">
+                💡 <strong>Sugerencia:</strong> Este reporte puede ser usado como base para generar una orden de compra.
+              </p>
+            </div>
+          `;
+        }
       }
     }
 
     const htmlContent = `
-      <!DOCTYPE html>
       <html>
       <head>
-        <meta charset="UTF-8">
         <title>${reportTitle}</title>
         <style>
-          body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            color: #333;
-            line-height: 1.4;
-          }
-          .header {
-            text-align: center;
-            border-bottom: 3px solid #007bff;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-          }
-          .header h1 {
-            margin: 0;
-            color: #007bff;
-            font-size: 28px;
-          }
-          .header h2 {
-            margin: 10px 0 0 0;
-            color: #6c757d;
-            font-weight: normal;
-            font-size: 16px;
-          }
-          .summary {
-            background: linear-gradient(135deg, #007bff, #0056b3);
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-          }
-          .summary-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            text-align: center;
-          }
-          .summary-item h4 {
-            margin: 0 0 5px 0;
-            font-size: 24px;
-          }
-          .summary-item p {
-            margin: 0;
-            opacity: 0.9;
-          }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-          }
-          th {
-            background: #007bff;
-            color: white;
-            padding: 12px 8px;
-            text-align: left;
-            font-weight: 600;
-          }
-          td {
-            padding: 10px 8px;
-            border-bottom: 1px solid #dee2e6;
-          }
-          tr:nth-child(even) {
-            background-color: #f8f9fa;
-          }
-          tr:hover {
-            background-color: #e3f2fd;
-          }
-          .stock-out {
-            background-color: #ffebee;
-            color: #c62828;
-            font-weight: bold;
-          }
-          .stock-low {
-            background-color: #fff3e0;
-            color: #ef6c00;
-            font-weight: bold;
-          }
-          .stock-normal {
-            color: #2e7d32;
-          }
-          .footer {
-            margin-top: 40px;
-            text-align: center;
-            color: #6c757d;
-            border-top: 1px solid #dee2e6;
-            padding-top: 20px;
-          }
-          @media print {
-            body { margin: 10px; }
-            .summary { break-inside: avoid; }
-            table { page-break-inside: auto; }
-            tr { page-break-inside: avoid; }
-          }
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          .header { text-align: center; background: #343a40; color: white; padding: 20px; margin-bottom: 30px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          th { background: #343a40; color: white; padding: 12px; text-align: left; }
+          td { padding: 10px; border-bottom: 1px solid #dee2e6; }
+          .stock-out { color: #dc3545; font-weight: bold; }
+          .stock-low { color: #ffc107; font-weight: bold; }
+          .stock-normal { color: #28a745; }
+          @media print { body { margin: 0; } }
         </style>
       </head>
       <body>
         <div class="header">
-          <h1>🍷 ${reportTitle}</h1>
-          <h2>${reportSubtitle}</h2>
-          <p style="margin: 10px 0 0 0; color: #6c757d;">
-            Generado el ${currentDate} a las ${currentTime} | Usuario: ${user.email}
-          </p>
+          <h1>${reportTitle}</h1>
+          <p>${reportSubtitle}</p>
+          <small>Generado el ${currentDate}</small>
         </div>
-
-        <div class="summary">
-          <div class="summary-grid">
-            <div class="summary-item">
-              <h4>${itemsToInclude.length}</h4>
-              <p>Total Productos</p>
-            </div>
-            <div class="summary-item">
-              <h4>${totalValue.toLocaleString()}</h4>
-              <p>Valor Total Stock</p>
-            </div>
-            <div class="summary-item">
-              <h4>${lowStockCount}</h4>
-              <p>Stock Bajo</p>
-            </div>
-            <div class="summary-item">
-              <h4>${outOfStockCount}</h4>
-              <p>Sin Stock</p>
-            </div>
-            <div class="summary-item">
-              <h4>⭐ ${importantCount}</h4>
-              <p>Productos Importantes</p>
-            </div>
-          </div>
-        </div>
-
+        
         ${providerInfo}
-
+        
         <table>
           <thead>
             <tr>
               <th>Producto</th>
               <th>Marca</th>
-              <th>Categoría</th>
+              <th>Tipo</th>
               <th>Stock</th>
               <th>Umbral</th>
               <th>Precio</th>
@@ -546,15 +416,453 @@ case 'order-sheet':
             ${tableContent}
           </tbody>
         </table>
-
-        <div class="footer">
-          <p><strong>Baires Inventory - Sistema de Gestión</strong></p>
-          <p>Reporte generado automáticamente • Para uso interno únicamente</p>
-        </div>
       </body>
       </html>
     `;
 
+    // Generar PDF con jsPDF en lugar de HTML
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    let currentY = 20;
+
+    // Header
+    doc.setFillColor(52, 58, 64);
+    doc.rect(0, 0, pageWidth, 35, 'F');
+    
+    doc.setFontSize(16);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont(undefined, 'bold');
+    doc.text(reportTitle, pageWidth / 2, 15, { align: 'center' });
+    
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'normal');
+    doc.text(reportSubtitle, pageWidth / 2, 25, { align: 'center' });
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Generado el: ${currentDate}`, 15, 45);
+    
+    currentY = 60;
+
+    // Información adicional si es reporte de proveedor
+    if (type === 'provider') {
+      if (filterValue === 'sin-proveedor') {
+        doc.setFontSize(12);
+        doc.setTextColor(0, 0, 0);
+        doc.setFont(undefined, 'bold');
+        doc.text('📦 Productos Sin Proveedor Asignado', 15, currentY);
+        currentY += 10;
+        
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(10);
+        doc.text('Estos productos necesitan que se les asigne un proveedor.', 15, currentY);
+        currentY += 15;
+      } else {
+        const provider = providers.find(p => p.id === filterValue);
+        if (provider) {
+          doc.setFontSize(12);
+          doc.setTextColor(0, 0, 0);
+          doc.setFont(undefined, 'bold');
+          doc.text('📞 Información del Proveedor', 15, currentY);
+          currentY += 10;
+          
+          doc.setFont(undefined, 'normal');
+          doc.setFontSize(10);
+          doc.text(`Empresa: ${provider.empresa || provider.nombre}`, 15, currentY);
+          currentY += 8;
+          
+          if (provider.contacto) {
+            doc.text(`Contacto: ${provider.contacto}`, 15, currentY);
+            currentY += 8;
+          }
+          if (provider.telefono) {
+            doc.text(`Teléfono: ${provider.telefono}`, 15, currentY);
+            currentY += 8;
+          }
+          if (provider.email) {
+            doc.text(`Email: ${provider.email}`, 15, currentY);
+            currentY += 8;
+          }
+          currentY += 10;
+        }
+      }
+    }
+
+    // Preparar datos para la tabla principal
+    let tableData;
+    if (type === 'complete') {
+      // Agrupar por categoría para reporte completo
+      const groupedByCategory = {};
+      itemsToInclude.forEach(item => {
+        const category = item.tipo || 'Sin categoría';
+        if (!groupedByCategory[category]) {
+          groupedByCategory[category] = [];
+        }
+        groupedByCategory[category].push(item);
+      });
+
+      tableData = [];
+      Object.keys(groupedByCategory).forEach(category => {
+        // Header de categoría
+        tableData.push([{
+          content: `📦 ${category.toUpperCase()} (${groupedByCategory[category].length} productos)`,
+          colSpan: 7,
+          styles: { fillColor: [248, 249, 250], textColor: [73, 80, 87], fontStyle: 'bold' }
+        }]);
+        
+        // Productos de la categoría
+        groupedByCategory[category].forEach(item => {
+          const stockStatus = item.stock === 0 ? 'Sin Stock' : 
+                            item.stock <= (item.umbral_low || 5) ? 'Stock Bajo' : 'Normal';
+          tableData.push([
+            item.nombre || 'Sin nombre',
+            item.marca || '-',
+            item.subTipo || '-',
+            `${item.stock || 0} ${item.unidad || ''}`,
+            `${item.umbral_low || 5}`,
+            `${(item.precio || 0).toLocaleString()}`,
+            stockStatus
+          ]);
+        });
+      });
+    } else {
+      // Tabla normal sin agrupar
+      tableData = itemsToInclude.map(item => {
+        const stockStatus = item.stock === 0 ? 'Sin Stock' : 
+                          item.stock <= (item.umbral_low || 5) ? 'Stock Bajo' : 'Normal';
+        return [
+          item.nombre || 'Sin nombre',
+          item.marca || '-',
+          `${item.tipo}${item.subTipo ? ` (${item.subTipo})` : ''}`,
+          `${item.stock || 0} ${item.unidad || ''}`,
+          `${item.umbral_low || 5}`,
+          `${(item.precio || 0).toLocaleString()}`,
+          stockStatus
+        ];
+      });
+    }
+
+    // Generar tabla
+    doc.autoTable({
+      startY: currentY,
+      head: [['Producto', 'Marca', 'Tipo', 'Stock', 'Umbral', 'Precio', 'Estado']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { 
+        fillColor: [52, 58, 64],
+        textColor: [255, 255, 255],
+        fontSize: 9,
+        fontStyle: 'bold'
+      },
+      bodyStyles: { fontSize: 8 },
+      columnStyles: {
+        0: { cellWidth: 45 },
+        1: { cellWidth: 25 },
+        2: { cellWidth: 30 },
+        3: { cellWidth: 20, halign: 'center' },
+        4: { cellWidth: 20, halign: 'center' },
+        5: { cellWidth: 25, halign: 'right' },
+        6: { cellWidth: 25, halign: 'center' }
+      },
+      didParseCell: function(data) {
+        // Colorear filas según el estado del stock
+        if (data.column.index === 6) { // Columna Estado
+          if (data.cell.text[0] === 'Sin Stock') {
+            data.cell.styles.fillColor = [220, 53, 69];
+            data.cell.styles.textColor = [255, 255, 255];
+          } else if (data.cell.text[0] === 'Stock Bajo') {
+            data.cell.styles.fillColor = [255, 193, 7];
+            data.cell.styles.textColor = [33, 37, 41];
+          }
+        }
+      }
+    });
+
+    // Descargar el PDF
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+    const fileName = `${reportTitle.replace(/[^a-zA-Z0-9]/g, '_')}_${timestamp}.pdf`;
+    
+    doc.save(fileName);
+  };
+
+  // NUEVA FUNCIÓN: Reporte de proveedor con low stock agrupado por categorías
+  const generateProviderLowStockReport = (providerId) => {
+    console.log('DEBUG - Generando reporte de low stock para proveedor:', providerId);
+    
+    let providerLowStockItems;
+    
+    if (providerId === 'sin-proveedor') {
+      // Filtrar productos sin proveedor que tengan low stock
+      providerLowStockItems = inventory.filter(item => {
+        const hasNoProvider = !item.proveedor_id || item.proveedor_id.trim() === '';
+        const hasLowStock = item.stock <= (item.umbral_low || 5) && item.stock >= 0;
+        return hasNoProvider && hasLowStock;
+      });
+    } else {
+      // Filtrar productos del proveedor que tengan low stock
+      providerLowStockItems = inventory.filter(item => {
+        const isFromProvider = item.proveedor_id === providerId;
+        const hasLowStock = item.stock <= (item.umbral_low || 5) && item.stock >= 0;
+        return isFromProvider && hasLowStock;
+      });
+    }
+
+    if (providerLowStockItems.length === 0) {
+      const providerText = providerId === 'sin-proveedor' ? 'Los productos sin proveedor no tienen' : 'Este proveedor no tiene';
+      alert(`${providerText} productos con stock bajo.`);
+      return;
+    }
+
+    // Agrupar por categorías principales
+    const groupedItems = {
+      vinos: [],
+      licores: [],
+      otros: []
+    };
+
+    providerLowStockItems.forEach(item => {
+      const tipo = (item.tipo || '').toLowerCase();
+      const subTipo = (item.subTipo || '').toLowerCase();
+      
+      if (tipo.includes('vino') || subTipo.includes('vino')) {
+        groupedItems.vinos.push(item);
+      } else if (tipo.includes('licor') || tipo.includes('whisky') || tipo.includes('vodka') || 
+                 tipo.includes('gin') || tipo.includes('ron') || tipo.includes('tequila') ||
+                 subTipo.includes('whisky') || subTipo.includes('vodka') || subTipo.includes('gin') ||
+                 subTipo.includes('bourbon') || subTipo.includes('cognac')) {
+        groupedItems.licores.push(item);
+      } else {
+        groupedItems.otros.push(item);
+      }
+    });
+
+    // Obtener información del proveedor
+    let providerName;
+    let providerContactInfo = '';
+    
+    if (providerId === 'sin-proveedor') {
+      providerName = 'Productos Sin Proveedor Asignado';
+      providerContactInfo = `
+        <div class="provider-info">
+          <h3>📦 Información</h3>
+          <p><strong>Categoría:</strong> Productos sin proveedor asignado</p>
+          <p><strong>Nota:</strong> Estos productos necesitan que se les asigne un proveedor para futuras órdenes de compra.</p>
+        </div>
+      `;
+    } else {
+      const providerInfo = providers.find(p => p.id === providerId);
+      providerName = providerInfo?.empresa || providerInfo?.nombre || 'Proveedor';
+      providerContactInfo = `
+        <div class="provider-info">
+          <h3>📞 Información del Proveedor</h3>
+          <p><strong>Empresa:</strong> ${providerName}</p>
+          ${providerInfo?.contacto ? `<p><strong>Contacto:</strong> ${providerInfo.contacto}</p>` : ''}
+          ${providerInfo?.telefono ? `<p><strong>Teléfono:</strong> ${providerInfo.telefono}</p>` : ''}
+          ${providerInfo?.email ? `<p><strong>Email:</strong> ${providerInfo.email}</p>` : ''}
+        </div>
+      `;
+    }
+
+    // Crear el HTML para el reporte
+    const currentDate = new Date().toLocaleDateString('es-AR', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    let htmlContent = `
+      <html>
+      <head>
+        <title>Reporte Low Stock - ${providerName}</title>
+        <style>
+          body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background: white;
+          }
+          .header { 
+            text-align: center; 
+            background: #dc3545; 
+            color: white; 
+            padding: 20px; 
+            margin-bottom: 30px;
+            border-radius: 8px;
+          }
+          .provider-info { 
+            background: #f8f9fa; 
+            padding: 15px; 
+            margin-bottom: 25px; 
+            border-radius: 8px; 
+            border-left: 4px solid #007bff;
+          }
+          .category-section { 
+            margin-bottom: 30px; 
+            page-break-inside: avoid;
+          }
+          .category-header { 
+            color: white; 
+            padding: 12px; 
+            font-size: 18px; 
+            font-weight: bold; 
+            border-radius: 6px;
+            margin-bottom: 15px;
+          }
+          .vinos-header { background: #6f42c1; }
+          .licores-header { background: #fd7e14; }
+          .otros-header { background: #6c757d; }
+          table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+          }
+          th { 
+            background: #343a40; 
+            color: white; 
+            padding: 12px; 
+            text-align: left; 
+            font-weight: bold;
+          }
+          td { 
+            padding: 10px; 
+            border-bottom: 1px solid #dee2e6;
+          }
+          tr:hover { background: #f8f9fa; }
+          .stock-critical { color: #dc3545; font-weight: bold; }
+          .stock-low { color: #ffc107; font-weight: bold; }
+          .summary { 
+            background: #e9ecef; 
+            padding: 15px; 
+            border-radius: 6px; 
+            margin-top: 20px;
+          }
+          .no-products { 
+            text-align: center; 
+            color: #6c757d; 
+            font-style: italic; 
+            padding: 20px;
+          }
+          @media print {
+            body { margin: 0; }
+            .category-section { page-break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>🚨 REPORTE DE STOCK BAJO POR PROVEEDOR</h1>
+          <h2>${providerName}</h2>
+          <p>Productos agrupados por categorías - Generado el ${currentDate}</p>
+        </div>
+
+        <div class="provider-info">
+          <h3>📞 Información del Proveedor</h3>
+          <p><strong>Empresa:</strong> ${providerName}</p>
+          ${providerInfo?.contacto ? `<p><strong>Contacto:</strong> ${providerInfo.contacto}</p>` : ''}
+          ${providerInfo?.telefono ? `<p><strong>Teléfono:</strong> ${providerInfo.telefono}</p>` : ''}
+          ${providerInfo?.email ? `<p><strong>Email:</strong> ${providerInfo.email}</p>` : ''}
+        </div>
+    `;
+
+    // Función helper para crear tabla de productos
+    const createProductTable = (items, categoryName) => {
+      if (items.length === 0) {
+        return `<div class="no-products">No hay ${categoryName.toLowerCase()} con stock bajo</div>`;
+      }
+
+      let tableHtml = `
+        <table>
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th>Marca</th>
+              <th>Tipo</th>
+              <th>Stock Actual</th>
+              <th>Umbral</th>
+              <th>Estado</th>
+              <th>Precio</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      items.forEach(item => {
+        const stockClass = item.stock === 0 ? 'stock-critical' : 'stock-low';
+        const stockStatus = item.stock === 0 ? 'SIN STOCK' : 'STOCK BAJO';
+        
+        tableHtml += `
+          <tr>
+            <td><strong>${item.nombre}</strong></td>
+            <td>${item.marca || '-'}</td>
+            <td>${item.subTipo || item.tipo || '-'}</td>
+            <td class="${stockClass}">${item.stock || 0} ${item.unidad || ''}</td>
+            <td>${item.umbral_low || 5}</td>
+            <td class="${stockClass}"><strong>${stockStatus}</strong></td>
+            <td>$${(item.precio || 0).toLocaleString()}</td>
+          </tr>
+        `;
+      });
+
+      tableHtml += `</tbody></table>`;
+      return tableHtml;
+    };
+
+    // Agregar secciones por categoría
+    if (groupedItems.vinos.length > 0) {
+      htmlContent += `
+        <div class="category-section">
+          <div class="category-header vinos-header">🍷 VINOS (${groupedItems.vinos.length} productos)</div>
+          ${createProductTable(groupedItems.vinos, 'vinos')}
+        </div>
+      `;
+    }
+
+    if (groupedItems.licores.length > 0) {
+      htmlContent += `
+        <div class="category-section">
+          <div class="category-header licores-header">🥃 LICORES (${groupedItems.licores.length} productos)</div>
+          ${createProductTable(groupedItems.licores, 'licores')}
+        </div>
+      `;
+    }
+
+    if (groupedItems.otros.length > 0) {
+      htmlContent += `
+        <div class="category-section">
+          <div class="category-header otros-header">🍺 OTROS PRODUCTOS (${groupedItems.otros.length} productos)</div>
+          ${createProductTable(groupedItems.otros, 'otros productos')}
+        </div>
+      `;
+    }
+
+    // Resumen final
+    const totalProducts = providerLowStockItems.length;
+    const totalValue = providerLowStockItems.reduce((sum, item) => sum + ((item.precio || 0) * (item.stock || 0)), 0);
+    const sinStock = providerLowStockItems.filter(item => item.stock === 0).length;
+
+    htmlContent += `
+      <div class="summary">
+        <h3>📊 Resumen del Reporte</h3>
+        <p><strong>Total de productos con stock bajo:</strong> ${totalProducts}</p>
+        <p><strong>Productos sin stock:</strong> ${sinStock}</p>
+        <p><strong>Productos con stock bajo:</strong> ${totalProducts - sinStock}</p>
+        <p><strong>Valor total del inventario actual:</strong> $${totalValue.toLocaleString()}</p>
+        <hr>
+        <p><strong>Distribución por categorías:</strong></p>
+        <ul>
+          ${groupedItems.vinos.length > 0 ? `<li>Vinos: ${groupedItems.vinos.length} productos</li>` : ''}
+          ${groupedItems.licores.length > 0 ? `<li>Licores: ${groupedItems.licores.length} productos</li>` : ''}
+          ${groupedItems.otros.length > 0 ? `<li>Otros: ${groupedItems.otros.length} productos</li>` : ''}
+        </ul>
+      </div>
+      </body>
+      </html>
+    `;
+
+    // Abrir ventana de impresión
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
     printWindow.document.write(htmlContent);
     printWindow.document.close();
     printWindow.print();
@@ -788,12 +1096,56 @@ case 'order-sheet':
                   })}
                   <Dropdown.Divider />
                   <Dropdown.Header>Por Proveedores</Dropdown.Header>
+                  {/* Opción para productos sin proveedor */}
+                  {(() => {
+                    const sinProveedorCount = inventory.filter(item => !item.proveedor_id || item.proveedor_id.trim() === '').length;
+                    const sinProveedorLowStockCount = inventory.filter(item => 
+                      (!item.proveedor_id || item.proveedor_id.trim() === '') && 
+                      item.stock <= (item.umbral_low || 5) && 
+                      item.stock >= 0
+                    ).length;
+                    
+                    return sinProveedorCount > 0 ? (
+                      <React.Fragment>
+                        <Dropdown.Item onClick={() => generatePDF('provider', 'sin-proveedor')}>
+                          📦 Sin Proveedor - Todos ({sinProveedorCount})
+                        </Dropdown.Item>
+                        {sinProveedorLowStockCount > 0 && (
+                          <Dropdown.Item 
+                            onClick={() => generateProviderLowStockReport('sin-proveedor')}
+                            style={{ paddingLeft: '25px', fontSize: '0.9em', color: '#dc3545' }}
+                          >
+                            🚨 Sin Proveedor - Solo Low Stock ({sinProveedorLowStockCount})
+                          </Dropdown.Item>
+                        )}
+                        <Dropdown.Divider />
+                      </React.Fragment>
+                    ) : null;
+                  })()}
                   {providers.slice(0, 10).map(provider => {
-                    const count = inventory.filter(item => item.proveedor_id === provider.id).length;
-                    return count > 0 ? (
-                      <Dropdown.Item key={provider.id} onClick={() => generatePDF('provider', provider.id)}>
-                        📦 {provider.nombre} ({count})
-                      </Dropdown.Item>
+                    const totalCount = inventory.filter(item => item.proveedor_id === provider.id).length;
+                    const lowStockCount = inventory.filter(item => 
+                      item.proveedor_id === provider.id && 
+                      item.stock <= (item.umbral_low || 5) && 
+                      item.stock >= 0
+                    ).length;
+                    
+                    const providerName = provider.empresa || provider.nombre;
+                    
+                    return totalCount > 0 ? (
+                      <React.Fragment key={provider.id}>
+                        <Dropdown.Item onClick={() => generatePDF('provider', provider.id)}>
+                          📦 {providerName} - Todos ({totalCount})
+                        </Dropdown.Item>
+                        {lowStockCount > 0 && (
+                          <Dropdown.Item 
+                            onClick={() => generateProviderLowStockReport(provider.id)}
+                            style={{ paddingLeft: '25px', fontSize: '0.9em', color: '#dc3545' }}
+                          >
+                            🚨 {providerName} - Solo Low Stock ({lowStockCount})
+                          </Dropdown.Item>
+                        )}
+                      </React.Fragment>
                     ) : null;
                   })}
                 </Dropdown.Menu>
@@ -978,62 +1330,76 @@ case 'order-sheet':
                       now={Math.min(100, (item.stock / (item.umbral_low * 2 || 10)) * 100)}
                       variant={item.stock === 0 ? 'danger' : 
                               item.stock <= (item.umbral_low || 5) ? 'warning' : 'success'}
-                      size="sm"
-                      className="mt-2"
+                      label={`${item.stock || 0}${item.unidad ? ` ${item.unidad}` : ''}`}
                     />
                   </div>
 
-                  <div className="d-flex justify-content-between">
-                    <InputGroup size="sm" style={{ maxWidth: '100px' }}>
+                  <div className="d-flex justify-content-between align-items-center mb-2">
+                    <small>Umbral: {item.umbral_low || 5}</small>
+                    {getStockBadge(item)}
+                  </div>
+
+                  {/* CUADRADITO EDITABLE DE STOCK EN CARDS */}
+                  <div className="mb-2">
+                    <small className="text-muted d-block mb-1">Stock actual:</small>
+                    <InputGroup size="sm" style={{ maxWidth: '120px' }}>
                       <Form.Control
                         type="number"
                         min="0"
                         step="0.01"
                         defaultValue={item.stock || 0}
+                        style={{ fontSize: '0.875rem', fontWeight: 'bold' }}
                         onBlur={(e) => {
                           const newStock = parseFloat(e.target.value) || 0;
-                          if (newStock !== item.stock) {
+                          if (newStock !== (item.stock || 0)) {
                             handleQuickStockUpdate(item, newStock);
                           }
                         }}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            const newStock = parseFloat(e.target.value) || 0;
+                            if (newStock !== (item.stock || 0)) {
+                              handleQuickStockUpdate(item, newStock);
+                            }
+                            e.target.blur();
+                          }
+                        }}
                       />
+                      <InputGroup.Text style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}>
+                        {item.unidad || 'u'}
+                      </InputGroup.Text>
                     </InputGroup>
-                    
-                    <div className="d-flex gap-1">
-                      <OverlayTrigger
-                        placement="top"
-                        overlay={<Tooltip>{item.importante ? 'Producto importante' : 'Marcar como importante'}</Tooltip>}
-                      >
-                        <Button
-                          variant={item.importante ? "warning" : "outline-warning"}
-                          size="sm"
-                          onClick={() => handleToggleImportante(item)}
-                          className="me-1"
-                        >
-                          ⭐
-                        </Button>
-                      </OverlayTrigger>
-                      <Button
-                        variant="outline-primary"
-                        size="sm"
-                        onClick={() => handleEditItem(item)}
-                      >
-                        <FaEdit />
-                      </Button>
-                      {(userRole === 'admin' || userRole === 'manager') && (
-                        <Button
-                          variant="outline-danger"
-                          size="sm"
-                          onClick={() => handleDeleteItem(item)}
-                        >
-                          <FaTrash />
-                        </Button>
-                      )}
-                    </div>
                   </div>
 
-                  <div className="mt-2">
-                    {getStockBadge(item)}
+                  <div className="d-flex gap-1">
+                    <OverlayTrigger
+                      placement="top"
+                      overlay={<Tooltip>{item.importante ? 'Producto importante' : 'Marcar como importante'}</Tooltip>}
+                    >
+                      <Button
+                        variant={item.importante ? "warning" : "outline-warning"}
+                        size="sm"
+                        onClick={() => handleToggleImportante(item)}
+                      >
+                        ⭐
+                      </Button>
+                    </OverlayTrigger>
+                    <Button
+                      variant="outline-primary"
+                      size="sm"
+                      onClick={() => handleEditItem(item)}
+                    >
+                      <FaEdit />
+                    </Button>
+                    {(userRole === 'admin' || userRole === 'manager') && (
+                      <Button
+                        variant="outline-danger"
+                        size="sm"
+                        onClick={() => handleDeleteItem(item)}
+                      >
+                        <FaTrash />
+                      </Button>
+                    )}
                   </div>
                 </Card.Body>
               </Card>
@@ -1065,22 +1431,35 @@ case 'order-sheet':
                         <Badge bg="warning" size="sm" className="ms-2">⭐</Badge>
                       )}
                     </td>
-                    <td>{item.marca}</td>
+                    <td>{item.marca || '-'}</td>
                     <td>{item.tipo}{item.subTipo && ` (${item.subTipo})`}</td>
                     <td>
-                      <InputGroup size="sm" style={{ maxWidth: '100px' }}>
+                      <InputGroup size="sm" style={{ maxWidth: '120px' }}>
                         <Form.Control
                           type="number"
                           min="0"
                           step="0.01"
                           defaultValue={item.stock || 0}
+                          style={{ fontSize: '0.875rem' }}
                           onBlur={(e) => {
                             const newStock = parseFloat(e.target.value) || 0;
-                            if (newStock !== item.stock) {
+                            if (newStock !== (item.stock || 0)) {
                               handleQuickStockUpdate(item, newStock);
                             }
                           }}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              const newStock = parseFloat(e.target.value) || 0;
+                              if (newStock !== (item.stock || 0)) {
+                                handleQuickStockUpdate(item, newStock);
+                              }
+                              e.target.blur();
+                            }
+                          }}
                         />
+                        <InputGroup.Text style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}>
+                          {item.unidad || 'u'}
+                        </InputGroup.Text>
                       </InputGroup>
                     </td>
                     <td>${(item.precio || 0).toLocaleString()}</td>
@@ -1127,14 +1506,14 @@ case 'order-sheet':
 
       {/* Modal para agregar/editar items */}
       <InventoryItemForm
-  show={showItemModal}
-  onHide={() => setShowItemModal(false)}
-  item={editingItem}
-  onSuccess={handleItemSuccess}
-  user={user}
-  userRole={userRole}
-  providers={providers}
-/>
+        show={showItemModal}
+        onHide={() => setShowItemModal(false)}
+        item={editingItem}
+        onSuccess={handleItemSuccess}
+        user={user}
+        userRole={userRole}
+        providers={providers}
+      />
     </Container>
   );
 };
