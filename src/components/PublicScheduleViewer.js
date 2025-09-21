@@ -1,17 +1,6 @@
 // src/components/PublicScheduleViewer.js
 import React, { useState, useEffect } from 'react';
 import { 
-  Container, 
-  Card, 
-  Table, 
-  Badge, 
-  Spinner, 
-  Alert,
-  Row,
-  Col,
-  Button
-} from 'react-bootstrap';
-import { 
   FaCalendarWeek, 
   FaClock, 
   FaUsers, 
@@ -22,10 +11,30 @@ import {
   FaPrint,
   FaArrowLeft
 } from 'react-icons/fa';
+import { 
+  Container, 
+  Card, 
+  Table, 
+  Badge, 
+  Spinner, 
+  Alert,
+  Row,
+  Col,
+  Button,
+  ButtonGroup
+} from 'react-bootstrap';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 
-const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
+const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack, user, userRole }) => {
+  // Estados
+  const [schedule, setSchedule] = useState(null);
+  const [shifts, setShifts] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [selectedDepartment, setSelectedDepartment] = useState('FOH'); // Nuevo estado para el departamento seleccionado
+
   // Obtener scheduleId de props o de la URL
   const getScheduleId = () => {
     if (propScheduleId) return propScheduleId;
@@ -40,26 +49,46 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
     return null;
   };
 
+  // Determinar qué departamento puede ver el usuario
+  const getUserDepartment = () => {
+    if (!user) return 'FOH';
+    
+    // Si es admin, puede cambiar entre departamentos, pero empieza con FOH
+    if (userRole === 'admin') return selectedDepartment;
+    
+    // Obtener departamento del usuario
+    const userDepartment = user.workInfo?.department || user.department;
+    
+    // Si no tiene departamento definido, intentar determinarlo por rol
+    if (!userDepartment) {
+      const fohRoles = ['host', 'hostess', 'server', 'server_senior', 'bartender', 'bartender_head', 'runner', 'food_runner', 'busser', 'manager', 'floor_manager', 'shift_manager'];
+      const bohRoles = ['chef', 'sous_chef', 'line_cook', 'prep_cook', 'cook', 'dishwasher', 'expo'];
+      
+      if (fohRoles.includes(user.role?.toLowerCase())) return 'FOH';
+      if (bohRoles.includes(user.role?.toLowerCase())) return 'BOH';
+    }
+    
+    return userDepartment || 'FOH'; // Por defecto FOH
+  };
+
   const scheduleId = getScheduleId();
-  const [schedule, setSchedule] = useState(null);
-  const [shifts, setShifts] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const allowedDepartment = getUserDepartment();
 
   useEffect(() => {
     const loadScheduleData = async () => {
-      if (!scheduleId) {
+      const currentScheduleId = getScheduleId(); // Obtener scheduleId local para useEffect
+      
+      if (!currentScheduleId) {
         setError('ID de horario no encontrado en la URL');
         setLoading(false);
         return;
       }
 
       try {
-        console.log('Cargando horario con ID:', scheduleId);
+        console.log('Cargando horario con ID:', currentScheduleId);
         
         // Cargar horario publicado
-        const scheduleDoc = await getDoc(doc(db, 'published_schedules', scheduleId));
+        const scheduleDoc = await getDoc(doc(db, 'published_schedules', currentScheduleId));
         
         if (!scheduleDoc.exists()) {
           setError('Horario no encontrado');
@@ -77,29 +106,42 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
           shifts_included: scheduleData.shifts_included?.length || 0
         });
 
-        // Cargar turnos incluidos
+        // Cargar turnos incluidos con división en lotes para evitar el límite de 30 en consultas IN
         if (scheduleData.shifts_included && scheduleData.shifts_included.length > 0) {
           console.log('Buscando turnos con IDs:', scheduleData.shifts_included);
           
-          const shiftsQuery = query(
-            collection(db, 'shifts'),
-            where('__name__', 'in', scheduleData.shifts_included)
-          );
-          const shiftsSnapshot = await getDocs(shiftsQuery);
-          const shiftsData = shiftsSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
+          const allShifts = [];
+          const batchSize = 30; // Límite de Firebase para consultas IN
+          const shiftIds = scheduleData.shifts_included;
           
-          console.log('Turnos encontrados:', shiftsData.length);
-          console.log('Turnos detalle:', shiftsData.map(s => ({
+          // Dividir los IDs en lotes de 30
+          for (let i = 0; i < shiftIds.length; i += batchSize) {
+            const batch = shiftIds.slice(i, i + batchSize);
+            console.log(`Cargando lote ${Math.floor(i/batchSize) + 1} con ${batch.length} turnos`);
+            
+            const shiftsQuery = query(
+              collection(db, 'shifts'),
+              where('__name__', 'in', batch)
+            );
+            
+            const shiftsSnapshot = await getDocs(shiftsQuery);
+            const batchShifts = shiftsSnapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            }));
+            
+            allShifts.push(...batchShifts);
+          }
+          
+          console.log('Turnos encontrados:', allShifts.length);
+          console.log('Turnos detalle:', allShifts.map(s => ({
             id: s.id,
             date: s.date,
             employee: s.employee_id,
             position: s.position || s.employee_role || s.role
           })));
           
-          setShifts(shiftsData);
+          setShifts(allShifts);
         } else {
           console.log('No hay shifts_included en el horario');
           setShifts([]);
@@ -124,7 +166,7 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
     };
 
     loadScheduleData();
-  }, [scheduleId]);
+  }, [propScheduleId]); // Dependencia en propScheduleId para recargar si cambia
 
   // Funciones auxiliares
   const formatDate = (date) => {
@@ -169,7 +211,81 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
     return dates;
   };
 
-  // Nueva función para renderizar la tabla estilo servidor con horarios
+  // Colores diferenciados para cada tipo de trabajo
+  const getPositionColor = (position) => {
+    const colors = {
+      // FOH - Front of House
+      'host': '#3498db',           // Azul brillante
+      'hostess': '#3498db',        // Azul brillante
+      'server': '#27ae60',         // Verde
+      'server_senior': '#229954',  // Verde oscuro
+      'bartender': '#9b59b6',      // Púrpura
+      'bartender_head': '#8e44ad', // Púrpura oscuro
+      'runner': '#1abc9c',         // Turquesa
+      'food_runner': '#17a2b8',    // Cyan
+      'busser': '#16a085',         // Verde azulado
+      'manager': '#e67e22',        // Naranja
+      'floor_manager': '#d35400',  // Naranja oscuro
+      'shift_manager': '#e67e22',  // Naranja
+      
+      // BOH - Back of House
+      'dishwasher': '#95a5a6',     // Gris
+      'prep_cook': '#e74c3c',      // Rojo
+      'line_cook': '#c0392b',      // Rojo oscuro
+      'cook': '#d35400',           // Naranja rojizo
+      'sous_chef': '#f39c12',      // Amarillo oscuro
+      'chef': '#f1c40f',           // Amarillo brillante
+      'expo': '#2ecc71',           // Verde brillante
+      
+      // Otros
+      'trainee': '#7f8c8d',        // Gris oscuro
+      'intern': '#bdc3c7'          // Gris claro
+    };
+    return colors[position?.toLowerCase()] || '#95a5a6';
+  };
+
+  // Función para filtrar turnos por departamento
+  const getFilteredShifts = () => {
+    return shifts.filter(shift => {
+      // Verificar por departamento del turno
+      if (shift.department) {
+        return shift.department === allowedDepartment;
+      }
+      
+      // Si no tiene departamento, verificar por empleado
+      const employee = employees.find(emp => emp.id === shift.employee_id);
+      if (employee) {
+        const empDepartment = employee.workInfo?.department || employee.department;
+        
+        // Si el empleado tiene departamento definido, usarlo
+        if (empDepartment) {
+          return empDepartment === allowedDepartment;
+        }
+        
+        // Si no tiene departamento, determinarlo por rol
+        const employeeRole = employee.role?.toLowerCase() || '';
+        const fohRoles = ['host', 'hostess', 'server', 'server_senior', 'bartender', 'bartender_head', 'runner', 'food_runner', 'busser', 'manager', 'floor_manager', 'shift_manager'];
+        const bohRoles = ['chef', 'sous_chef', 'line_cook', 'prep_cook', 'cook', 'dishwasher', 'expo'];
+        
+        if (fohRoles.includes(employeeRole)) {
+          return allowedDepartment === 'FOH';
+        }
+        if (bohRoles.includes(employeeRole)) {
+          return allowedDepartment === 'BOH';
+        }
+        
+        // Si no se puede determinar, NO mostrar el turno
+        console.log(`⚠️ Turno del empleado ${employee.email} no se puede clasificar - Rol: ${employeeRole}, Departamento: ${empDepartment}`);
+        return false;
+      }
+      
+      // Si no se encuentra el empleado, NO mostrar el turno
+      console.log(`⚠️ Turno con employee_id ${shift.employee_id} - empleado no encontrado`);
+      return false;
+    });
+  };
+
+  // Nueva función para renderizar la tabla estilo servidor con horarios FILTRADA POR DEPARTAMENTO
   const renderServerScheduleTable = () => {
     const weekDates = getWeekDates(new Date(schedule.week_start));
     const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THURS', 'FRI', 'SAT'];
@@ -177,97 +293,150 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
     // Definir estructura de roles para FOH y BOH
     const roleStructure = {
       // Front of House (FOH)
-      'SERVERS': ['server', 'server_senior'],
-      'HOSTS': ['host', 'hostess'],
-      'BARTENDERS': ['bartender', 'bartender_head'],
-      'RUNNERS': ['runner', 'food_runner'],
-      'BUSSERS': ['busser'],
-      'MANAGERS': ['manager', 'floor_manager', 'shift_manager'],
-      
+      FOH: {
+        'SERVERS': ['server', 'server_senior'],
+        'HOSTS': ['host', 'hostess'],
+        'BARTENDERS': ['bartender', 'bartender_head'],
+        'RUNNERS': ['runner', 'food_runner'],
+        'BUSSERS': ['busser'],
+        'MANAGERS': ['manager', 'floor_manager', 'shift_manager']
+      },
       // Back of House (BOH)  
-      'KITCHEN': ['chef', 'sous_chef', 'line_cook', 'prep_cook', 'cook'],
-      'DISHWASHERS': ['dishwasher'],
-      'EXPO': ['expo'],
+      BOH: {
+        'KITCHEN': ['chef', 'sous_chef', 'line_cook', 'prep_cook', 'cook'],
+        'DISHWASHERS': ['dishwasher'],
+        'EXPO': ['expo']
+      }
     };
 
-    // Función para obtener TODOS los empleados (no solo los que tienen turnos)
-    const getAllEmployeesByRole = () => {
+    // Filtrar empleados por departamento permitido
+    const getFilteredEmployeesByRole = () => {
       const groupedEmployees = {};
+      let rolesToShow = {};
+
+      // Determinar qué roles mostrar según el departamento seleccionado
+      if (allowedDepartment === 'FOH') {
+        // Mostrar solo FOH
+        rolesToShow = roleStructure.FOH;
+      } else if (allowedDepartment === 'BOH') {
+        // Mostrar solo BOH
+        rolesToShow = roleStructure.BOH;
+      } else {
+        // Por defecto mostrar FOH
+        rolesToShow = roleStructure.FOH;
+      }
       
       // Inicializar grupos
-      Object.keys(roleStructure).forEach(groupName => {
+      Object.keys(rolesToShow).forEach(groupName => {
         groupedEmployees[groupName] = [];
       });
       
-      // Clasificar TODOS los empleados activos
-      employees.forEach(employee => {
-        if (employee.active === false || employee.status === 'inactive') return;
+      // Filtrar empleados por departamento seleccionado
+      const filteredEmployees = employees.filter(employee => {
+        const empDepartment = employee.workInfo?.department || employee.department;
         
-        const employeeData = {
-          id: employee.id,
-          name: employee.displayName || (employee.firstName + ' ' + employee.lastName).trim() || employee.email.split('@')[0],
-          role: employee.role || '',
-          department: employee.workInfo?.department || 'FOH'
-        };
+        // Si tiene departamento definido, usarlo
+        if (empDepartment) {
+          return empDepartment === allowedDepartment;
+        }
+        
+        // Si no tiene departamento definido, determinarlo por rol
+        const employeeRole = employee.role?.toLowerCase() || '';
+        const fohRoles = ['host', 'hostess', 'server', 'server_senior', 'bartender', 'bartender_head', 'runner', 'food_runner', 'busser', 'manager', 'floor_manager', 'shift_manager'];
+        const bohRoles = ['chef', 'sous_chef', 'line_cook', 'prep_cook', 'cook', 'dishwasher', 'expo'];
+        
+        if (fohRoles.includes(employeeRole)) {
+          return allowedDepartment === 'FOH';
+        }
+        if (bohRoles.includes(employeeRole)) {
+          return allowedDepartment === 'BOH';
+        }
+        
+        // Si no se puede determinar el departamento por rol, NO mostrar el empleado
+        console.log(`⚠️ Empleado ${employee.email} no se puede clasificar - Rol: ${employeeRole}, Departamento: ${empDepartment}`);
+        return false;
+      });
 
-        // Encontrar en qué grupo pertenece este empleado
+      // Clasificar empleados filtrados
+      filteredEmployees.forEach(employee => {
+        const employeeRole = (employee.role || employee.position || '').toLowerCase();
         let assigned = false;
-        for (const [groupName, roles] of Object.entries(roleStructure)) {
-          if (roles.includes(employee.role)) {
-            groupedEmployees[groupName].push(employeeData);
-            assigned = true;
-            break;
-          }
-        }
         
-        // Si no se asignó a ningún grupo, ponerlo en SERVERS por defecto
-        if (!assigned) {
-          groupedEmployees['SERVERS'].push(employeeData);
+        // Buscar en qué grupo pertenece este empleado
+        Object.entries(rolesToShow).forEach(([groupName, roles]) => {
+          if (roles.includes(employeeRole) && !assigned) {
+            groupedEmployees[groupName].push({
+              id: employee.id,
+              name: employee.displayName || employee.email.split('@')[0],
+              role: employee.role || employee.position || '',
+              email: employee.email
+            });
+            assigned = true;
+          }
+        });
+        
+        // Si no se asignó a ningún grupo específico, NO asignar por defecto
+        if (!assigned && employee.active !== false) {
+          console.log(`⚠️ Empleado ${employee.email} con rol "${employee.role || 'sin rol'}" no pudo ser asignado a ningún grupo`);
         }
       });
-
-      // Ordenar alfabéticamente dentro de cada grupo
-      Object.keys(groupedEmployees).forEach(groupName => {
-        groupedEmployees[groupName].sort((a, b) => a.name.localeCompare(b.name));
-      });
-
-      // Remover grupos vacíos
-      Object.keys(groupedEmployees).forEach(groupName => {
-        if (groupedEmployees[groupName].length === 0) {
-          delete groupedEmployees[groupName];
-        }
-      });
-
+      
       return groupedEmployees;
     };
 
-    const groupedEmployees = getAllEmployeesByRole();
+    const groupedEmployees = getFilteredEmployeesByRole();
+    const filteredShifts = getFilteredShifts();
 
     // Función para obtener el turno de un empleado en una fecha específica
     const getEmployeeShiftForDate = (employeeId, date) => {
-      const dateStr = date.toISOString().split('T')[0];
-      return shifts.find(shift => 
-        shift.employee_id === employeeId && 
-        shift.date === dateStr
+      const dateString = date.toISOString().split('T')[0];
+      return filteredShifts.find(shift => 
+        (shift.employee_id === employeeId || shift.employee_id === employeeId) && 
+        shift.date === dateString
       );
     };
 
-    // Función para mostrar el horario en formato simple
+    // Función para mostrar el horario en formato simple con colores
     const getShiftDisplay = (shift) => {
       if (!shift) return <span className="text-danger fw-bold">OFF</span>;
       
+      const position = shift.position || shift.employee_role || shift.role || '';
+      const color = getPositionColor(position);
+      
       // Si solo hay hora de inicio, mostrar solo esa
       if (shift.start_time && !shift.end_time) {
-        return <span className="text-primary fw-bold">{formatTime(shift.start_time)}</span>;
+        return (
+          <div style={{ 
+            backgroundColor: color, 
+            color: 'white', 
+            padding: '4px 8px', 
+            borderRadius: '4px',
+            fontSize: '0.8rem',
+            fontWeight: 'bold'
+          }}>
+            {formatTime(shift.start_time)}
+            <br />
+            <small>{position.toUpperCase()}</small>
+          </div>
+        );
       }
       
       // Si hay hora de inicio y fin, mostrar rango
       if (shift.start_time && shift.end_time) {
         return (
-          <div>
-            <span className="text-primary fw-bold">{formatTime(shift.start_time)}</span>
+          <div style={{ 
+            backgroundColor: color, 
+            color: 'white', 
+            padding: '4px 8px', 
+            borderRadius: '4px',
+            fontSize: '0.8rem',
+            fontWeight: 'bold'
+          }}>
+            {formatTime(shift.start_time)}
             <br />
-            <span className="text-secondary">{formatTime(shift.end_time)}</span>
+            {formatTime(shift.end_time)}
+            <br />
+            <small>{position.toUpperCase()}</small>
           </div>
         );
       }
@@ -278,10 +447,38 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
     return (
       <Card className="mb-4">
         <Card.Header className="bg-primary text-white">
-          <h5 className="mb-0">
-            <FaCalendarWeek className="me-2" />
-            Horario Semanal
-          </h5>
+          <Row className="align-items-center">
+            <Col>
+              <h5 className="mb-0">
+                <FaCalendarWeek className="me-2" />
+                Horario Semanal - {allowedDepartment === 'FOH' ? 'Front of House (FOH)' : 'Back of House (BOH)'}
+              </h5>
+            </Col>
+            <Col xs="auto">
+              {userRole === 'admin' ? (
+                <ButtonGroup>
+                  <Button 
+                    variant={selectedDepartment === 'FOH' ? 'warning' : 'outline-warning'}
+                    size="sm"
+                    onClick={() => setSelectedDepartment('FOH')}
+                  >
+                    FOH
+                  </Button>
+                  <Button 
+                    variant={selectedDepartment === 'BOH' ? 'warning' : 'outline-warning'}
+                    size="sm"
+                    onClick={() => setSelectedDepartment('BOH')}
+                  >
+                    BOH
+                  </Button>
+                </ButtonGroup>
+              ) : (
+                <Badge bg="warning" text="dark">
+                  {allowedDepartment === 'FOH' ? 'Solo FOH' : 'Solo BOH'}
+                </Badge>
+              )}
+            </Col>
+          </Row>
         </Card.Header>
         <Card.Body className="p-0">
           <div className="table-responsive">
@@ -374,9 +571,10 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
 
     const weekDates = getWeekDates(new Date(schedule.week_start));
     const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const filteredShifts = getFilteredShifts();
 
     weekDates.forEach((date, index) => {
-      const dayShifts = shifts.filter(shift => shift.date === date.toISOString().split('T')[0]);
+      const dayShifts = filteredShifts.filter(shift => shift.date === date.toISOString().split('T')[0]);
       content += `${dayNames[index]} ${date.getDate()}/${date.getMonth() + 1}\n`;
       content += '─'.repeat(30) + '\n';
       
@@ -391,22 +589,20 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
       }
     });
 
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = window.URL.createObjectURL(blob);
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `horario_${schedule.week_start}.txt`;
-    document.body.appendChild(a);
+    a.download = `horario_${schedule.title.replace(/\s+/g, '_')}.txt`;
     a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    URL.revokeObjectURL(url);
   };
 
   if (loading) {
     return (
       <Container className="d-flex justify-content-center align-items-center" style={{ minHeight: '50vh' }}>
         <div className="text-center">
-          <Spinner animation="border" variant="primary" />
+          <Spinner animation="border" variant="primary" size="lg" />
           <p className="mt-3">Cargando horario...</p>
         </div>
       </Container>
@@ -415,46 +611,48 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
 
   if (error) {
     return (
-      <Container className="mt-5">
-        <Alert variant="danger" className="text-center">
-          <h4>Error</h4>
-          <p>{error}</p>
-          {onBack && (
-            <Button variant="secondary" onClick={onBack} className="mt-2">
-              <FaArrowLeft className="me-1" />
-              Volver
-            </Button>
-          )}
+      <Container className="mt-4">
+        <Alert variant="danger">
+          <Alert.Heading>Error</Alert.Heading>
+          {error}
         </Alert>
+        {onBack && (
+          <Button variant="outline-secondary" onClick={onBack} className="mt-3">
+            <FaArrowLeft className="me-2" />
+            Volver
+          </Button>
+        )}
       </Container>
     );
   }
 
   if (!schedule) {
     return (
-      <Container className="mt-5">
-        <Alert variant="warning" className="text-center">
-          <h4>Horario no encontrado</h4>
-          <p>El enlace puede ser incorrecto o el horario ya no está disponible.</p>
-          {onBack && (
-            <Button variant="secondary" onClick={onBack} className="mt-2">
-              <FaArrowLeft className="me-1" />
-              Volver
-            </Button>
-          )}
+      <Container className="mt-4">
+        <Alert variant="warning">
+          <Alert.Heading>Horario no encontrado</Alert.Heading>
+          El horario solicitado no existe o no está disponible.
         </Alert>
+        {onBack && (
+          <Button variant="outline-secondary" onClick={onBack} className="mt-3">
+            <FaArrowLeft className="me-2" />
+            Volver
+          </Button>
+        )}
       </Container>
     );
   }
 
-  const weekDates = getWeekDates(new Date(schedule.week_start));
-  
-  // Debug: mostrar información de las fechas
+  // Debug: Imprimir información de las fechas
   console.log('=== INFORMACIÓN DEL HORARIO PÚBLICO ===');
+  console.log('Usuario:', user?.email, 'Rol:', userRole, 'Departamento permitido:', allowedDepartment);
+  console.log('Departamento seleccionado:', selectedDepartment);
   console.log('Schedule week_start:', schedule.week_start);
   console.log('Schedule week_end:', schedule.week_end);
+  const weekDates = getWeekDates(new Date(schedule.week_start));
   console.log('WeekDates calculadas:', weekDates.map(d => d.toISOString().split('T')[0]));
   console.log('Total shifts disponibles:', shifts.length);
+  console.log('Shifts filtrados por departamento:', getFilteredShifts().length);
 
   return (
     <Container fluid className="schedule-viewer py-4">
@@ -482,15 +680,15 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
                   <div className="text-primary mb-2">
                     <FaUsers size={24} />
                   </div>
-                  <h5 className="mb-0">{[...new Set(shifts.map(s => s.employee_id))].length}</h5>
-                  <small className="text-muted">Empleados</small>
+                  <h5 className="mb-0">{[...new Set(getFilteredShifts().map(s => s.employee_id))].length}</h5>
+                  <small className="text-muted">Empleados {allowedDepartment}</small>
                 </Col>
                 <Col md={4}>
                   <div className="text-success mb-2">
                     <FaClock size={24} />
                   </div>
-                  <h5 className="mb-0">{shifts.length}</h5>
-                  <small className="text-muted">Total Turnos</small>
+                  <h5 className="mb-0">{getFilteredShifts().length}</h5>
+                  <small className="text-muted">Total Turnos {allowedDepartment}</small>
                 </Col>
                 <Col md={4}>
                   <div className="text-warning mb-2">

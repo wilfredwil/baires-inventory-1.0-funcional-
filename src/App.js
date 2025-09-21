@@ -356,8 +356,10 @@ function App() {
       
       case 'public-schedule':
         return (
-          <PublicScheduleViewer 
+           <PublicScheduleViewer 
             scheduleId={viewScheduleId} 
+            user={user}          // ← Agregar esta línea
+            userRole={userRole}  // ← Agregar esta línea
             onBack={() => {
               setCurrentView('dashboard');
               setViewScheduleId(null);
