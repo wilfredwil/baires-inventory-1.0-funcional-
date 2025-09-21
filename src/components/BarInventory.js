@@ -129,30 +129,47 @@ const BarInventory = ({ onBack, user, userRole }) => {
       }
     );
 
-    // Cargar proveedores
-    const providersQuery = query(
-  collection(db, 'providers'),
-  orderBy('nombre', 'asc')
-    );
-
-    const unsubscribeProviders = onSnapshot(
-      providersQuery,
-      (snapshot) => {
-        const providersData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+    // Cargar proveedores - USANDO CAMPO 'empresa' CORRECTO
+    console.log('🔍 INICIANDO carga de proveedores con getDocs()...');
+    
+    const loadProviders = async () => {
+      try {
+        const providersRef = collection(db, 'providers');
+        const q = query(providersRef, orderBy('empresa'));  // ← CAMBIO: usar 'empresa' no 'nombre'
+        const snapshot = await getDocs(q);
         
-        const filteredProviders = providersData.filter(provider => 
-          provider.nombre && provider.nombre.trim() !== ''
-        ).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-          
+        console.log('🏢 PROVEEDORES - Documentos encontrados:', snapshot.docs.length);
+        
+        const providersData = snapshot.docs.map(doc => {
+          const data = { id: doc.id, ...doc.data() };
+          console.log('🏢 Proveedor encontrado:', data);
+          return data;
+        });
+        
+        console.log('🏢 PROVEEDORES RAW:', providersData);
+        
+        const filteredProviders = providersData.filter(provider => {
+          const hasName = provider.empresa && provider.empresa.trim() !== '';  // ← CAMBIO: usar 'empresa' no 'nombre'
+          console.log(`🔍 Filtrando proveedor ${provider.id}: empresa="${provider.empresa}", pasa filtro=${hasName}`);
+          return hasName;
+        }).sort((a, b) => (a.empresa || '').localeCompare(b.empresa || ''));  // ← CAMBIO: usar 'empresa' no 'nombre'
+        
+        console.log('🏢 PROVEEDORES FILTRADOS:', filteredProviders);
+        console.log(`✅ Estableciendo ${filteredProviders.length} proveedores en el estado`);
+        
         setProviders(filteredProviders);
-      },
-      (error) => {
-        console.error('Error cargando proveedores:', error);
+      } catch (error) {
+        console.error('❌ ERROR cargando proveedores:', error);
+        console.error('❌ Código de error:', error.code);
+        console.error('❌ Mensaje de error:', error.message);
       }
-    );
+    };
+
+    // Cargar proveedores una vez
+    loadProviders();
+
+    // Cargar proveedores una vez
+    loadProviders();
 
     // Auto-cargar después de un pequeño delay
     const timer = setTimeout(() => {
@@ -162,7 +179,6 @@ const BarInventory = ({ onBack, user, userRole }) => {
 
     return () => {
       unsubscribeInventory();
-      unsubscribeProviders();
       clearTimeout(timer);
     };
   }, [user]);

@@ -1,4 +1,4 @@
-// src/components/InventoryItemForm.js - ARCHIVO COMPLETO CON PROVEEDOR
+// src/components/InventoryItemForm.js - CORREGIDO PARA MOSTRAR SIEMPRE EL CAMPO PROVEEDOR
 import React, { useState, useEffect } from 'react';
 import { Modal, Form, Button, Alert, Spinner, Row, Col } from 'react-bootstrap';
 import { collection, getDocs, updateDoc, doc, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -369,7 +369,7 @@ const InventoryItemForm = ({
           )}
 
           <Row>
-            <Col md={6}>
+            <Col md={4}>
               <Form.Group className="mb-3">
                 <Form.Label>Stock Actual *</Form.Label>
                 <Form.Control
@@ -377,10 +377,10 @@ const InventoryItemForm = ({
                   name="stock"
                   value={formData.stock}
                   onChange={handleInputChange}
+                  isInvalid={!!errors.stock}
                   min="0"
                   max="10000"
-                  step="0.01"
-                  isInvalid={!!errors.stock}
+                  placeholder="0"
                   required
                 />
                 <Form.Control.Feedback type="invalid">
@@ -390,60 +390,56 @@ const InventoryItemForm = ({
             </Col>
 
             {canEditAllFields && (
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Umbral Mínimo *</Form.Label>
-                  <Form.Control
-                    type="number"
-                    name="umbral_low"
-                    value={formData.umbral_low}
-                    onChange={handleInputChange}
-                    min="0"
-                    max="1000"
-                    step="0.01"
-                    isInvalid={!!errors.umbral_low}
-                    placeholder="5"
-                    required={canEditAllFields}
-                  />
-                  <Form.Control.Feedback type="invalid">
-                    {errors.umbral_low}
-                  </Form.Control.Feedback>
-                  <Form.Text className="text-muted">
-                    Cantidad mínima antes de alerta
-                  </Form.Text>
-                </Form.Group>
-              </Col>
+              <>
+                <Col md={4}>
+                  <Form.Group className="mb-3">
+                    <Form.Label>Umbral Mínimo</Form.Label>
+                    <Form.Control
+                      type="number"
+                      name="umbral_low"
+                      value={formData.umbral_low}
+                      onChange={handleInputChange}
+                      isInvalid={!!errors.umbral_low}
+                      min="0"
+                      max="1000"
+                      placeholder="5"
+                    />
+                    <Form.Control.Feedback type="invalid">
+                      {errors.umbral_low}
+                    </Form.Control.Feedback>
+                    <Form.Text className="text-muted">
+                      Aviso cuando el stock baje de este número
+                    </Form.Text>
+                  </Form.Group>
+                </Col>
+
+                <Col md={4}>
+                  <Form.Group className="mb-3">
+                    <Form.Label>Precio ($)</Form.Label>
+                    <Form.Control
+                      type="number"
+                      name="precio"
+                      value={formData.precio}
+                      onChange={handleInputChange}
+                      isInvalid={!!errors.precio}
+                      step="0.01"
+                      min="0"
+                      max="100000"
+                      placeholder="0.00"
+                    />
+                    <Form.Control.Feedback type="invalid">
+                      {errors.precio}
+                    </Form.Control.Feedback>
+                    <Form.Text className="text-muted">
+                      Precio unitario en pesos
+                    </Form.Text>
+                  </Form.Group>
+                </Col>
+              </>
             )}
           </Row>
 
-          {canEditAllFields && (
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Precio Unitario</Form.Label>
-                  <Form.Control
-                    type="number"
-                    name="precio"
-                    value={formData.precio}
-                    onChange={handleInputChange}
-                    min="0"
-                    max="100000"
-                    step="0.01"
-                    isInvalid={!!errors.precio}
-                    placeholder="0.00"
-                  />
-                  <Form.Control.Feedback type="invalid">
-                    {errors.precio}
-                  </Form.Control.Feedback>
-                  <Form.Text className="text-muted">
-                    Precio unitario en pesos
-                  </Form.Text>
-                </Form.Group>
-              </Col>
-            </Row>
-          )}
-
-          {/* CAMPO DE PROVEEDOR - SOLO PARA ADMIN/MANAGER */}
+          {/* CAMPO DE PROVEEDOR - SIEMPRE VISIBLE PARA ADMIN/MANAGER */}
           {canEditAllFields && (
             <Row>
               <Col md={12}>
@@ -469,7 +465,10 @@ const InventoryItemForm = ({
                     )}
                   </Form.Select>
                   <Form.Text className="text-muted">
-                    Selecciona el proveedor de este producto (opcional)
+                    {providers && providers.length > 0 
+                      ? `Selecciona el proveedor de este producto (${providers.length} disponibles)`
+                      : 'No hay proveedores. Crea uno en Gestión de Proveedores.'
+                    }
                   </Form.Text>
                 </Form.Group>
               </Col>

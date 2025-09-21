@@ -1,4 +1,4 @@
-// src/components/ProviderManagement.js - VERSIÓN STANDALONE COMPLETA
+// src/components/ProviderManagement.js - VERSIÓN ACTUALIZADA CON MÚLTIPLES CONTACTOS
 import React, { useState, useEffect } from 'react';
 import { 
   Container, Row, Col, Card, Button, Form, Table, Alert, Spinner, Modal, Badge 
@@ -9,7 +9,7 @@ import {
 import { db } from '../firebase';
 import { 
   FaEdit, FaTrash, FaPlus, FaBuilding, FaArrowLeft, FaPhone, FaEnvelope, 
-  FaMapMarkerAlt, FaUser, FaCheckCircle, FaTimesCircle, FaSearch
+  FaMapMarkerAlt, FaUser, FaCheckCircle, FaTimesCircle, FaSearch, FaTimes
 } from 'react-icons/fa';
 
 const ProviderManagement = ({ user, userRole, onBack }) => {
@@ -21,12 +21,10 @@ const ProviderManagement = ({ user, userRole, onBack }) => {
   const [success, setSuccess] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Estados del formulario
+  // Estados del formulario actualizado
   const [formData, setFormData] = useState({
-    nombre: '',
-    contacto: '',
-    telefono: '',
-    email: '',
+    empresa: '',
+    contactos: [{ nombre: '', email: '', telefono: '', especialidad: '', esPreferido: false }],
     direccion: '',
     activo: true
   });
@@ -43,7 +41,7 @@ const ProviderManagement = ({ user, userRole, onBack }) => {
     setLoading(true);
     try {
       const providersRef = collection(db, 'providers');
-      const q = query(providersRef, orderBy('nombre'));
+      const q = query(providersRef, orderBy('empresa'));
       const snapshot = await getDocs(q);
       const providersData = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -60,10 +58,8 @@ const ProviderManagement = ({ user, userRole, onBack }) => {
 
   const resetForm = () => {
     setFormData({
-      nombre: '',
-      contacto: '',
-      telefono: '',
-      email: '',
+      empresa: '',
+      contactos: [{ nombre: '', email: '', telefono: '', especialidad: '', esPreferido: false }],
       direccion: '',
       activo: true
     });
@@ -74,27 +70,18 @@ const ProviderManagement = ({ user, userRole, onBack }) => {
   const validateForm = () => {
     const errors = {};
 
-    // Validar nombre (obligatorio, min 2 caracteres)
-    if (!formData.nombre.trim()) {
-      errors.nombre = 'El nombre es obligatorio';
-    } else if (formData.nombre.trim().length < 2) {
-      errors.nombre = 'El nombre debe tener al menos 2 caracteres';
-    }
+    // Ahora ningún campo es obligatorio según tu solicitud
+    // Solo validamos formatos si se proporcionan datos
 
-    // Validar contacto (obligatorio)
-    if (!formData.contacto.trim()) {
-      errors.contacto = 'El contacto es obligatorio';
-    }
-
-    // Validar teléfono (opcional pero si se proporciona debe ser válido)
-    if (formData.telefono && !/^\+?[\d\s\-\(\)]+$/.test(formData.telefono)) {
-      errors.telefono = 'Formato de teléfono inválido';
-    }
-
-    // Validar email (opcional pero si se proporciona debe ser válido)
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      errors.email = 'Formato de email inválido';
-    }
+    // Validar emails de contactos (solo si se proporcionan)
+    formData.contactos.forEach((contacto, index) => {
+      if (contacto.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contacto.email)) {
+        errors[`contacto_email_${index}`] = 'Formato de email inválido';
+      }
+      if (contacto.telefono && !/^\+?[\d\s\-\(\)]+$/.test(contacto.telefono)) {
+        errors[`contacto_telefono_${index}`] = 'Formato de teléfono inválido';
+      }
+    });
 
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -116,6 +103,50 @@ const ProviderManagement = ({ user, userRole, onBack }) => {
     }
   };
 
+  const handleContactoChange = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      contactos: prev.contactos.map((contacto, i) => 
+        i === index ? { ...contacto, [field]: value } : contacto
+      )
+    }));
+
+    // Limpiar errores del contacto
+    const errorKey = `contacto_${field}_${index}`;
+    if (formErrors[errorKey]) {
+      setFormErrors(prev => ({
+        ...prev,
+        [errorKey]: ''
+      }));
+    }
+  };
+
+  const agregarContacto = () => {
+    setFormData(prev => ({
+      ...prev,
+      contactos: [...prev.contactos, { nombre: '', email: '', telefono: '', especialidad: '', esPreferido: false }]
+    }));
+  };
+
+  const eliminarContacto = (index) => {
+    if (formData.contactos.length > 1) {
+      setFormData(prev => ({
+        ...prev,
+        contactos: prev.contactos.filter((_, i) => i !== index)
+      }));
+    }
+  };
+
+  const marcarComoPreferido = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      contactos: prev.contactos.map((contacto, i) => ({
+        ...contacto,
+        esPreferido: i === index
+      }))
+    }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -129,12 +160,10 @@ const ProviderManagement = ({ user, userRole, onBack }) => {
 
     try {
       const providerData = {
-        ...formData,
-        nombre: formData.nombre.trim(),
-        contacto: formData.contacto.trim(),
-        email: formData.email.trim(),
+        empresa: formData.empresa.trim(),
+        contactos: formData.contactos.filter(c => c.nombre.trim() || c.email.trim() || c.telefono.trim()),
         direccion: formData.direccion.trim(),
-        telefono: formData.telefono.trim(),
+        activo: formData.activo,
         updatedAt: new Date(),
         updatedBy: user.email
       };
@@ -166,11 +195,32 @@ const ProviderManagement = ({ user, userRole, onBack }) => {
 
   const handleEdit = (provider) => {
     setEditingProvider(provider);
+    
+    // Migrar datos antiguos al nuevo formato si es necesario
+    let contactos = [];
+    if (provider.contactos && Array.isArray(provider.contactos)) {
+      contactos = provider.contactos.map(c => ({
+        ...c,
+        especialidad: c.especialidad || '' // Asegurar que tenga especialidad
+      }));
+    } else if (provider.contacto || provider.email || provider.telefono) {
+      // Migrar formato antiguo
+      contactos = [{
+        nombre: provider.contacto || '',
+        email: provider.email || '',
+        telefono: provider.telefono || '',
+        especialidad: provider.tipoProveedor || '',
+        esPreferido: true
+      }];
+    }
+    
+    if (contactos.length === 0) {
+      contactos = [{ nombre: '', email: '', telefono: '', especialidad: '', esPreferido: false }];
+    }
+
     setFormData({
-      nombre: provider.nombre || '',
-      contacto: provider.contacto || '',
-      telefono: provider.telefono || '',
-      email: provider.email || '',
+      empresa: provider.empresa || provider.nombre || '',
+      contactos: contactos,
       direccion: provider.direccion || '',
       activo: provider.activo !== false
     });
@@ -178,7 +228,7 @@ const ProviderManagement = ({ user, userRole, onBack }) => {
   };
 
   const handleDelete = async (provider) => {
-    if (!window.confirm(`¿Estás seguro de que deseas eliminar el proveedor "${provider.nombre}"?`)) {
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar el proveedor "${provider.empresa || provider.nombre}"?`)) {
       return;
     }
 
@@ -200,12 +250,23 @@ const ProviderManagement = ({ user, userRole, onBack }) => {
     setShowProviderModal(true);
   };
 
-  // Filtrar proveedores por búsqueda
-  const filteredProviders = providers.filter(provider =>
-    provider.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    provider.contacto?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    provider.email?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filtrar proveedores por búsqueda (adaptado al nuevo formato)
+  const filteredProviders = providers.filter(provider => {
+    const empresa = provider.empresa || provider.nombre || '';
+    
+    // Buscar en contactos (nombre, email y especialidad)
+    const contactMatch = provider.contactos ? 
+      provider.contactos.some(c => 
+        c.nombre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.especialidad?.toLowerCase().includes(searchTerm.toLowerCase())
+      ) : 
+      (provider.contacto?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+       provider.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+       provider.tipoProveedor?.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    return empresa.toLowerCase().includes(searchTerm.toLowerCase()) || contactMatch;
+  });
 
   // Verificar permisos
   if (userRole !== 'admin' && userRole !== 'manager') {
@@ -295,160 +356,198 @@ const ProviderManagement = ({ user, userRole, onBack }) => {
         <Col md={3}>
           <Card className="text-center">
             <Card.Body>
-              <h4 className="text-warning">
-                {providers.filter(p => p.activo === false).length}
+              <h4 className="text-info">
+                {providers.reduce((count, p) => {
+                  const vinoContacts = p.contactos ? 
+                    p.contactos.filter(c => c.especialidad?.toLowerCase().includes('vino')).length :
+                    (p.tipoProveedor?.toLowerCase().includes('vino') ? 1 : 0);
+                  return count + vinoContacts;
+                }, 0)}
               </h4>
-              <small className="text-muted">Inactivos</small>
+              <small className="text-muted">Contactos de Vino</small>
             </Card.Body>
           </Card>
         </Col>
         <Col md={3}>
           <Card className="text-center">
             <Card.Body>
-              <h4 className="text-info">
-                {providers.filter(p => p.email && p.email.trim()).length}
+              <h4 className="text-warning">
+                {providers.reduce((count, p) => {
+                  const licorContacts = p.contactos ? 
+                    p.contactos.filter(c => c.especialidad?.toLowerCase().includes('licor')).length :
+                    (p.tipoProveedor?.toLowerCase().includes('licor') ? 1 : 0);
+                  return count + licorContacts;
+                }, 0)}
               </h4>
-              <small className="text-muted">Con Email</small>
+              <small className="text-muted">Contactos de Licor</small>
             </Card.Body>
           </Card>
         </Col>
       </Row>
 
-      {/* Filtros y búsqueda */}
-      <Row className="mb-3">
-        <Col md={6}>
-          <Form.Group>
-            <div className="position-relative">
-              <FaSearch 
-                className="position-absolute" 
-                style={{ 
-                  left: '12px', 
-                  top: '50%', 
-                  transform: 'translateY(-50%)',
-                  color: '#6c757d'
-                }} 
-              />
-              <Form.Control
-                type="text"
-                placeholder="Buscar por nombre, contacto o email..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={{ paddingLeft: '35px' }}
-              />
-            </div>
-          </Form.Group>
-        </Col>
-      </Row>
+      {/* Barra de búsqueda */}
+      <Card className="mb-4">
+        <Card.Body>
+          <Row>
+            <Col md={6}>
+              <Form.Group>
+                <div className="position-relative">
+                  <FaSearch 
+                    className="position-absolute text-muted" 
+                    style={{ 
+                      top: '50%', 
+                      left: '12px', 
+                      transform: 'translateY(-50%)', 
+                      zIndex: 5 
+                    }} 
+                  />
+                  <Form.Control
+                    type="text"
+                    placeholder="Buscar por empresa, contacto o especialidad..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    style={{ paddingLeft: '40px' }}
+                  />
+                </div>
+              </Form.Group>
+            </Col>
+          </Row>
+        </Card.Body>
+      </Card>
 
       {/* Tabla de proveedores */}
       <Card>
         <Card.Header>
-          <h5 className="mb-0">Lista de Proveedores</h5>
+          <h5 className="mb-0">
+            Lista de Proveedores ({filteredProviders.length})
+          </h5>
         </Card.Header>
         <Card.Body className="p-0">
-          {loading && !providers.length ? (
+          {loading ? (
             <div className="text-center p-4">
-              <Spinner animation="border" role="status">
-                <span className="visually-hidden">Cargando...</span>
-              </Spinner>
+              <Spinner animation="border" />
+              <p className="mt-2">Cargando proveedores...</p>
             </div>
           ) : (
-            <Table striped bordered hover responsive className="mb-0">
-              <thead className="table-dark">
+            <Table responsive hover className="mb-0">
+              <thead className="table-light">
                 <tr>
-                  <th>Proveedor</th>
-                  <th>Contacto</th>
-                  <th>Comunicación</th>
+                  <th>Empresa</th>
+                  <th>Contactos</th>
+                  <th>Dirección</th>
                   <th>Estado</th>
-                  <th>Acciones</th>
+                  <th width="120">Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredProviders.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className="text-center py-4">
-                      {searchTerm ? 
-                        'No se encontraron proveedores que coincidan con la búsqueda' :
-                        'No hay proveedores registrados'
-                      }
+                    <td colSpan="5" className="text-center p-4">
+                      {searchTerm ? 'No se encontraron proveedores que coincidan con la búsqueda' : 'No hay proveedores registrados'}
                     </td>
                   </tr>
                 ) : (
-                  filteredProviders.map(provider => (
-                    <tr key={provider.id}>
-                      <td>
-                        <div>
-                          <strong className="text-primary">
-                            {provider.nombre}
-                          </strong>
-                          {provider.direccion && (
-                            <div className="text-muted small mt-1">
-                              <FaMapMarkerAlt className="me-1" />
-                              {provider.direccion}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td>
-                        <div className="d-flex align-items-center">
-                          <FaUser className="me-2 text-muted" />
-                          {provider.contacto}
-                        </div>
-                      </td>
-                      <td>
-                        <div>
-                          {provider.telefono && (
-                            <div className="mb-1">
-                              <FaPhone className="me-2 text-success" />
-                              <small>{provider.telefono}</small>
-                            </div>
-                          )}
-                          {provider.email && (
+                  filteredProviders.map(provider => {
+                    // Compatibilidad con formato antiguo
+                    const empresa = provider.empresa || provider.nombre || 'Sin nombre';
+                    const contactos = provider.contactos || (provider.contacto ? [{
+                      nombre: provider.contacto,
+                      email: provider.email,
+                      telefono: provider.telefono,
+                      especialidad: provider.tipoProveedor || '',
+                      esPreferido: true
+                    }] : []);
+                    const contactoPreferido = contactos.find(c => c.esPreferido) || contactos[0];
+
+                    return (
+                      <tr key={provider.id}>
+                        <td>
+                          <strong>{empresa}</strong>
+                        </td>
+                        <td>
+                          {contactos.length > 0 ? (
                             <div>
-                              <FaEnvelope className="me-2 text-info" />
-                              <small>{provider.email}</small>
+                              {contactoPreferido && (
+                                <div className="mb-1">
+                                  <div className="d-flex align-items-center gap-2 mb-1">
+                                    <strong>{contactoPreferido.nombre}</strong>
+                                    {contactoPreferido.esPreferido && (
+                                      <Badge bg="success" style={{fontSize: '0.6em'}}>
+                                        Preferido
+                                      </Badge>
+                                    )}
+                                    {contactoPreferido.especialidad && (
+                                      <Badge bg="info" style={{fontSize: '0.6em'}}>
+                                        {contactoPreferido.especialidad}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <small className="text-muted">
+                                    {contactoPreferido.email && (
+                                      <><FaEnvelope className="me-1" />{contactoPreferido.email}<br /></>
+                                    )}
+                                    {contactoPreferido.telefono && (
+                                      <><FaPhone className="me-1" />{contactoPreferido.telefono}</>
+                                    )}
+                                  </small>
+                                </div>
+                              )}
+                              {contactos.length > 1 && (
+                                <small className="text-muted">
+                                  +{contactos.length - 1} contacto{contactos.length - 1 !== 1 ? 's' : ''} más
+                                </small>
+                              )}
                             </div>
+                          ) : (
+                            <span className="text-muted">Sin contactos</span>
                           )}
-                          {!provider.telefono && !provider.email && (
-                            <span className="text-muted">Sin contacto</span>
+                        </td>
+                        <td>
+                          {provider.direccion ? (
+                            <small>
+                              <FaMapMarkerAlt className="me-1 text-muted" />
+                              {provider.direccion}
+                            </small>
+                          ) : (
+                            <span className="text-muted">Sin dirección</span>
                           )}
-                        </div>
-                      </td>
-                      <td>
-                        {provider.activo !== false ? (
-                          <Badge bg="success" className="d-flex align-items-center" style={{ width: 'fit-content' }}>
-                            <FaCheckCircle className="me-1" />
-                            Activo
-                          </Badge>
-                        ) : (
-                          <Badge bg="secondary" className="d-flex align-items-center" style={{ width: 'fit-content' }}>
-                            <FaTimesCircle className="me-1" />
-                            Inactivo
-                          </Badge>
-                        )}
-                      </td>
-                      <td>
-                        <div className="d-flex gap-2">
-                          <Button
-                            variant="outline-primary"
-                            size="sm"
-                            onClick={() => handleEdit(provider)}
-                            disabled={loading}
-                          >
-                            <FaEdit />
-                          </Button>
-                          <Button
-                            variant="outline-danger"
-                            size="sm"
-                            onClick={() => handleDelete(provider)}
-                            disabled={loading}
-                          >
-                            <FaTrash />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                        <td>
+                          {provider.activo !== false ? (
+                            <Badge bg="success" className="d-flex align-items-center" style={{ width: 'fit-content' }}>
+                              <FaCheckCircle className="me-1" />
+                              Activo
+                            </Badge>
+                          ) : (
+                            <Badge bg="secondary" className="d-flex align-items-center" style={{ width: 'fit-content' }}>
+                              <FaTimesCircle className="me-1" />
+                              Inactivo
+                            </Badge>
+                          )}
+                        </td>
+                        <td>
+                          <div className="d-flex gap-2">
+                            <Button
+                              variant="outline-primary"
+                              size="sm"
+                              onClick={() => handleEdit(provider)}
+                              disabled={loading}
+                            >
+                              <FaEdit />
+                            </Button>
+                            <Button
+                              variant="outline-danger"
+                              size="sm"
+                              onClick={() => handleDelete(provider)}
+                              disabled={loading}
+                            >
+                              <FaTrash />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </Table>
@@ -472,80 +571,133 @@ const ProviderManagement = ({ user, userRole, onBack }) => {
         <Form onSubmit={handleSubmit}>
           <Modal.Body>
             <Row>
-              <Col md={6}>
+              <Col md={12}>
                 <Form.Group className="mb-3">
-                  <Form.Label>Nombre del Proveedor *</Form.Label>
+                  <Form.Label>Nombre de la Empresa</Form.Label>
                   <Form.Control
                     type="text"
-                    name="nombre"
-                    value={formData.nombre}
+                    name="empresa"
+                    value={formData.empresa}
                     onChange={handleInputChange}
-                    placeholder="Ej: Distribuidora ABC"
+                    placeholder="Ej: Empire Distribuidora"
                     maxLength="100"
-                    isInvalid={!!formErrors.nombre}
-                    required
                   />
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.nombre}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Persona de Contacto *</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="contacto"
-                    value={formData.contacto}
-                    onChange={handleInputChange}
-                    placeholder="Ej: Juan Pérez"
-                    maxLength="100"
-                    isInvalid={!!formErrors.contacto}
-                    required
-                  />
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.contacto}
-                  </Form.Control.Feedback>
+                  <Form.Text className="text-muted">
+                    Nombre de la empresa proveedora
+                  </Form.Text>
                 </Form.Group>
               </Col>
             </Row>
 
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Teléfono</Form.Label>
-                  <Form.Control
-                    type="tel"
-                    name="telefono"
-                    value={formData.telefono}
-                    onChange={handleInputChange}
-                    placeholder="Ej: +54 11 1234-5678"
-                    maxLength="20"
-                    isInvalid={!!formErrors.telefono}
-                  />
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.telefono}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Email</Form.Label>
-                  <Form.Control
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    placeholder="Ej: contacto@empresa.com"
-                    maxLength="100"
-                    isInvalid={!!formErrors.email}
-                  />
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.email}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-            </Row>
+            {/* Sección de Contactos */}
+            <div className="mb-3">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <Form.Label className="mb-0">Contactos</Form.Label>
+                <Button
+                  variant="outline-primary"
+                  size="sm"
+                  onClick={agregarContacto}
+                  type="button"
+                >
+                  <FaPlus className="me-1" />
+                  Agregar Contacto
+                </Button>
+              </div>
+
+              {formData.contactos.map((contacto, index) => (
+                <Card key={index} className="mb-2" style={{ backgroundColor: '#f8f9fa' }}>
+                  <Card.Body className="py-3">
+                    <div className="d-flex justify-content-between align-items-start mb-2">
+                      <h6 className="mb-0">Contacto {index + 1}</h6>
+                      <div className="d-flex gap-2">
+                        {!contacto.esPreferido && (
+                          <Button
+                            variant="outline-success"
+                            size="sm"
+                            onClick={() => marcarComoPreferido(index)}
+                            type="button"
+                          >
+                            Marcar como Preferido
+                          </Button>
+                        )}
+                        {contacto.esPreferido && (
+                          <Badge bg="success">Contacto Preferido</Badge>
+                        )}
+                        {formData.contactos.length > 1 && (
+                          <Button
+                            variant="outline-danger"
+                            size="sm"
+                            onClick={() => eliminarContacto(index)}
+                            type="button"
+                          >
+                            <FaTimes />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <Row>
+                      <Col md={3}>
+                        <Form.Group className="mb-2">
+                          <Form.Label>Nombre</Form.Label>
+                          <Form.Control
+                            type="text"
+                            value={contacto.nombre}
+                            onChange={(e) => handleContactoChange(index, 'nombre', e.target.value)}
+                            placeholder="Nombre del contacto"
+                            maxLength="100"
+                          />
+                        </Form.Group>
+                      </Col>
+                      <Col md={3}>
+                        <Form.Group className="mb-2">
+                          <Form.Label>Email</Form.Label>
+                          <Form.Control
+                            type="email"
+                            value={contacto.email}
+                            onChange={(e) => handleContactoChange(index, 'email', e.target.value)}
+                            placeholder="email@ejemplo.com"
+                            isInvalid={!!formErrors[`contacto_email_${index}`]}
+                          />
+                          <Form.Control.Feedback type="invalid">
+                            {formErrors[`contacto_email_${index}`]}
+                          </Form.Control.Feedback>
+                        </Form.Group>
+                      </Col>
+                      <Col md={3}>
+                        <Form.Group className="mb-2">
+                          <Form.Label>Teléfono</Form.Label>
+                          <Form.Control
+                            type="text"
+                            value={contacto.telefono}
+                            onChange={(e) => handleContactoChange(index, 'telefono', e.target.value)}
+                            placeholder="+1234567890"
+                            isInvalid={!!formErrors[`contacto_telefono_${index}`]}
+                          />
+                          <Form.Control.Feedback type="invalid">
+                            {formErrors[`contacto_telefono_${index}`]}
+                          </Form.Control.Feedback>
+                        </Form.Group>
+                      </Col>
+                      <Col md={3}>
+                        <Form.Group className="mb-2">
+                          <Form.Label>Especialidad</Form.Label>
+                          <Form.Select
+                            value={contacto.especialidad}
+                            onChange={(e) => handleContactoChange(index, 'especialidad', e.target.value)}
+                          >
+                            <option value="">Seleccionar...</option>
+                            <option value="vino">Vino</option>
+                            <option value="licor">Licor</option>
+                            <option value="vino y licor">Vino y Licor</option>
+                          </Form.Select>
+                        </Form.Group>
+                      </Col>
+                    </Row>
+                  </Card.Body>
+                </Card>
+              ))}
+            </div>
 
             <Form.Group className="mb-3">
               <Form.Label>Dirección</Form.Label>

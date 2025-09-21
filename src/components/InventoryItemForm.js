@@ -1,7 +1,8 @@
-// components/InventoryItemForm.js
+// src/components/InventoryItemForm.js - CORREGIDO PARA MOSTRAR SIEMPRE EL CAMPO PROVEEDOR
+// ⚠️ IMPORTANTE: Este es el archivo que usa BarInventory, NO ItemForm.js
 import React, { useState, useEffect } from 'react';
 import { Modal, Form, Button, Alert, Spinner, Row, Col } from 'react-bootstrap';
-import { collection, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 
 const InventoryItemForm = ({ 
@@ -41,10 +42,10 @@ const InventoryItemForm = ({
         tipo: item.tipo || 'licor',
         subTipo: item.subTipo || '',
         origen: item.origen || '',
-        stock: Number(item.stock) || 0,
-        umbral_low: Number(item.umbral_low) || 5,
+        stock: item.stock !== undefined ? parseFloat(item.stock) || 0 : 0,
+        umbral_low: item.umbral_low !== undefined ? parseFloat(item.umbral_low) || 5 : 5,
         proveedor_id: item.proveedor_id || '',
-        precio: Number(item.precio) || 0,
+        precio: item.precio !== undefined ? parseFloat(item.precio) || 0 : 0,
         descripcion: item.descripcion || ''
       });
     } else {
@@ -70,10 +71,11 @@ const InventoryItemForm = ({
     const newErrors = {};
 
     // Validaciones para campos que todos pueden editar
-    if (formData.stock < 0) {
+    const stockValue = parseFloat(formData.stock) || 0;
+    if (stockValue < 0) {
       newErrors.stock = 'El stock no puede ser negativo';
     }
-    if (formData.stock > 10000) {
+    if (stockValue > 10000) {
       newErrors.stock = 'El stock no puede exceder 10,000 unidades';
     }
 
@@ -87,17 +89,19 @@ const InventoryItemForm = ({
         newErrors.nombre = 'El nombre no puede exceder 100 caracteres';
       }
 
-      if (formData.umbral_low < 0) {
+      const umbralValue = parseFloat(formData.umbral_low) || 0;
+      if (umbralValue < 0) {
         newErrors.umbral_low = 'El umbral no puede ser negativo';
       }
-      if (formData.umbral_low > 1000) {
+      if (umbralValue > 1000) {
         newErrors.umbral_low = 'El umbral no puede exceder 1,000 unidades';
       }
 
-      if (formData.precio < 0) {
+      const precioValue = parseFloat(formData.precio) || 0;
+      if (precioValue < 0) {
         newErrors.precio = 'El precio no puede ser negativo';
       }
-      if (formData.precio > 100000) {
+      if (precioValue > 100000) {
         newErrors.precio = 'El precio no puede exceder $100,000';
       }
 
@@ -128,9 +132,15 @@ const InventoryItemForm = ({
     const { name, value, type } = e.target;
     let processedValue = value;
 
-    // Procesar valores numéricos
+    // Para campos numéricos, mantener como string si está vacío o en proceso de edición
     if (type === 'number') {
-      processedValue = value === '' ? 0 : Number(value);
+      if (value === '') {
+        processedValue = '';
+      } else {
+        // Permitir números decimales
+        const numValue = parseFloat(value);
+        processedValue = isNaN(numValue) ? 0 : numValue;
+      }
     }
 
     setFormData(prev => ({
@@ -166,12 +176,16 @@ const InventoryItemForm = ({
         const updateData = canEditAllFields 
           ? {
               ...formData,
+              // Asegurar que los números se guarden correctamente
+              stock: parseFloat(formData.stock) || 0,
+              umbral_low: parseFloat(formData.umbral_low) || 5,
+              precio: parseFloat(formData.precio) || 0,
               ultima_actualizacion: timestamp,
               actualizado_por: updatedBy
             }
           : {
               // Solo actualizar stock si no es admin/manager
-              stock: formData.stock,
+              stock: parseFloat(formData.stock) || 0,
               ultima_actualizacion: timestamp,
               actualizado_por: updatedBy
             };
@@ -179,8 +193,10 @@ const InventoryItemForm = ({
         await updateDoc(doc(db, 'inventario', item.id), updateData);
 
         // Registrar en historial
-        if (formData.stock !== item.stock) {
-          const change = formData.stock - item.stock;
+        const newStock = parseFloat(formData.stock) || 0;
+        const oldStock = parseFloat(item.stock) || 0;
+        if (newStock !== oldStock) {
+          const change = newStock - oldStock;
           await addDoc(collection(db, 'historial'), {
             item_id: item.id,
             accion: change > 0 ? 'agregado' : 'vendido',
@@ -199,6 +215,10 @@ const InventoryItemForm = ({
 
         const newItemData = {
           ...formData,
+          // Asegurar que los números se guarden correctamente
+          stock: parseFloat(formData.stock) || 0,
+          umbral_low: parseFloat(formData.umbral_low) || 5,
+          precio: parseFloat(formData.precio) || 0,
           creado_en: timestamp,
           creado_por: updatedBy,
           ultima_actualizacion: timestamp
@@ -210,7 +230,7 @@ const InventoryItemForm = ({
         await addDoc(collection(db, 'historial'), {
           item_id: docRef.id,
           accion: 'creado',
-          cantidad: formData.stock,
+          cantidad: parseFloat(formData.stock) || 0,
           fecha: timestamp,
           usuario: updatedBy
         });
@@ -371,80 +391,77 @@ const InventoryItemForm = ({
           <Row>
             <Col md={4}>
               <Form.Group className="mb-3">
-                <Form.Label>Stock *</Form.Label>
+                <Form.Label>Stock Actual *</Form.Label>
                 <Form.Control
                   type="number"
                   name="stock"
                   value={formData.stock}
                   onChange={handleInputChange}
-                  min="0"
-                  max="10000"
-                  step="0.25"
                   isInvalid={!!errors.stock}
+                  min="0"
+                  step="any"
                   placeholder="0"
                   required
                 />
                 <Form.Control.Feedback type="invalid">
                   {errors.stock}
                 </Form.Control.Feedback>
-                <Form.Text className="text-muted">
-                  Cantidad disponible (0 - 10,000)
-                </Form.Text>
               </Form.Group>
             </Col>
 
-            <Col md={4}>
-              <Form.Group className="mb-3">
-                <Form.Label>Umbral Bajo</Form.Label>
-                <Form.Control
-                  type="number"
-                  name="umbral_low"
-                  value={formData.umbral_low}
-                  onChange={handleInputChange}
-                  disabled={!canEditAllFields}
-                  min="0"
-                  max="1000"
-                  step="0.25"
-                  isInvalid={!!errors.umbral_low}
-                  placeholder="5"
-                />
-                <Form.Control.Feedback type="invalid">
-                  {errors.umbral_low}
-                </Form.Control.Feedback>
-                <Form.Text className="text-muted">
-                  Alerta cuando el stock baje de este nivel
-                </Form.Text>
-              </Form.Group>
-            </Col>
+            {canEditAllFields && (
+              <>
+                <Col md={4}>
+                  <Form.Group className="mb-3">
+                    <Form.Label>Umbral Mínimo</Form.Label>
+                    <Form.Control
+                      type="number"
+                      name="umbral_low"
+                      value={formData.umbral_low}
+                      onChange={handleInputChange}
+                      isInvalid={!!errors.umbral_low}
+                      min="0"
+                      step="any"
+                      placeholder="5"
+                    />
+                    <Form.Control.Feedback type="invalid">
+                      {errors.umbral_low}
+                    </Form.Control.Feedback>
+                    <Form.Text className="text-muted">
+                      Aviso cuando el stock baje de este número
+                    </Form.Text>
+                  </Form.Group>
+                </Col>
 
-            <Col md={4}>
-              <Form.Group className="mb-3">
-                <Form.Label>Precio</Form.Label>
-                <Form.Control
-                  type="number"
-                  name="precio"
-                  value={formData.precio}
-                  onChange={handleInputChange}
-                  disabled={!canEditAllFields}
-                  min="0"
-                  max="100000"
-                  step="0.01"
-                  isInvalid={!!errors.precio}
-                  placeholder="0.00"
-                />
-                <Form.Control.Feedback type="invalid">
-                  {errors.precio}
-                </Form.Control.Feedback>
-                <Form.Text className="text-muted">
-                  Precio unitario en pesos
-                </Form.Text>
-              </Form.Group>
-            </Col>
+                <Col md={4}>
+                  <Form.Group className="mb-3">
+                    <Form.Label>Precio ($)</Form.Label>
+                    <Form.Control
+                      type="number"
+                      name="precio"
+                      value={formData.precio}
+                      onChange={handleInputChange}
+                      isInvalid={!!errors.precio}
+                      step="any"
+                      min="0"
+                      placeholder="0.00"
+                    />
+                    <Form.Control.Feedback type="invalid">
+                      {errors.precio}
+                    </Form.Control.Feedback>
+                    <Form.Text className="text-muted">
+                      Precio unitario en pesos
+                    </Form.Text>
+                  </Form.Group>
+                </Col>
+              </>
+            )}
           </Row>
 
-          {canEditAllFields && providers.length > 0 && (
+          {/* CAMPO DE PROVEEDOR - SIEMPRE VISIBLE PARA ADMIN/MANAGER */}
+          {canEditAllFields && (
             <Row>
-              <Col md={6}>
+              <Col md={12}>
                 <Form.Group className="mb-3">
                   <Form.Label>Proveedor</Form.Label>
                   <Form.Select
@@ -453,14 +470,25 @@ const InventoryItemForm = ({
                     onChange={handleInputChange}
                   >
                     <option value="">Sin proveedor asignado</option>
-                    {providers
-                      .filter(p => p.activo !== false)
-                      .map(provider => (
-                        <option key={provider.id} value={provider.id}>
-                          {provider.nombre}
-                        </option>
-                      ))}
+                    {providers && providers.length > 0 ? (
+                      providers
+                        .filter(provider => provider.activo !== false)
+                        .map(provider => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.empresa}
+                            {provider.contacto ? ` - ${provider.contacto}` : ''}
+                          </option>
+                        ))
+                    ) : (
+                      <option disabled>No hay proveedores disponibles</option>
+                    )}
                   </Form.Select>
+                  <Form.Text className="text-muted">
+                    {providers && providers.length > 0 
+                      ? `Selecciona el proveedor de este producto (${providers.length} disponibles)`
+                      : 'No hay proveedores. Crea uno en Gestión de Proveedores.'
+                    }
+                  </Form.Text>
                 </Form.Group>
               </Col>
             </Row>
