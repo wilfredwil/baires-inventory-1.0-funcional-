@@ -748,22 +748,6 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack, user, userRo
 
               {/* Botones de acción */}
               <div className="mt-4 d-print-none">
-                <Button 
-                  variant="outline-primary" 
-                  onClick={handlePrint}
-                  className="me-2"
-                >
-                  <FaPrint className="me-1" />
-                  Imprimir
-                </Button>
-                <Button 
-                  variant="outline-secondary" 
-                  onClick={downloadAsText}
-                  className="me-2"
-                >
-                  <FaDownload className="me-1" />
-                  Descargar
-                </Button>
                 {onBack && (
                   <Button variant="secondary" onClick={onBack}>
                     <FaArrowLeft className="me-1" />
