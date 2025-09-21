@@ -41,6 +41,55 @@ const AppLayout = ({
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [showNotifications, setShowNotifications] = useState(false);
 
+  // CORRECCIÓN: Funciones para avatar automático
+  const generateUserAvatar = (user, size = 40) => {
+    const name = user?.displayName || user?.email?.split('@')[0] || 'Usuario';
+    const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    
+    const colors = [
+      '#e74c3c', '#3498db', '#2ecc71', '#f39c12', 
+      '#9b59b6', '#1abc9c', '#34495e', '#e67e22'
+    ];
+    
+    const colorIndex = name.length % colors.length;
+    const backgroundColor = colors[colorIndex];
+    
+    const svg = `
+      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="${size/2}" cy="${size/2}" r="${size/2}" fill="${backgroundColor}"/>
+        <text x="${size/2}" y="${size/2 + size/6}" text-anchor="middle" fill="white" 
+              font-family="Arial, sans-serif" font-size="${size/3}" font-weight="bold">${initials}</text>
+      </svg>
+    `;
+    
+    return `data:image/svg+xml;base64,${btoa(svg)}`;
+  };
+
+  const getUserImageSrc = () => {
+    if (user?.photoURL) {
+      return user.photoURL;
+    }
+    return generateUserAvatar(user, 40);
+  };
+
+  // CORRECCIÓN: Función para mapear nombres de roles
+  const getRoleDisplayName = (role) => {
+    const roleMap = {
+      admin: 'Administrador',
+      manager: 'Gerente', 
+      bartender: 'Bartender',
+      waiter: 'Mesero',
+      server: 'Mesero',
+      cocinero: 'Cocinero',
+      chef: 'Chef',
+      host: 'Anfitrión',
+      runner: 'Runner',
+      busser: 'Busser'
+    };
+    
+    return roleMap[role] || 'Sin rol asignado';
+  };
+
   // Manejar cambio de tamaño de ventana
   useEffect(() => {
     const handleResize = () => {
@@ -264,13 +313,11 @@ const AppLayout = ({
                     onMouseEnter={(e) => {
                       if (!isDisabled && !isActive) {
                         e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                        e.currentTarget.style.borderLeft = '3px solid rgba(251, 191, 36, 0.5)';
                       }
                     }}
                     onMouseLeave={(e) => {
                       if (!isDisabled && !isActive) {
                         e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.borderLeft = '3px solid transparent';
                       }
                     }}
                   >
@@ -281,10 +328,9 @@ const AppLayout = ({
                         background: '#ef4444',
                         color: 'white',
                         borderRadius: '10px',
-                        padding: '2px 6px',
+                        padding: '2px 8px',
                         fontSize: '0.7rem',
-                        minWidth: '18px',
-                        textAlign: 'center'
+                        fontWeight: 600
                       }}>
                         {item.badge}
                       </span>
@@ -378,8 +424,8 @@ const AppLayout = ({
                  currentView === 'users' ? 'Gestión de Personal' :
                  currentView === 'providers' ? 'Proveedores' :
                  currentView === 'employee-directory' ? 'Directorio' :
-                  currentView === 'personal' ? 'Mi Perfil' :
-currentView}
+                 currentView === 'personal' ? 'Mi Perfil' :
+                 currentView}
               </span>
             </div>
           </div>
@@ -455,19 +501,17 @@ currentView}
                   border: '1px solid #e2e8f0',
                   cursor: 'pointer'
                 }}>
+                  {/* CORRECCIÓN: Avatar con imagen generada automáticamente */}
                   <div style={{
-                    width: '35px',
-                    height: '35px',
+                    width: '40px',
+                    height: '40px',
                     borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
-                    color: 'white',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 600,
-                    fontSize: '0.9rem'
+                    backgroundColor: 'transparent',
+                    backgroundImage: `url("${getUserImageSrc()}")`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                    border: '2px solid #e2e8f0'
                   }}>
-                    {user?.displayName?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || 'U'}
                   </div>
                   <div style={{
                     display: 'flex',
@@ -478,30 +522,25 @@ currentView}
                       {user?.displayName || user?.email?.split('@')[0] || 'Usuario'}
                     </div>
                     <div style={{ color: '#64748b', textTransform: 'capitalize' }}>
-                      {userRole === 'admin' ? 'Administrador' :
-                       userRole === 'manager' ? 'Gerente' :
-                       userRole === 'bartender' ? 'Bartender' :
-                       userRole === 'cocinero' ? 'Cocinero' :
-                       userRole}
+                      {getRoleDisplayName(userRole)}
                     </div>
                   </div>
                   <FaChevronDown style={{ fontSize: '0.8rem', color: '#64748b' }} />
                 </div>
               </Dropdown.Toggle>
 
-              
-                <Dropdown.Menu>
-  <Dropdown.Item 
-    href="#" 
-    onClick={(e) => {
-      e.preventDefault();
-      console.log('Click en Mi Perfil'); // Para debug
-      onNavigate('personal');
-    }}
-  >
-    <FaUser className="me-2" />
-    Mi Perfil
-  </Dropdown.Item>
+              <Dropdown.Menu>
+                <Dropdown.Item 
+                  href="#" 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    console.log('Click en Mi Perfil'); // Para debug
+                    onNavigate('personal');
+                  }}
+                >
+                  <FaUser className="me-2" />
+                  Mi Perfil
+                </Dropdown.Item>
                 <Dropdown.Item href="#" onClick={(e) => e.preventDefault()}>
                   <FaCog className="me-2" />
                   Configuración

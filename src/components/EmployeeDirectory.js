@@ -1,4 +1,4 @@
-// src/components/EmployeeDirectory.js
+// src/components/EmployeeDirectory.js - ARCHIVO COMPLETO CORREGIDO
 import React, { useState, useEffect } from 'react';
 import { 
   Modal, 
@@ -61,6 +61,56 @@ const EmployeeDirectory = ({ show, onHide, user, userRole }) => {
   // Estados del modal de perfil
   const [showProfile, setShowProfile] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+
+  // CORRECCIÓN: Funciones para avatar automático
+  const generateEmployeeAvatar = (employee, size = 60) => {
+    const name = employee.displayName || 
+                 `${employee.firstName || ''} ${employee.lastName || ''}`.trim() ||
+                 employee.email?.split('@')[0] ||
+                 'Usuario';
+                 
+    const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    
+    const colors = [
+      '#e74c3c', '#3498db', '#2ecc71', '#f39c12', 
+      '#9b59b6', '#1abc9c', '#34495e', '#e67e22'
+    ];
+    
+    const colorIndex = name.length % colors.length;
+    const backgroundColor = colors[colorIndex];
+    
+    const svg = `
+      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="${size/2}" cy="${size/2}" r="${size/2}" fill="${backgroundColor}"/>
+        <text x="${size/2}" y="${size/2 + size/6}" text-anchor="middle" fill="white" 
+              font-family="Arial, sans-serif" font-size="${size/3}" font-weight="bold">${initials}</text>
+      </svg>
+    `;
+    
+    return `data:image/svg+xml;base64,${btoa(svg)}`;
+  };
+
+  const getEmployeeImageSrc = (employee) => {
+    return employee.profileImage || generateEmployeeAvatar(employee, 60);
+  };
+
+  // CORRECCIÓN: Función para mapear nombres de roles
+  const getRoleDisplayName = (role) => {
+    const roleMap = {
+      admin: 'Admin',
+      manager: 'Gerente', 
+      bartender: 'Bartender',
+      waiter: 'Mesero',
+      server: 'Mesero',
+      cocinero: 'Cocinero',
+      chef: 'Chef',
+      host: 'Anfitrión',
+      runner: 'Runner',
+      busser: 'Busser'
+    };
+    
+    return roleMap[role] || 'Sin rol';
+  };
 
   // Cargar empleados
   useEffect(() => {
@@ -180,6 +230,9 @@ const EmployeeDirectory = ({ show, onHide, user, userRole }) => {
       case 'manager': return 'primary';
       case 'bartender': return 'success';
       case 'waiter': return 'warning';
+      case 'server': return 'warning';
+      case 'cocinero': return 'info';
+      case 'chef': return 'info';
       default: return 'secondary';
     }
   };
@@ -309,44 +362,29 @@ const EmployeeDirectory = ({ show, onHide, user, userRole }) => {
                         className="mb-3"
                       >
                         <option value="">Todos los estados</option>
-                        <option value="active">Activos</option>
-                        <option value="inactive">Inactivos</option>
-                        <option value="vacation">En Vacaciones</option>
-                        <option value="sick">Licencia Médica</option>
+                        <option value="active">Activo</option>
+                        <option value="inactive">Inactivo</option>
+                        <option value="vacation">Vacaciones</option>
+                        <option value="sick">Licencia</option>
                       </Form.Select>
                     </Col>
                     <Col md={2}>
-                      <Button variant="outline-secondary" onClick={resetFilters} className="w-100 mb-3">
-                        <FaFilter className="me-1" />
-                        Limpiar
-                      </Button>
-                    </Col>
-                  </Row>
-
-                  <Row>
-                    <Col>
-                      <div className="d-flex gap-2 align-items-center">
-                        <span className="small text-muted">Ordenar por:</span>
+                      <div className="d-flex gap-2">
+                        <Button 
+                          variant="outline-secondary" 
+                          size="sm"
+                          onClick={resetFilters}
+                        >
+                          <FaFilter className="me-1" />
+                          Reset
+                        </Button>
                         <Button
-                          variant={sortBy === 'firstName' ? 'primary' : 'outline-primary'}
+                          variant="outline-primary"
                           size="sm"
                           onClick={() => handleSort('firstName')}
                         >
-                          Nombre {sortBy === 'firstName' && (sortOrder === 'asc' ? <FaSortAlphaDown /> : <FaSortAlphaUp />)}
-                        </Button>
-                        <Button
-                          variant={sortBy === 'department' ? 'primary' : 'outline-primary'}
-                          size="sm"
-                          onClick={() => handleSort('department')}
-                        >
-                          Departamento {sortBy === 'department' && (sortOrder === 'asc' ? <FaSortAlphaDown /> : <FaSortAlphaUp />)}
-                        </Button>
-                        <Button
-                          variant={sortBy === 'startDate' ? 'primary' : 'outline-primary'}
-                          size="sm"
-                          onClick={() => handleSort('startDate')}
-                        >
-                          Antigüedad {sortBy === 'startDate' && (sortOrder === 'asc' ? <FaSortAlphaDown /> : <FaSortAlphaUp />)}
+                          {sortBy === 'firstName' && sortOrder === 'asc' ? 
+                            <FaSortAlphaUp /> : <FaSortAlphaDown />}
                         </Button>
                       </div>
                     </Col>
@@ -377,12 +415,16 @@ const EmployeeDirectory = ({ show, onHide, user, userRole }) => {
                           {/* Header con foto y info básica */}
                           <div className="d-flex align-items-center mb-3">
                             <div className="me-3">
+                              {/* CORRECCIÓN: Imagen con avatar automático */}
                               <Image
-                                src={employee.profileImage || '/api/placeholder/60/60'}
+                                src={getEmployeeImageSrc(employee)}
                                 roundedCircle
                                 width={60}
                                 height={60}
                                 style={{ objectFit: 'cover' }}
+                                onError={(e) => {
+                                  e.target.src = generateEmployeeAvatar(employee, 60);
+                                }}
                               />
                             </div>
                             <div className="flex-grow-1">
@@ -391,9 +433,7 @@ const EmployeeDirectory = ({ show, onHide, user, userRole }) => {
                               </h6>
                               <div className="d-flex flex-wrap gap-1 mb-1">
                                 <Badge bg={getRoleColor(employee.role)}>
-                                  {employee.role === 'admin' ? 'Admin' :
-                                   employee.role === 'manager' ? 'Gerente' :
-                                   employee.role === 'bartender' ? 'Bartender' : 'Mesero'}
+                                  {getRoleDisplayName(employee.role)}
                                 </Badge>
                                 <Badge bg={getStatusColor(employee.workInfo?.status)}>
                                   {getStatusText(employee.workInfo?.status)}

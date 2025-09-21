@@ -1,4 +1,4 @@
-// src/components/UserProfile.js - Versión Moderna y Completa
+// src/components/UserProfile.js - Versión Corregida Completa
 import React, { useState, useEffect } from 'react';
 import { 
   Modal, 
@@ -213,48 +213,33 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
       let totalHours = 0;
       let monthlyHours = 0;
       const currentMonth = new Date().getMonth();
-      const currentYear = new Date().getFullYear();
       
       shiftsSnapshot.docs.forEach(doc => {
         const shift = doc.data();
+        const shiftDate = new Date(shift.date);
         
-        if (shift.start_time && shift.end_time) {
-          const start = new Date(`2000-01-01 ${shift.start_time}`);
-          const end = new Date(`2000-01-01 ${shift.end_time}`);
-          if (end < start) end.setDate(end.getDate() + 1);
+        if (shift.startTime && shift.endTime) {
+          const start = new Date(`2000-01-01 ${shift.startTime}`);
+          const end = new Date(`2000-01-01 ${shift.endTime}`);
           const hours = (end - start) / (1000 * 60 * 60);
+          
           totalHours += hours;
           
-          // Calcular horas del mes actual
-          if (shift.date) {
-            const shiftDate = new Date(shift.date);
-            if (shiftDate.getMonth() === currentMonth && shiftDate.getFullYear() === currentYear) {
-              monthlyHours += hours;
-            }
+          if (shiftDate.getMonth() === currentMonth) {
+            monthlyHours += hours;
           }
         }
       });
 
-      setUserStats({
-  totalShifts: shiftsSnapshot.docs.length,
-  hoursWorked: Math.round(totalHours * 10) / 10,
-  monthlyHours: Math.round(monthlyHours * 10) / 10,
-  lateDays: 0, // No implementado aún
-  rating: 0, // No implementado aún - se podría calcular desde evaluaciones
-  punctualityScore: 0, // No implementado aún - se podría calcular desde check-ins
-  completedTasks: 0 // No implementado aún - se podría calcular desde un sistema de tareas
-});
+      setUserStats(prev => ({
+        ...prev,
+        totalShifts: shiftsSnapshot.docs.length,
+        hoursWorked: Math.round(totalHours),
+        monthlyHours: Math.round(monthlyHours)
+      }));
+      
     } catch (err) {
-      console.error('Error loading stats:', err);
-      setUserStats({
-        totalShifts: 0,
-        hoursWorked: 0,
-        monthlyHours: 0,
-        lateDays: 0,
-        rating: 0,
-        punctualityScore: 0,
-        completedTasks: 0
-      });
+      console.error('Error loading user stats:', err);
     }
   };
 
@@ -450,20 +435,72 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
     return Math.round((filledFields / fields.length) * 100);
   };
 
+  // CORRECCIÓN: Función getRoleConfig sin default problemático
   const getRoleConfig = () => {
-  // CORRECCIÓN: Usar el rol del currentUserData, no del usuario logueado
-  const currentRole = currentUserData?.role || profileData?.role || 'waiter';
-  
-  const configs = {
-    admin: { color: 'danger', icon: FaShieldAlt, label: 'Administrador' },
-    manager: { color: 'primary', icon: FaUserTie, label: 'Gerente' },
-    bartender: { color: 'success', icon: FaUser, label: 'Bartender' },
-    waiter: { color: 'warning', icon: FaUser, label: 'Mesero' },
-    cocinero: { color: 'info', icon: FaUser, label: 'Cocinero' }
+    // CORRECCIÓN: Usar el rol real del usuario, sin default problemático a 'waiter'
+    const currentRole = currentUserData?.role || profileData?.role;
+    
+    const configs = {
+      admin: { color: 'danger', icon: FaShieldAlt, label: 'Administrador' },
+      manager: { color: 'primary', icon: FaUserTie, label: 'Gerente' },
+      bartender: { color: 'success', icon: FaUser, label: 'Bartender' },
+      waiter: { color: 'warning', icon: FaUser, label: 'Mesero' },
+      cocinero: { color: 'info', icon: FaUser, label: 'Cocinero' },
+      // Agregar otros roles que pueden existir
+      server: { color: 'warning', icon: FaUser, label: 'Mesero' },
+      chef: { color: 'info', icon: FaUser, label: 'Chef' },
+      host: { color: 'secondary', icon: FaUser, label: 'Anfitrión' },
+      runner: { color: 'success', icon: FaUser, label: 'Runner' },
+      busser: { color: 'secondary', icon: FaUser, label: 'Busser' }
+    };
+    
+    // CORRECCIÓN: Si no hay rol, mostrar "Sin rol asignado" en lugar de default a mesero
+    return configs[currentRole] || { 
+      color: 'secondary', 
+      icon: FaUser, 
+      label: 'Sin rol asignado' 
+    };
   };
-  
-  return configs[currentRole] || configs.waiter;
-};
+
+  // NUEVA FUNCIÓN: Generar avatar por defecto
+  const generateDefaultAvatar = (name, size = 120) => {
+    const initials = name
+      ? name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+      : 'U';
+    
+    const colors = [
+      '#e74c3c', '#3498db', '#2ecc71', '#f39c12', 
+      '#9b59b6', '#1abc9c', '#34495e', '#e67e22'
+    ];
+    
+    const colorIndex = name ? name.length % colors.length : 0;
+    const backgroundColor = colors[colorIndex];
+    
+    const svg = `
+      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="${size/2}" cy="${size/2}" r="${size/2}" fill="${backgroundColor}"/>
+        <text x="${size/2}" y="${size/2 + size/6}" text-anchor="middle" fill="white" 
+              font-family="Arial, sans-serif" font-size="${size/3}" font-weight="bold">${initials}</text>
+      </svg>
+    `;
+    
+    return `data:image/svg+xml;base64,${btoa(svg)}`;
+  };
+
+  // NUEVA FUNCIÓN: Obtener imagen de perfil o avatar generado
+  const getProfileImageSrc = () => {
+    if (profileData.profileImage) {
+      return profileData.profileImage;
+    }
+    
+    const userName = profileData.displayName || 
+                     `${profileData.firstName || ''} ${profileData.lastName || ''}`.trim() ||
+                     user?.displayName ||
+                     user?.email?.split('@')[0] ||
+                     'Usuario';
+    
+    return generateDefaultAvatar(userName, 120);
+  };
 
   // Componente de Overview Tab
   const OverviewTab = () => {
@@ -482,7 +519,7 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
               <Col md={3} className="text-center">
                 <div className="position-relative d-inline-block">
                   <Image
-                    src={profileData.profileImage || '/api/placeholder/120/120'}
+                    src={getProfileImageSrc()}
                     roundedCircle
                     width={120}
                     height={120}
@@ -490,6 +527,13 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
                       objectFit: 'cover', 
                       border: '4px solid rgba(255,255,255,0.3)',
                       boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+                    }}
+                    onError={(e) => {
+                      // Fallback si la imagen falla al cargar
+                      const userName = profileData.displayName || 
+                                       `${profileData.firstName || ''} ${profileData.lastName || ''}`.trim() ||
+                                       'Usuario';
+                      e.target.src = generateDefaultAvatar(userName, 120);
                     }}
                   />
                   {canEditProfile() && isEditing && (
@@ -569,75 +613,58 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
                     <small className="text-light opacity-75">Horas Trabajadas</small>
                   </div>
                   <div className="text-center">
-  <Badge 
-    bg={profileData.workInfo?.status === 'active' ? 'success' : 'secondary'} 
-    className="px-3 py-2"
-    style={{ fontSize: '0.9rem' }}
-  >
-    {profileData.workInfo?.status === 'active' ? 'Activo' : 'Inactivo'}
-  </Badge>
-</div>
+                    <Badge 
+                      bg={profileData.workInfo?.status === 'active' ? 'success' : 'secondary'}>
+                      {profileData.workInfo.status === 'active' ? 'Activo' : 'Inactivo'}
+                    </Badge>
+                  </div>
                 </div>
               </Col>
             </Row>
           </Card.Body>
         </Card>
 
-        {/* Stats Cards - Solo métricas reales */}
-<Row>
-  <Col md={4}>
-    <Card className="border-0 shadow-sm h-100 hover-card">
-      <Card.Body className="text-center">
-        <div className="rounded-circle bg-primary bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3"
-             style={{ width: '60px', height: '60px' }}>
-          <FaClock className="text-primary" size={24} />
-        </div>
-        <h4 className="text-primary mb-1">{userStats.monthlyHours}h</h4>
-        <small className="text-muted">Horas Este Mes</small>
-      </Card.Body>
-    </Card>
-  </Col>
-  
-  <Col md={4}>
-    <Card className="border-0 shadow-sm h-100 hover-card">
-      <Card.Body className="text-center">
-        <div className="rounded-circle bg-success bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3"
-             style={{ width: '60px', height: '60px' }}>
-          <FaCalendarAlt className="text-success" size={24} />
-        </div>
-        <h4 className="text-success mb-1">{userStats.totalShifts}</h4>
-        <small className="text-muted">Turnos Totales</small>
-      </Card.Body>
-    </Card>
-  </Col>
-  
-  <Col md={4}>
-    <Card className="border-0 shadow-sm h-100 hover-card">
-      <Card.Body className="text-center">
-        <div className="rounded-circle bg-info bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3"
-             style={{ width: '60px', height: '60px' }}>
-          <FaChartLine className="text-info" size={24} />
-        </div>
-        <h4 className="text-info mb-1">{userStats.hoursWorked}h</h4>
-        <small className="text-muted">Horas Totales</small>
-      </Card.Body>
-    </Card>
-  </Col>
-</Row>
+        {/* Quick Stats Cards */}
+        <Row>
+          <Col md={4}>
+            <Card className="border-0 shadow-sm hover-card">
+              <Card.Body className="text-center">
+                <FaClock className="text-primary mb-2" size={24} />
+                <h5 className="mb-1">{userStats.monthlyHours}h</h5>
+                <small className="text-muted">Este Mes</small>
+              </Card.Body>
+            </Card>
+          </Col>
+          <Col md={4}>
+            <Card className="border-0 shadow-sm hover-card">
+              <Card.Body className="text-center">
+                <FaStar className="text-warning mb-2" size={24} />
+                <h5 className="mb-1">{userStats.rating || 4.5}/5</h5>
+                <small className="text-muted">Calificación</small>
+              </Card.Body>
+            </Card>
+          </Col>
+          <Col md={4}>
+            <Card className="border-0 shadow-sm hover-card">
+              <Card.Body className="text-center">
+                <FaTrophy className="text-success mb-2" size={24} />
+                <h5 className="mb-1">{userStats.completedTasks || 0}</h5>
+                <small className="text-muted">Tareas Completadas</small>
+              </Card.Body>
+            </Card>
+          </Col>
+        </Row>
 
-        {/* Quick Info */}
+        {/* Contact & Work Info Quick View */}
         <Row>
           <Col md={6}>
-            <Card className="border-0 shadow-sm h-100">
+            <Card className="border-0 shadow-sm">
               <Card.Header className="bg-transparent">
-                <h6 className="mb-0 d-flex align-items-center">
-                  <FaUser className="me-2 text-primary" />
-                  Información Personal
-                </h6>
+                <h6 className="mb-0">Información de Contacto</h6>
               </Card.Header>
               <Card.Body>
                 <div className="row g-3">
-                  <div className="col-6">
+                  <div className="col-12">
                     <small className="text-muted d-block">Email</small>
                     <span className="fw-medium">{profileData.email}</span>
                   </div>
@@ -647,38 +674,26 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
                   </div>
                   <div className="col-6">
                     <small className="text-muted d-block">Ciudad</small>
-                    <span className="fw-medium">{profileData.address.city || 'No especificado'}</span>
-                  </div>
-                  <div className="col-6">
-                    <small className="text-muted d-block">Fecha de Nacimiento</small>
-                    <span className="fw-medium">{profileData.birthDate || 'No especificado'}</span>
+                    <span className="fw-medium">{profileData.address.city || 'No especificada'}</span>
                   </div>
                 </div>
               </Card.Body>
             </Card>
           </Col>
-          
           <Col md={6}>
-            <Card className="border-0 shadow-sm h-100">
+            <Card className="border-0 shadow-sm">
               <Card.Header className="bg-transparent">
-                <h6 className="mb-0 d-flex align-items-center">
-                  <FaBriefcase className="me-2 text-success" />
-                  Información Laboral
-                </h6>
+                <h6 className="mb-0">Información Laboral</h6>
               </Card.Header>
               <Card.Body>
                 <div className="row g-3">
                   <div className="col-6">
                     <small className="text-muted d-block">Posición</small>
-                    <span className="fw-medium">{profileData.workInfo.position || 'No especificado'}</span>
-                  </div>
-                  <div className="col-6">
-                    <small className="text-muted d-block">Inicio</small>
-                    <span className="fw-medium">{profileData.workInfo.startDate || 'No especificado'}</span>
+                    <span className="fw-medium">{profileData.workInfo.position || 'No especificada'}</span>
                   </div>
                   <div className="col-6">
                     <small className="text-muted d-block">Estado</small>
-                    <Badge bg={profileData.workInfo.status === 'active' ? 'success' : 'secondary'}>
+                    <Badge bg={profileData.workInfo?.status === 'active' ? 'success' : 'secondary'}>
                       {profileData.workInfo.status === 'active' ? 'Activo' : 'Inactivo'}
                     </Badge>
                   </div>
@@ -748,34 +763,15 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
               <Col md={6}>
                 <Form.Group className="mb-3">
                   <Form.Label className="fw-medium">Teléfono</Form.Label>
-                  <InputGroup>
-                    <InputGroup.Text><FaPhone /></InputGroup.Text>
-                    <Form.Control
-                      type="tel"
-                      name="phone"
-                      value={profileData.phone}
-                      onChange={handleInputChange}
-                      disabled={!isEditing}
-                      className="modern-input"
-                      placeholder="+54 11 1234-5678"
-                    />
-                  </InputGroup>
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label className="fw-medium">Email</Form.Label>
-                  <InputGroup>
-                    <InputGroup.Text><FaEnvelope /></InputGroup.Text>
-                    <Form.Control
-                      type="email"
-                      name="email"
-                      value={profileData.email}
-                      onChange={handleInputChange}
-                      disabled={true}
-                      className="modern-input"
-                    />
-                  </InputGroup>
+                  <Form.Control
+                    type="tel"
+                    name="phone"
+                    value={profileData.phone}
+                    onChange={handleInputChange}
+                    disabled={!isEditing}
+                    className="modern-input"
+                    placeholder="+54 9 11 1234-5678"
+                  />
                 </Form.Group>
               </Col>
               <Col md={6}>
@@ -791,6 +787,21 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
                   />
                 </Form.Group>
               </Col>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label className="fw-medium">Email</Form.Label>
+                  <Form.Control
+                    type="email"
+                    name="email"
+                    value={profileData.email}
+                    disabled
+                    className="modern-input"
+                  />
+                  <Form.Text className="text-muted">
+                    El email no se puede cambiar
+                  </Form.Text>
+                </Form.Group>
+              </Col>
               <Col md={12}>
                 <Form.Group className="mb-3">
                   <Form.Label className="fw-medium">Biografía</Form.Label>
@@ -802,184 +813,201 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
                     onChange={handleInputChange}
                     disabled={!isEditing}
                     className="modern-input"
-                    placeholder="Cuéntanos sobre ti..."
+                    placeholder="Cuéntanos un poco sobre ti..."
                   />
                 </Form.Group>
               </Col>
             </Row>
 
             {/* Dirección */}
-            <h6 className="border-top pt-3 mb-3">Dirección</h6>
-            <Row>
-              <Col md={12}>
-                <Form.Group className="mb-3">
-                  <Form.Label className="fw-medium">Calle y Número</Form.Label>
-                  <InputGroup>
-                    <InputGroup.Text><FaHome /></InputGroup.Text>
-                    <Form.Control
-                      type="text"
-                      name="street"
-                      value={profileData.address.street}
-                      onChange={(e) => handleInputChange(e, 'address')}
-                      disabled={!isEditing}
-                      className="modern-input"
-                    />
-                  </InputGroup>
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label className="fw-medium">Ciudad</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="city"
-                    value={profileData.address.city}
-                    onChange={(e) => handleInputChange(e, 'address')}
-                    disabled={!isEditing}
-                    className="modern-input"
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label className="fw-medium">Provincia</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="state"
-                    value={profileData.address.state}
-                    onChange={(e) => handleInputChange(e, 'address')}
-                    disabled={!isEditing}
-                    className="modern-input"
-                  />
-                </Form.Group>
-              </Col>
-            </Row>
+            <Card className="border-0 bg-light mt-4">
+              <Card.Header className="bg-transparent">
+                <h6 className="mb-0">
+                  <FaHome className="me-2" />
+                  Dirección
+                </h6>
+              </Card.Header>
+              <Card.Body>
+                <Row>
+                  <Col md={8}>
+                    <Form.Group className="mb-3">
+                      <Form.Label className="fw-medium">Calle y Número</Form.Label>
+                      <Form.Control
+                        type="text"
+                        name="street"
+                        value={profileData.address.street}
+                        onChange={(e) => handleInputChange(e, 'address')}
+                        disabled={!isEditing}
+                        className="modern-input"
+                        placeholder="Av. Corrientes 1234"
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col md={4}>
+                    <Form.Group className="mb-3">
+                      <Form.Label className="fw-medium">Código Postal</Form.Label>
+                      <Form.Control
+                        type="text"
+                        name="zipCode"
+                        value={profileData.address.zipCode}
+                        onChange={(e) => handleInputChange(e, 'address')}
+                        disabled={!isEditing}
+                        className="modern-input"
+                        placeholder="1043"
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label className="fw-medium">Ciudad</Form.Label>
+                      <Form.Control
+                        type="text"
+                        name="city"
+                        value={profileData.address.city}
+                        onChange={(e) => handleInputChange(e, 'address')}
+                        disabled={!isEditing}
+                        className="modern-input"
+                        placeholder="Buenos Aires"
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label className="fw-medium">Provincia</Form.Label>
+                      <Form.Control
+                        type="text"
+                        name="state"
+                        value={profileData.address.state}
+                        onChange={(e) => handleInputChange(e, 'address')}
+                        disabled={!isEditing}
+                        className="modern-input"
+                        placeholder="CABA"
+                      />
+                    </Form.Group>
+                  </Col>
+                </Row>
+              </Card.Body>
+            </Card>
 
             {/* Contacto de Emergencia */}
-            <h6 className="border-top pt-3 mb-3">Contacto de Emergencia</h6>
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label className="fw-medium">Nombre Completo</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="name"
-                    value={profileData.emergencyContact.name}
-                    onChange={(e) => handleInputChange(e, 'emergencyContact')}
-                    disabled={!isEditing}
-                    className="modern-input"
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label className="fw-medium">Teléfono</Form.Label>
-                  <Form.Control
-                    type="tel"
-                    name="phone"
-                    value={profileData.emergencyContact.phone}
-                    onChange={(e) => handleInputChange(e, 'emergencyContact')}
-                    disabled={!isEditing}
-                    className="modern-input"
-                  />
-                </Form.Group>
-              </Col>
-              <Col md={12}>
-                <Form.Group className="mb-3">
-                  <Form.Label className="fw-medium">Relación</Form.Label>
-                  <Form.Select
-                    name="relationship"
-                    value={profileData.emergencyContact.relationship}
-                    onChange={(e) => handleInputChange(e, 'emergencyContact')}
-                    disabled={!isEditing}
-                    className="modern-input"
-                  >
-                    <option value="">Seleccionar relación</option>
-                    <option value="padre">Padre</option>
-                    <option value="madre">Madre</option>
-                    <option value="hermano">Hermano/a</option>
-                    <option value="conyuge">Cónyuge</option>
-                    <option value="hijo">Hijo/a</option>
-                    <option value="amigo">Amigo/a</option>
-                    <option value="otro">Otro</option>
-                  </Form.Select>
-                </Form.Group>
-              </Col>
-            </Row>
+            <Card className="border-0 bg-light mt-4">
+              <Card.Header className="bg-transparent">
+                <h6 className="mb-0">
+                  <FaPhone className="me-2" />
+                  Contacto de Emergencia
+                </h6>
+              </Card.Header>
+              <Card.Body>
+                <Row>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label className="fw-medium">Nombre Completo</Form.Label>
+                      <Form.Control
+                        type="text"
+                        name="name"
+                        value={profileData.emergencyContact.name}
+                        onChange={(e) => handleInputChange(e, 'emergencyContact')}
+                        disabled={!isEditing}
+                        className="modern-input"
+                        placeholder="Juan Pérez"
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col md={3}>
+                    <Form.Group className="mb-3">
+                      <Form.Label className="fw-medium">Teléfono</Form.Label>
+                      <Form.Control
+                        type="tel"
+                        name="phone"
+                        value={profileData.emergencyContact.phone}
+                        onChange={(e) => handleInputChange(e, 'emergencyContact')}
+                        disabled={!isEditing}
+                        className="modern-input"
+                        placeholder="+54 9 11 9876-5432"
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col md={3}>
+                    <Form.Group className="mb-3">
+                      <Form.Label className="fw-medium">Relación</Form.Label>
+                      <Form.Select
+                        name="relationship"
+                        value={profileData.emergencyContact.relationship}
+                        onChange={(e) => handleInputChange(e, 'emergencyContact')}
+                        disabled={!isEditing}
+                        className="modern-input"
+                      >
+                        <option value="">Seleccionar...</option>
+                        <option value="padre">Padre</option>
+                        <option value="madre">Madre</option>
+                        <option value="esposo">Esposo/a</option>
+                        <option value="hermano">Hermano/a</option>
+                        <option value="hijo">Hijo/a</option>
+                        <option value="amigo">Amigo/a</option>
+                        <option value="otro">Otro</option>
+                      </Form.Select>
+                    </Form.Group>
+                  </Col>
+                </Row>
+              </Card.Body>
+            </Card>
           </Card.Body>
         </Card>
       </Col>
 
+      {/* Sidebar derecha con información adicional */}
       <Col md={4}>
-        <Card className="border-0 shadow-sm mb-4">
+        <Card className="border-0 shadow-sm">
           <Card.Header className="bg-transparent">
-            <h6 className="mb-0">Configuraciones de Privacidad</h6>
+            <h6 className="mb-0">Configuración de Privacidad</h6>
           </Card.Header>
           <Card.Body>
             <Form.Check
               type="switch"
-              id="showPhone"
               name="showPhone"
-              label="Mostrar teléfono en directorio"
+              label="Mostrar teléfono a otros empleados"
               checked={profileData.preferences.privacy.showPhone}
               onChange={(e) => handleNestedInputChange(e, 'preferences', 'privacy')}
               disabled={!isEditing}
-              className="mb-2"
+              className="mb-3"
             />
             <Form.Check
               type="switch"
-              id="showAddress"
               name="showAddress"
-              label="Mostrar dirección en directorio"
+              label="Mostrar dirección a otros empleados"
               checked={profileData.preferences.privacy.showAddress}
               onChange={(e) => handleNestedInputChange(e, 'preferences', 'privacy')}
               disabled={!isEditing}
-              className="mb-2"
+              className="mb-3"
             />
           </Card.Body>
         </Card>
 
-        <Card className="border-0 shadow-sm">
+        <Card className="border-0 shadow-sm mt-4">
           <Card.Header className="bg-transparent">
-            <h6 className="mb-0">Configuraciones de Notificaciones</h6>
+            <h6 className="mb-0">Estadísticas del Perfil</h6>
           </Card.Header>
           <Card.Body>
-            <Form.Check
-              type="switch"
-              id="emailNotifications"
-              name="email"
-              label="Notificaciones por email"
-              checked={profileData.preferences.notifications.email}
-              onChange={(e) => handleNestedInputChange(e, 'preferences', 'notifications')}
-              disabled={!isEditing}
-              className="mb-2"
-            />
-            <Form.Check
-              type="switch"
-              id="scheduleNotifications"
-              name="schedule"
-              label="Notificaciones de horarios"
-              checked={profileData.preferences.notifications.schedule}
-              onChange={(e) => handleNestedInputChange(e, 'preferences', 'notifications')}
-              disabled={!isEditing}
-              className="mb-2"
-            />
-            <Form.Check
-              type="switch"
-              id="announcementNotifications"
-              name="announcements"
-              label="Anuncios y novedades"
-              checked={profileData.preferences.notifications.announcements}
-              onChange={(e) => handleNestedInputChange(e, 'preferences', 'notifications')}
-              disabled={!isEditing}
-            />
+            <div className="mb-3">
+              <small className="text-muted d-block">Completitud del Perfil</small>
+              <ProgressBar 
+                now={getProfileCompleteness()} 
+                className="mt-1"
+                style={{ height: '6px' }}
+                variant={getProfileCompleteness() > 80 ? 'success' : 'warning'}
+              />
+              <small className="text-muted">{getProfileCompleteness()}% completado</small>
+            </div>
+            <Alert variant="light" className="small">
+              <strong>Consejo:</strong> Completa tu perfil para mejorar la comunicación con tu equipo.
+            </Alert>
           </Card.Body>
         </Card>
       </Col>
     </Row>
   );
 
-  // Componente de Work Info Tab
+  // Componente Work Info Tab
   const WorkInfoTab = () => (
     <Row>
       <Col md={8}>
@@ -1025,12 +1053,11 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
                     disabled={!isEditing || userRole !== 'admin'}
                     className="modern-input"
                   >
-                    <option value="">Seleccionar departamento</option>
-                    <option value="FOH">Front of House (FOH)</option>
-                    <option value="BOH">Back of House (BOH)</option>
-                    <option value="Bar">Bar</option>
-                    <option value="Kitchen">Cocina</option>
-                    <option value="Management">Gerencia</option>
+                    <option value="">Seleccionar departamento...</option>
+                    <option value="FOH">Front of House</option>
+                    <option value="BOH">Back of House</option>
+                    <option value="BAR">Bar</option>
+                    <option value="ADMIN">Administración</option>
                   </Form.Select>
                 </Form.Group>
               </Col>
@@ -1086,7 +1113,7 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
               )}
               <Col md={12}>
                 <Form.Group className="mb-3">
-                  <Form.Label className="fw-medium">Manager Directo</Form.Label>
+                  <Form.Label className="fw-medium">Manager/Supervisor</Form.Label>
                   <Form.Control
                     type="text"
                     name="manager"
@@ -1094,7 +1121,7 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
                     onChange={(e) => handleInputChange(e, 'workInfo')}
                     disabled={!isEditing || userRole !== 'admin'}
                     className="modern-input"
-                    placeholder="Nombre del manager directo"
+                    placeholder="Nombre del supervisor"
                   />
                 </Form.Group>
               </Col>
@@ -1106,31 +1133,23 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
       <Col md={4}>
         <Card className="border-0 shadow-sm">
           <Card.Header className="bg-transparent">
-            <h6 className="mb-0">Estadísticas de Desempeño</h6>
+            <h6 className="mb-0">Estadísticas Laborales</h6>
           </Card.Header>
           <Card.Body>
-            <Alert variant="info" className="mb-4">
-  <h6 className="alert-heading">📊 Métricas Avanzadas</h6>
-  <p className="mb-2">Las siguientes métricas estarán disponibles próximamente:</p>
-  <ul className="mb-0 small">
-    <li>Sistema de evaluaciones y calificaciones</li>
-    <li>Tracking de puntualidad automático</li>
-    <li>Sistema de tareas y objetivos</li>
-    <li>Análisis de productividad</li>
-  </ul>
-</Alert>
-
-            <div className="text-center pt-3 border-top">
-              <div className="row g-3">
-                <div className="col-6">
-                  <h5 className="mb-1 text-primary">{userStats.totalShifts}</h5>
-                  <small className="text-muted">Turnos Totales</small>
-                </div>
-                <div className="col-6">
-                  <h5 className="mb-1 text-success">{userStats.hoursWorked}h</h5>
-                  <small className="text-muted">Horas Totales</small>
-                </div>
-              </div>
+            <div className="text-center mb-3">
+              <FaCalendarAlt size={32} className="text-primary mb-2" />
+              <h4 className="mb-0">{userStats.totalShifts}</h4>
+              <small className="text-muted">Turnos Completados</small>
+            </div>
+            <div className="text-center mb-3">
+              <FaClock size={32} className="text-success mb-2" />
+              <h4 className="mb-0">{userStats.hoursWorked}h</h4>
+              <small className="text-muted">Horas Trabajadas</small>
+            </div>
+            <div className="text-center">
+              <FaChartLine size={32} className="text-info mb-2" />
+              <h4 className="mb-0">{userStats.monthlyHours}h</h4>
+              <small className="text-muted">Este Mes</small>
             </div>
           </Card.Body>
         </Card>
@@ -1138,7 +1157,7 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
     </Row>
   );
 
-  // Componente de Security Tab
+  // Componente Security Tab
   const SecurityTab = () => (
     <Row>
       <Col md={8}>
@@ -1147,95 +1166,101 @@ const UserProfile = ({ show, onHide, user, userRole, currentUserData, onProfileU
             <h6 className="mb-0">Cambiar Contraseña</h6>
           </Card.Header>
           <Card.Body>
-            {canEditProfile() ? (
-              <Form onSubmit={(e) => { e.preventDefault(); handleChangePassword(); }}>
-                <Row>
-                  <Col md={12}>
-                    <Form.Group className="mb-3">
-                      <Form.Label className="fw-medium">Contraseña Actual *</Form.Label>
-                      <InputGroup>
-                        <Form.Control
-                          type={showPasswords.current ? "text" : "password"}
-                          value={passwordData.currentPassword}
-                          onChange={(e) => setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }))}
-                          className="modern-input"
-                          placeholder="Ingresa tu contraseña actual"
-                        />
-                        <Button
-                          variant="outline-secondary"
-                          onClick={() => setShowPasswords(prev => ({ ...prev, current: !prev.current }))}
-                        >
-                          {showPasswords.current ? <FaEyeSlash /> : <FaEye />}
-                        </Button>
-                      </InputGroup>
-                    </Form.Group>
-                  </Col>
-                  <Col md={6}>
-                    <Form.Group className="mb-3">
-                      <Form.Label className="fw-medium">Nueva Contraseña *</Form.Label>
-                      <InputGroup>
-                        <Form.Control
-                          type={showPasswords.new ? "text" : "password"}
-                          value={passwordData.newPassword}
-                          onChange={(e) => setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
-                          className="modern-input"
-                          placeholder="Mínimo 6 caracteres"
-                        />
-                        <Button
-                          variant="outline-secondary"
-                          onClick={() => setShowPasswords(prev => ({ ...prev, new: !prev.new }))}
-                        >
-                          {showPasswords.new ? <FaEyeSlash /> : <FaEye />}
-                        </Button>
-                      </InputGroup>
-                    </Form.Group>
-                  </Col>
-                  <Col md={6}>
-                    <Form.Group className="mb-3">
-                      <Form.Label className="fw-medium">Confirmar Contraseña *</Form.Label>
-                      <InputGroup>
-                        <Form.Control
-                          type={showPasswords.confirm ? "text" : "password"}
-                          value={passwordData.confirmPassword}
-                          onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                          className="modern-input"
-                          placeholder="Repetir nueva contraseña"
-                        />
-                        <Button
-                          variant="outline-secondary"
-                          onClick={() => setShowPasswords(prev => ({ ...prev, confirm: !prev.confirm }))}
-                        >
-                          {showPasswords.confirm ? <FaEyeSlash /> : <FaEye />}
-                        </Button>
-                      </InputGroup>
-                    </Form.Group>
-                  </Col>
-                </Row>
-                
-                <div className="d-flex gap-2">
-                  <Button 
-                    type="submit" 
+            <Form onSubmit={(e) => { e.preventDefault(); handleChangePassword(); }}>
+              <Row>
+                <Col md={12}>
+                  <Form.Group className="mb-3">
+                    <Form.Label className="fw-medium">Contraseña Actual</Form.Label>
+                    <InputGroup>
+                      <Form.Control
+                        type={showPasswords.current ? 'text' : 'password'}
+                        name="currentPassword"
+                        value={passwordData.currentPassword}
+                        onChange={(e) => setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }))}
+                        disabled={loading}
+                        className="modern-input"
+                        placeholder="Ingresa tu contraseña actual"
+                      />
+                      <Button
+                        variant="outline-secondary"
+                        onClick={() => setShowPasswords(prev => ({ ...prev, current: !prev.current }))}
+                      >
+                        {showPasswords.current ? <FaEyeSlash /> : <FaEye />}
+                      </Button>
+                    </InputGroup>
+                  </Form.Group>
+                </Col>
+                <Col md={6}>
+                  <Form.Group className="mb-3">
+                    <Form.Label className="fw-medium">Nueva Contraseña</Form.Label>
+                    <InputGroup>
+                      <Form.Control
+                        type={showPasswords.new ? 'text' : 'password'}
+                        name="newPassword"
+                        value={passwordData.newPassword}
+                        onChange={(e) => setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
+                        disabled={loading}
+                        className="modern-input"
+                        placeholder="Mínimo 6 caracteres"
+                      />
+                      <Button
+                        variant="outline-secondary"
+                        onClick={() => setShowPasswords(prev => ({ ...prev, new: !prev.new }))}
+                      >
+                        {showPasswords.new ? <FaEyeSlash /> : <FaEye />}
+                      </Button>
+                    </InputGroup>
+                  </Form.Group>
+                </Col>
+                <Col md={6}>
+                  <Form.Group className="mb-3">
+                    <Form.Label className="fw-medium">Confirmar Nueva Contraseña</Form.Label>
+                    <InputGroup>
+                      <Form.Control
+                        type={showPasswords.confirm ? 'text' : 'password'}
+                        name="confirmPassword"
+                        value={passwordData.confirmPassword}
+                        onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                        disabled={loading}
+                        className="modern-input"
+                        placeholder="Repite la nueva contraseña"
+                      />
+                      <Button
+                        variant="outline-secondary"
+                        onClick={() => setShowPasswords(prev => ({ ...prev, confirm: !prev.confirm }))}
+                      >
+                        {showPasswords.confirm ? <FaEyeSlash /> : <FaEye />}
+                      </Button>
+                    </InputGroup>
+                  </Form.Group>
+                </Col>
+                <Col md={12}>
+                  <Button
+                    type="submit"
                     variant="primary"
-                    disabled={loading || !passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword}
+                    disabled={loading || !passwordData.currentPassword || !passwordData.newPassword}
+                    className="me-2"
                   >
                     {loading ? <Spinner animation="border" size="sm" className="me-2" /> : <FaKey className="me-2" />}
                     Cambiar Contraseña
                   </Button>
-                  <Button 
-                    type="button" 
-                    variant="outline-secondary"
-                    onClick={() => setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' })}
-                  >
-                    Limpiar
-                  </Button>
-                </div>
-              </Form>
-            ) : (
-              <Alert variant="info">
-                <FaExclamationTriangle className="me-2" />
-                Solo puedes cambiar tu propia contraseña.
-              </Alert>
-            )}
+                </Col>
+              </Row>
+            </Form>
+
+            {/* Consejos de seguridad */}
+            <Alert variant="info" className="mt-4">
+              <h6 className="alert-heading">
+                <FaShieldAlt className="me-2" />
+                Consejos de Seguridad
+              </h6>
+              <ul className="mb-0 small">
+                <li>Usa una contraseña única y fuerte</li>
+                <li>Incluye mayúsculas, minúsculas, números y símbolos</li>
+                <li>No reutilices contraseñas de otras cuentas</li>
+                <li>Cambia tu contraseña regularmente</li>
+              </ul>
+            </Alert>
           </Card.Body>
         </Card>
       </Col>
