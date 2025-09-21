@@ -53,86 +53,69 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack, user, userRo
   const getUserDepartment = () => {
     if (!user) return 'FOH';
     
-    // Si es admin, puede cambiar entre departamentos, pero empieza con FOH
-    if (userRole === 'admin') return selectedDepartment;
-    
-    // Obtener departamento del usuario
-    const userDepartment = user.workInfo?.department || user.department;
-    
-    // Si no tiene departamento definido, intentar determinarlo por rol
-    if (!userDepartment) {
-      const fohRoles = ['host', 'hostess', 'server', 'server_senior', 'bartender', 'bartender_head', 'runner', 'food_runner', 'busser', 'manager', 'floor_manager', 'shift_manager'];
-      const bohRoles = ['chef', 'sous_chef', 'line_cook', 'prep_cook', 'cook', 'dishwasher', 'expo'];
-      
-      if (fohRoles.includes(user.role?.toLowerCase())) return 'FOH';
-      if (bohRoles.includes(user.role?.toLowerCase())) return 'BOH';
+    // Si es admin, puede cambiar entre departamentos
+    if (userRole === 'admin' || userRole === 'manager') {
+      return selectedDepartment; // Usar el departamento seleccionado
     }
     
-    return userDepartment || 'FOH'; // Por defecto FOH
+    // Para empleados regulares, usar su departamento asignado
+    return user.workInfo?.department || user.department || 'FOH';
   };
 
-  const scheduleId = getScheduleId();
   const allowedDepartment = getUserDepartment();
 
+  // Cargar datos del horario
   useEffect(() => {
     const loadScheduleData = async () => {
-      const currentScheduleId = getScheduleId(); // Obtener scheduleId local para useEffect
+      const scheduleId = getScheduleId();
       
-      if (!currentScheduleId) {
-        setError('ID de horario no encontrado en la URL');
+      if (!scheduleId) {
+        setError('ID de horario no encontrado');
         setLoading(false);
         return;
       }
 
       try {
-        console.log('Cargando horario con ID:', currentScheduleId);
+        // Cargar horario específico
+        const scheduleDocRef = doc(db, 'schedules', scheduleId);
+        const scheduleSnapshot = await getDoc(scheduleDocRef);
         
-        // Cargar horario publicado
-        const scheduleDoc = await getDoc(doc(db, 'published_schedules', currentScheduleId));
-        
-        if (!scheduleDoc.exists()) {
+        if (!scheduleSnapshot.exists()) {
           setError('Horario no encontrado');
           setLoading(false);
           return;
         }
 
-        const scheduleData = { id: scheduleDoc.id, ...scheduleDoc.data() };
+        const scheduleData = {
+          id: scheduleSnapshot.id,
+          ...scheduleSnapshot.data()
+        };
+        
         setSchedule(scheduleData);
         
-        console.log('Horario cargado:', {
-          title: scheduleData.title,
-          week_start: scheduleData.week_start,
-          week_end: scheduleData.week_end,
-          shifts_included: scheduleData.shifts_included?.length || 0
-        });
+        console.log('Schedule data loaded:', scheduleData);
 
-        // Cargar turnos incluidos con división en lotes para evitar el límite de 30 en consultas IN
+        // Cargar turnos incluidos en el horario
         if (scheduleData.shifts_included && scheduleData.shifts_included.length > 0) {
-          console.log('Buscando turnos con IDs:', scheduleData.shifts_included);
-          
           const allShifts = [];
-          const batchSize = 30; // Límite de Firebase para consultas IN
-          const shiftIds = scheduleData.shifts_included;
           
-          // Dividir los IDs en lotes de 30
-          for (let i = 0; i < shiftIds.length; i += batchSize) {
-            const batch = shiftIds.slice(i, i + batchSize);
-            console.log(`Cargando lote ${Math.floor(i/batchSize) + 1} con ${batch.length} turnos`);
-            
-            const shiftsQuery = query(
+          // Cargar todos los turnos por lotes
+          for (let i = 0; i < scheduleData.shifts_included.length; i += 10) {
+            const batch = scheduleData.shifts_included.slice(i, i + 10);
+            const batchQuery = query(
               collection(db, 'shifts'),
               where('__name__', 'in', batch)
             );
             
-            const shiftsSnapshot = await getDocs(shiftsQuery);
-            const batchShifts = shiftsSnapshot.docs.map(doc => ({
+            const batchSnapshot = await getDocs(batchQuery);
+            const batchShifts = batchSnapshot.docs.map(doc => ({
               id: doc.id,
               ...doc.data()
             }));
             
             allShifts.push(...batchShifts);
           }
-          
+ 
           console.log('Turnos encontrados:', allShifts.length);
           console.log('Turnos detalle:', allShifts.map(s => ({
             id: s.id,
@@ -189,7 +172,9 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack, user, userRo
 
   const getEmployeeName = (employeeId) => {
     const employee = employees.find(emp => emp.id === employeeId || emp.email === employeeId);
-    return employee ? (employee.displayName || employee.email.split('@')[0]) : 'Empleado no encontrado';
+    return employee ? 
+      (employee.displayName || employee.email.split('@')[0]) : 
+      'Empleado no encontrado';
   };
 
   const getEmployeePhone = (employeeId) => {
@@ -309,20 +294,44 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack, user, userRo
       }
     };
 
-    // Filtrar empleados por departamento permitido
+    // Función para obtener todos los turnos de un empleado y todas sus posiciones
+    const getEmployeeShiftsAndPositions = (employeeId) => {
+      const employeeShifts = shifts.filter(shift => shift.employee_id === employeeId);
+      const positions = new Set();
+      
+      employeeShifts.forEach(shift => {
+        if (shift.position) {
+          positions.add(shift.position);
+        } else if (shift.role) {
+          positions.add(shift.role);
+        }
+      });
+      
+      // Si no hay posiciones en los turnos, usar el rol del empleado
+      if (positions.size === 0) {
+        const employee = employees.find(emp => emp.id === employeeId);
+        if (employee?.role) {
+          positions.add(employee.role);
+        }
+      }
+      
+      return {
+        shifts: employeeShifts,
+        positions: Array.from(positions)
+      };
+    };
+
+    // Filtrar empleados y crear entradas múltiples por posición
     const getFilteredEmployeesByRole = () => {
       const groupedEmployees = {};
       let rolesToShow = {};
 
       // Determinar qué roles mostrar según el departamento seleccionado
       if (allowedDepartment === 'FOH') {
-        // Mostrar solo FOH
         rolesToShow = roleStructure.FOH;
       } else if (allowedDepartment === 'BOH') {
-        // Mostrar solo BOH
         rolesToShow = roleStructure.BOH;
       } else {
-        // Por defecto mostrar FOH
         rolesToShow = roleStructure.FOH;
       }
       
@@ -335,12 +344,10 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack, user, userRo
       const filteredEmployees = employees.filter(employee => {
         const empDepartment = employee.workInfo?.department || employee.department;
         
-        // Si tiene departamento definido, usarlo
         if (empDepartment) {
           return empDepartment === allowedDepartment;
         }
         
-        // Si no tiene departamento definido, determinarlo por rol
         const employeeRole = employee.role?.toLowerCase() || '';
         const fohRoles = ['host', 'hostess', 'server', 'server_senior', 'bartender', 'bartender_head', 'runner', 'food_runner', 'busser', 'manager', 'floor_manager', 'shift_manager'];
         const bohRoles = ['chef', 'sous_chef', 'line_cook', 'prep_cook', 'cook', 'dishwasher', 'expo'];
@@ -352,249 +359,289 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack, user, userRo
           return allowedDepartment === 'BOH';
         }
         
-        // Si no se puede determinar el departamento por rol, NO mostrar el empleado
-        console.log(`⚠️ Empleado ${employee.email} no se puede clasificar - Rol: ${employeeRole}, Departamento: ${empDepartment}`);
-        return false;
+        return allowedDepartment === 'FOH';
       });
 
-      // Clasificar empleados filtrados
+      // Para cada empleado, crear entradas por cada posición que tiene
       filteredEmployees.forEach(employee => {
-        const employeeRole = (employee.role || employee.position || '').toLowerCase();
-        let assigned = false;
+        const { positions } = getEmployeeShiftsAndPositions(employee.id);
         
-        // Buscar en qué grupo pertenece este empleado
-        Object.entries(rolesToShow).forEach(([groupName, roles]) => {
-          if (roles.includes(employeeRole) && !assigned) {
-            groupedEmployees[groupName].push({
-              id: employee.id,
-              name: employee.displayName || employee.email.split('@')[0],
-              role: employee.role || employee.position || '',
-              email: employee.email
-            });
-            assigned = true;
-          }
+        // Si el empleado tiene múltiples posiciones, crear una entrada para cada una
+        const positionsToProcess = positions.length > 0 ? positions : [employee.role];
+        
+        positionsToProcess.forEach(position => {
+          const positionLower = position?.toLowerCase() || '';
+          
+          // Buscar en qué grupo pertenece esta posición
+          Object.keys(rolesToShow).forEach(groupName => {
+            const roles = rolesToShow[groupName];
+            if (roles.includes(positionLower)) {
+              // Crear una entrada única por empleado y posición
+              const employeeEntry = {
+                ...employee,
+                currentPosition: position,
+                uniqueKey: `${employee.id}_${position}`
+              };
+              
+              // Evitar duplicados
+              if (!groupedEmployees[groupName].find(emp => emp.uniqueKey === employeeEntry.uniqueKey)) {
+                groupedEmployees[groupName].push(employeeEntry);
+              }
+            }
+          });
         });
-        
-        // Si no se asignó a ningún grupo específico, NO asignar por defecto
-        if (!assigned && employee.active !== false) {
-          console.log(`⚠️ Empleado ${employee.email} con rol "${employee.role || 'sin rol'}" no pudo ser asignado a ningún grupo`);
-        }
       });
-      
+
       return groupedEmployees;
     };
 
-    const groupedEmployees = getFilteredEmployeesByRole();
-    const filteredShifts = getFilteredShifts();
-
-    // Función para obtener el turno de un empleado en una fecha específica
-    const getEmployeeShiftForDate = (employeeId, date) => {
-      const dateString = date.toISOString().split('T')[0];
-      return filteredShifts.find(shift => 
-        (shift.employee_id === employeeId || shift.employee_id === employeeId) && 
-        shift.date === dateString
+    // Función para obtener turnos de un empleado en una fecha específica para una posición específica
+    const getEmployeeShiftsForDate = (employeeId, date, position) => {
+      const dateStr = date.toISOString().split('T')[0];
+      return shifts.filter(shift => 
+        shift.employee_id === employeeId && 
+        shift.date === dateStr &&
+        (shift.position === position || shift.role === position)
       );
     };
 
-    // Función para mostrar el horario en formato simple con colores
-    const getShiftDisplay = (shift) => {
-      if (!shift) return <span className="text-danger fw-bold">OFF</span>;
+    // Función para renderizar los turnos de un empleado (puede tener múltiples turnos en un día)
+    const renderEmployeeShifts = (employee, date) => {
+      const employeeShifts = getEmployeeShiftsForDate(employee.id, date, employee.currentPosition);
       
-      const position = shift.position || shift.employee_role || shift.role || '';
-      const color = getPositionColor(position);
-      
-      // Si solo hay hora de inicio, mostrar solo esa
-      if (shift.start_time && !shift.end_time) {
-        return (
-          <div style={{ 
-            backgroundColor: color, 
-            color: 'white', 
-            padding: '4px 8px', 
-            borderRadius: '4px',
-            fontSize: '0.8rem',
-            fontWeight: 'bold'
-          }}>
-            {formatTime(shift.start_time)}
-            <br />
-            <small>{position.toUpperCase()}</small>
-          </div>
-        );
+      if (employeeShifts.length === 0) {
+        return <div className="text-center text-muted" style={{ fontSize: '12px', padding: '2px' }}>-</div>;
       }
-      
-      // Si hay hora de inicio y fin, mostrar rango
-      if (shift.start_time && shift.end_time) {
-        return (
-          <div style={{ 
-            backgroundColor: color, 
-            color: 'white', 
-            padding: '4px 8px', 
-            borderRadius: '4px',
-            fontSize: '0.8rem',
-            fontWeight: 'bold'
-          }}>
-            {formatTime(shift.start_time)}
-            <br />
-            {formatTime(shift.end_time)}
-            <br />
-            <small>{position.toUpperCase()}</small>
-          </div>
-        );
-      }
-      
-      return <span className="text-danger fw-bold">OFF</span>;
+
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          {employeeShifts.map((shift, index) => {
+            const startTime = formatTime(shift.start_time);
+            return (
+              <div 
+                key={`${shift.id || index}`}
+                style={{
+                  backgroundColor: getPositionColor(employee.currentPosition),
+                  color: 'white',
+                  padding: '3px 6px',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  textAlign: 'center',
+                  fontWeight: '500'
+                }}
+              >
+                {startTime}
+              </div>
+            );
+          })}
+        </div>
+      );
     };
 
+    // Función para obtener el label de una posición
+    const getPositionLabel = (position) => {
+      const labels = {
+        // FOH
+        'host': 'Host',
+        'hostess': 'Hostess',
+        'server': 'Mesero',
+        'server_senior': 'Mesero Sr.',
+        'bartender': 'Bartender',
+        'bartender_head': 'Head Bartender',
+        'runner': 'Runner',
+        'food_runner': 'Food Runner',
+        'busser': 'Busser',
+        'manager': 'Manager',
+        'floor_manager': 'Floor Manager',
+        'shift_manager': 'Shift Manager',
+        
+        // BOH
+        'chef': 'Chef',
+        'sous_chef': 'Sous Chef',
+        'line_cook': 'Line Cook',
+        'prep_cook': 'Prep Cook',
+        'cook': 'Cook',
+        'dishwasher': 'Dishwasher',
+        'expo': 'Expo'
+      };
+      return labels[position?.toLowerCase()] || position || 'N/A';
+    };
+
+    const groupedEmployees = getFilteredEmployeesByRole();
+
     return (
-      <Card className="mb-4">
-        <Card.Header className="bg-primary text-white">
-          <Row className="align-items-center">
-            <Col>
-              <h5 className="mb-0">
-                <FaCalendarWeek className="me-2" />
-                Horario Semanal - {allowedDepartment === 'FOH' ? 'Front of House (FOH)' : 'Back of House (BOH)'}
-              </h5>
-            </Col>
-            <Col xs="auto">
-              {userRole === 'admin' ? (
-                <ButtonGroup>
-                  <Button 
-                    variant={selectedDepartment === 'FOH' ? 'warning' : 'outline-warning'}
-                    size="sm"
-                    onClick={() => setSelectedDepartment('FOH')}
-                  >
-                    FOH
-                  </Button>
-                  <Button 
-                    variant={selectedDepartment === 'BOH' ? 'warning' : 'outline-warning'}
-                    size="sm"
-                    onClick={() => setSelectedDepartment('BOH')}
-                  >
-                    BOH
-                  </Button>
-                </ButtonGroup>
-              ) : (
-                <Badge bg="warning" text="dark">
-                  {allowedDepartment === 'FOH' ? 'Solo FOH' : 'Solo BOH'}
-                </Badge>
-              )}
-            </Col>
-          </Row>
-        </Card.Header>
-        <Card.Body className="p-0">
-          <div className="table-responsive">
-            <Table className="mb-0 server-schedule-table" bordered>
-              <thead className="table-dark">
-                <tr>
-                  <th className="text-center py-3" style={{ minWidth: '150px', backgroundColor: '#2c3e50' }}>
-                    <strong>EMPLEADOS</strong>
-                  </th>
-                  {weekDates.map((date, index) => {
-                    const isToday = date.toDateString() === new Date().toDateString();
-                    return (
-                      <th 
-                        key={index} 
-                        className={`text-center py-3 ${isToday ? 'bg-warning text-dark' : ''}`}
-                        style={{ minWidth: '100px', backgroundColor: isToday ? '#ffc107' : '#e67e22' }}
-                      >
-                        <div><strong>{dayNames[index]}</strong></div>
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(groupedEmployees).map(([groupName, groupEmployees]) => {
-                  if (groupEmployees.length === 0) return null;
+      <div style={{ fontSize: '12px', lineHeight: '1.3' }}>
+        <Table 
+          bordered 
+          size="sm" 
+          style={{ 
+            fontSize: '11px', 
+            marginBottom: '0',
+            tableLayout: 'fixed'
+          }}
+        >
+          <thead>
+            <tr style={{ backgroundColor: '#2c3e50', color: 'white' }}>
+              <th style={{ 
+                width: '200px', 
+                padding: '8px 12px',
+                fontSize: '12px',
+                fontWeight: '700'
+              }}>
+                {allowedDepartment === 'FOH' ? 'FRONT OF HOUSE' : 'BACK OF HOUSE'}
+              </th>
+              {dayNames.map((day, index) => (
+                <th key={day} style={{ 
+                  width: '90px', 
+                  padding: '6px 4px',
+                  textAlign: 'center',
+                  fontSize: '11px',
+                  fontWeight: '600'
+                }}>
+                  <div>{day}</div>
+                  <div style={{ fontSize: '9px', fontWeight: '400', opacity: '0.9' }}>
+                    {weekDates[index] ? weekDates[index].getDate() : ''}
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {Object.keys(groupedEmployees).map(groupName => {
+              const groupEmployees = groupedEmployees[groupName];
+              if (groupEmployees.length === 0) return null;
+
+              return (
+                <React.Fragment key={groupName}>
+                  {/* Header del grupo de roles */}
+                  <tr>
+                    <td 
+                      colSpan={8} 
+                      style={{ 
+                        backgroundColor: '#34495e',
+                        color: 'white',
+                        padding: '6px 12px',
+                        fontWeight: '700',
+                        fontSize: '11px',
+                        textAlign: 'center',
+                        letterSpacing: '0.5px'
+                      }}
+                    >
+                      {groupName}
+                    </td>
+                  </tr>
                   
-                  return (
-                    <React.Fragment key={groupName}>
-                      {/* Header del grupo */}
-                      <tr>
-                        <td 
-                          colSpan={8} 
-                          className="bg-secondary text-white text-center fw-bold py-2"
-                          style={{ backgroundColor: '#e67e22 !important' }}
-                        >
-                          {groupName}
+                  {/* Empleados del grupo */}
+                  {groupEmployees.map((employee) => (
+                    <tr key={employee.uniqueKey}>
+                      <td style={{ 
+                        padding: '8px 12px', 
+                        borderRight: '2px solid #e9ecef',
+                        backgroundColor: '#f8f9fa',
+                        fontWeight: '600',
+                        fontSize: '13px',
+                        width: '200px'
+                      }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <span>{employee.displayName || employee.email?.split('@')[0] || 'Sin nombre'}</span>
+                          <span style={{ 
+                            fontSize: '10px', 
+                            color: getPositionColor(employee.currentPosition),
+                            fontWeight: '700',
+                            textTransform: 'uppercase'
+                          }}>
+                            {getPositionLabel(employee.currentPosition)}
+                          </span>
+                          {employee.phone && (
+                            <span style={{ fontSize: '10px', color: '#6c757d' }}>
+                              📞 {employee.phone}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      {weekDates.map((date, dayIndex) => (
+                        <td key={dayIndex} style={{ 
+                          padding: '4px 2px',
+                          textAlign: 'center',
+                          verticalAlign: 'middle',
+                          width: '90px'
+                        }}>
+                          {renderEmployeeShifts(employee, date)}
                         </td>
-                      </tr>
-                      
-                      {/* Empleados del grupo */}
-                      {groupEmployees.map((employee) => (
-                        <tr key={employee.id}>
-                          <td className="align-middle" style={{ backgroundColor: '#f8f9fa', fontWeight: 'bold' }}>
-                            {employee.name.toUpperCase()}
-                          </td>
-                          {weekDates.map((date, dayIndex) => {
-                            const shift = getEmployeeShiftForDate(employee.id, date);
-                            const isToday = date.toDateString() === new Date().toDateString();
-                            
-                            return (
-                              <td 
-                                key={dayIndex} 
-                                className={`text-center align-middle ${isToday ? 'bg-warning bg-opacity-25' : ''}`}
-                                style={{ 
-                                  height: '50px',
-                                  backgroundColor: isToday ? '#fff3cd' : 'white'
-                                }}
-                              >
-                                {getShiftDisplay(shift)}
-                              </td>
-                            );
-                          })}
-                        </tr>
                       ))}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </Table>
-          </div>
-        </Card.Body>
-      </Card>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </Table>
+      </div>
     );
   };
 
+  // Función para manejar la impresión
   const handlePrint = () => {
-    window.print();
+    const printContent = document.createElement('div');
+    printContent.innerHTML = `
+      <style>
+        @media print {
+          body { font-family: Arial, sans-serif; }
+          .no-print { display: none !important; }
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #000; padding: 4px; font-size: 10px; }
+          th { background-color: #f0f0f0; }
+        }
+      </style>
+      <h2>${schedule.title}</h2>
+      <p>Semana del ${formatDate(schedule.week_start)} al ${formatDate(schedule.week_end)}</p>
+      ${document.querySelector('table').outerHTML}
+    `;
+    
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(printContent.innerHTML);
+    printWindow.document.close();
+    printWindow.print();
   };
 
+  // Función para descargar como texto
   const downloadAsText = () => {
-    if (!schedule || !shifts.length) return;
-
+    const weekDates = getWeekDates(new Date(schedule.week_start));
+    const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    
     let content = `${schedule.title}\n`;
     content += `Semana del ${formatDate(schedule.week_start)} al ${formatDate(schedule.week_end)}\n\n`;
     
-    if (schedule.message) {
-      content += `Mensaje: ${schedule.message}\n\n`;
-    }
-
-    const weekDates = getWeekDates(new Date(schedule.week_start));
-    const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-    const filteredShifts = getFilteredShifts();
-
-    weekDates.forEach((date, index) => {
-      const dayShifts = filteredShifts.filter(shift => shift.date === date.toISOString().split('T')[0]);
-      content += `${dayNames[index]} ${date.getDate()}/${date.getMonth() + 1}\n`;
-      content += '─'.repeat(30) + '\n';
+    dayNames.forEach((dayName, index) => {
+      const date = weekDates[index];
+      const dateStr = date.toISOString().split('T')[0];
+      const dayShifts = getFilteredShifts().filter(shift => shift.date === dateStr);
+      
+      content += `${dayName} ${date.getDate()}:\n`;
       
       if (dayShifts.length === 0) {
-        content += 'Sin turnos programados\n\n';
+        content += '  Sin turnos programados\n';
       } else {
         dayShifts.forEach(shift => {
-          content += `${formatTime(shift.start_time)} - ${formatTime(shift.end_time)} | `;
-          content += `${getEmployeeName(shift.employee_id)} | ${shift.position || shift.employee_role || shift.role || 'Empleado'}\n`;
+          const employeeName = getEmployeeName(shift.employee_id);
+          const startTime = formatTime(shift.start_time);
+          const endTime = formatTime(shift.end_time);
+          const position = shift.position || shift.role || 'Sin posición';
+          
+          content += `  ${employeeName} (${position}): ${startTime} - ${endTime}\n`;
         });
-        content += '\n';
       }
+      content += '\n';
     });
-
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    
+    const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `horario_${schedule.title.replace(/\s+/g, '_')}.txt`;
+    a.download = `horario-${schedule.week_start}.txt`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
@@ -738,62 +785,20 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack, user, userRo
           <Card.Body className="text-center">
             <small className="text-muted">
               Horario publicado el {' '}
-              {schedule.created_at.toDate ? (
-                <>
-                  {(schedule.created_at.toDate()).toLocaleDateString('es-ES')} por {schedule.created_by_name || 'Administrador'}
-                </>
-              ) : (
-                <>{(schedule.created_at.toDate()).toLocaleDateString('es-ES')}</>
-              )}
+              {schedule.created_at.toDate ? 
+                schedule.created_at.toDate().toLocaleDateString('es-ES', {
+                  year: 'numeric',
+                  month: 'long', 
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                }) :
+                'Fecha no disponible'
+              }
             </small>
           </Card.Body>
         </Card>
       )}
-
-      <style jsx>{`
-        @media print {
-          .d-print-none {
-            display: none !important;
-          }
-          
-          .server-schedule-table th,
-          .server-schedule-table td {
-            border: 1px solid #000 !important;
-            padding: 8px !important;
-          }
-        }
-        
-        .schedule-viewer {
-          background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-          min-height: 100vh;
-        }
-        
-        .server-schedule-table {
-          font-size: 0.9rem;
-        }
-        
-        .server-schedule-table td {
-          padding: 8px;
-          vertical-align: middle;
-        }
-        
-        .server-schedule-table th {
-          padding: 12px 8px;
-          text-align: center;
-          vertical-align: middle;
-        }
-        
-        @media (max-width: 768px) {
-          .server-schedule-table {
-            font-size: 0.75rem;
-          }
-          
-          .server-schedule-table th,
-          .server-schedule-table td {
-            padding: 6px 4px;
-          }
-        }
-      `}</style>
     </Container>
   );
 };
