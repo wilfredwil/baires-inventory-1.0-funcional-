@@ -155,24 +155,6 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
     return employee?.phone || '';
   };
 
-  const getShiftsByDate = (date) => {
-    const dateStr = date.toISOString().split('T')[0];
-    const dayShifts = shifts.filter(shift => shift.date === dateStr);
-    
-    console.log(`Turnos para ${dateStr}:`, dayShifts.length);
-    if (dayShifts.length > 0) {
-      console.log('Detalle turnos:', dayShifts.map(s => ({
-        employee: s.employee_id,
-        position: s.position || s.employee_role || s.role,
-        time: `${s.start_time}-${s.end_time}`
-      })));
-    }
-    
-    return dayShifts.sort((a, b) => {
-      return a.start_time?.localeCompare(b.start_time) || 0;
-    });
-  };
-
   const getWeekDates = (startDate) => {
     const dates = [];
     
@@ -187,37 +169,193 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
     return dates;
   };
 
-  const getShiftClass = (startTime) => {
-    if (!startTime) return 'secondary';
-    const hour = parseInt(startTime.split(':')[0]);
-    if (hour >= 6 && hour < 14) return 'primary'; // Mañana
-    if (hour >= 14 && hour < 22) return 'warning'; // Tarde
-    return 'dark'; // Noche
-  };
+  // Nueva función para renderizar la tabla estilo servidor con horarios
+  const renderServerScheduleTable = () => {
+    const weekDates = getWeekDates(new Date(schedule.week_start));
+    const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THURS', 'FRI', 'SAT'];
 
-  // NUEVA FUNCIÓN: Obtener color específico por rol/posición
-  const getPositionColorForPublic = (position) => {
-    const colors = {
-      // FOH
-      'host': '#3498db',
-      'server': '#27ae60',
-      'server_senior': '#229954',
-      'bartender': '#9b59b6',
-      'bartender_head': '#8e44ad',
-      'runner': '#1abc9c',
-      'food_runner': '#17a2b8', // Nuevo color para Food Runner
-      'busser': '#16a085',
-      'manager': '#e67e22',
+    // Definir estructura de roles para FOH y BOH
+    const roleStructure = {
+      // Front of House (FOH)
+      'SERVERS': ['server', 'server_senior'],
+      'HOSTS': ['host', 'hostess'],
+      'BARTENDERS': ['bartender', 'bartender_head'],
+      'RUNNERS': ['runner', 'food_runner'],
+      'BUSSERS': ['busser'],
+      'MANAGERS': ['manager', 'floor_manager', 'shift_manager'],
       
-      // BOH
-      'dishwasher': '#95a5a6',
-      'prep_cook': '#e74c3c',
-      'line_cook': '#c0392b',
-      'cook': '#d35400',
-      'sous_chef': '#e67e22',
-      'chef': '#f39c12'
+      // Back of House (BOH)  
+      'KITCHEN': ['chef', 'sous_chef', 'line_cook', 'prep_cook', 'cook'],
+      'DISHWASHERS': ['dishwasher'],
+      'EXPO': ['expo'],
     };
-    return colors[position] || '#6c757d'; // Color por defecto
+
+    // Función para obtener TODOS los empleados (no solo los que tienen turnos)
+    const getAllEmployeesByRole = () => {
+      const groupedEmployees = {};
+      
+      // Inicializar grupos
+      Object.keys(roleStructure).forEach(groupName => {
+        groupedEmployees[groupName] = [];
+      });
+      
+      // Clasificar TODOS los empleados activos
+      employees.forEach(employee => {
+        if (employee.active === false || employee.status === 'inactive') return;
+        
+        const employeeData = {
+          id: employee.id,
+          name: employee.displayName || (employee.firstName + ' ' + employee.lastName).trim() || employee.email.split('@')[0],
+          role: employee.role || '',
+          department: employee.workInfo?.department || 'FOH'
+        };
+
+        // Encontrar en qué grupo pertenece este empleado
+        let assigned = false;
+        for (const [groupName, roles] of Object.entries(roleStructure)) {
+          if (roles.includes(employee.role)) {
+            groupedEmployees[groupName].push(employeeData);
+            assigned = true;
+            break;
+          }
+        }
+        
+        // Si no se asignó a ningún grupo, ponerlo en SERVERS por defecto
+        if (!assigned) {
+          groupedEmployees['SERVERS'].push(employeeData);
+        }
+      });
+
+      // Ordenar alfabéticamente dentro de cada grupo
+      Object.keys(groupedEmployees).forEach(groupName => {
+        groupedEmployees[groupName].sort((a, b) => a.name.localeCompare(b.name));
+      });
+
+      // Remover grupos vacíos
+      Object.keys(groupedEmployees).forEach(groupName => {
+        if (groupedEmployees[groupName].length === 0) {
+          delete groupedEmployees[groupName];
+        }
+      });
+
+      return groupedEmployees;
+    };
+
+    const groupedEmployees = getAllEmployeesByRole();
+
+    // Función para obtener el turno de un empleado en una fecha específica
+    const getEmployeeShiftForDate = (employeeId, date) => {
+      const dateStr = date.toISOString().split('T')[0];
+      return shifts.find(shift => 
+        shift.employee_id === employeeId && 
+        shift.date === dateStr
+      );
+    };
+
+    // Función para mostrar el horario en formato simple
+    const getShiftDisplay = (shift) => {
+      if (!shift) return <span className="text-danger fw-bold">OFF</span>;
+      
+      // Si solo hay hora de inicio, mostrar solo esa
+      if (shift.start_time && !shift.end_time) {
+        return <span className="text-primary fw-bold">{formatTime(shift.start_time)}</span>;
+      }
+      
+      // Si hay hora de inicio y fin, mostrar rango
+      if (shift.start_time && shift.end_time) {
+        return (
+          <div>
+            <span className="text-primary fw-bold">{formatTime(shift.start_time)}</span>
+            <br />
+            <span className="text-secondary">{formatTime(shift.end_time)}</span>
+          </div>
+        );
+      }
+      
+      return <span className="text-danger fw-bold">OFF</span>;
+    };
+
+    return (
+      <Card className="mb-4">
+        <Card.Header className="bg-primary text-white">
+          <h5 className="mb-0">
+            <FaCalendarWeek className="me-2" />
+            Horario Semanal
+          </h5>
+        </Card.Header>
+        <Card.Body className="p-0">
+          <div className="table-responsive">
+            <Table className="mb-0 server-schedule-table" bordered>
+              <thead className="table-dark">
+                <tr>
+                  <th className="text-center py-3" style={{ minWidth: '150px', backgroundColor: '#2c3e50' }}>
+                    <strong>EMPLEADOS</strong>
+                  </th>
+                  {weekDates.map((date, index) => {
+                    const isToday = date.toDateString() === new Date().toDateString();
+                    return (
+                      <th 
+                        key={index} 
+                        className={`text-center py-3 ${isToday ? 'bg-warning text-dark' : ''}`}
+                        style={{ minWidth: '100px', backgroundColor: isToday ? '#ffc107' : '#e67e22' }}
+                      >
+                        <div><strong>{dayNames[index]}</strong></div>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(groupedEmployees).map(([groupName, groupEmployees]) => {
+                  if (groupEmployees.length === 0) return null;
+                  
+                  return (
+                    <React.Fragment key={groupName}>
+                      {/* Header del grupo */}
+                      <tr>
+                        <td 
+                          colSpan={8} 
+                          className="bg-secondary text-white text-center fw-bold py-2"
+                          style={{ backgroundColor: '#e67e22 !important' }}
+                        >
+                          {groupName}
+                        </td>
+                      </tr>
+                      
+                      {/* Empleados del grupo */}
+                      {groupEmployees.map((employee) => (
+                        <tr key={employee.id}>
+                          <td className="align-middle" style={{ backgroundColor: '#f8f9fa', fontWeight: 'bold' }}>
+                            {employee.name.toUpperCase()}
+                          </td>
+                          {weekDates.map((date, dayIndex) => {
+                            const shift = getEmployeeShiftForDate(employee.id, date);
+                            const isToday = date.toDateString() === new Date().toDateString();
+                            
+                            return (
+                              <td 
+                                key={dayIndex} 
+                                className={`text-center align-middle ${isToday ? 'bg-warning bg-opacity-25' : ''}`}
+                                style={{ 
+                                  height: '50px',
+                                  backgroundColor: isToday ? '#fff3cd' : 'white'
+                                }}
+                              >
+                                {getShiftDisplay(shift)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </div>
+        </Card.Body>
+      </Card>
+    );
   };
 
   const handlePrint = () => {
@@ -238,7 +376,7 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
     const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
     weekDates.forEach((date, index) => {
-      const dayShifts = getShiftsByDate(date);
+      const dayShifts = shifts.filter(shift => shift.date === date.toISOString().split('T')[0]);
       content += `${dayNames[index]} ${date.getDate()}/${date.getMonth() + 1}\n`;
       content += '─'.repeat(30) + '\n';
       
@@ -310,7 +448,6 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
   }
 
   const weekDates = getWeekDates(new Date(schedule.week_start));
-  const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
   
   // Debug: mostrar información de las fechas
   console.log('=== INFORMACIÓN DEL HORARIO PÚBLICO ===');
@@ -318,229 +455,97 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
   console.log('Schedule week_end:', schedule.week_end);
   console.log('WeekDates calculadas:', weekDates.map(d => d.toISOString().split('T')[0]));
   console.log('Total shifts disponibles:', shifts.length);
-  console.log('=== FIN INFO ===');
 
   return (
-    <Container fluid className="py-4 schedule-viewer">
-      {/* Header */}
-      <Card className="mb-4">
-        <Card.Header className="bg-primary text-white">
-          <Row className="align-items-center">
-            <Col>
-              <div className="d-flex align-items-center">
+    <Container fluid className="schedule-viewer py-4">
+      {/* Header del horario */}
+      <Row className="mb-4">
+        <Col>
+          <Card className="border-0 shadow-sm">
+            <Card.Body className="text-center">
+              <h2 className="mb-3 text-primary">
+                <FaCalendarWeek className="me-2" />
+                {schedule.title}
+              </h2>
+              <p className="lead mb-3">
+                Semana del {formatDate(schedule.week_start)} al {formatDate(schedule.week_end)}
+              </p>
+              
+              {schedule.message && (
+                <Alert variant="info" className="mb-3">
+                  <strong>Mensaje:</strong> {schedule.message}
+                </Alert>
+              )}
+
+              <Row className="text-center">
+                <Col md={4}>
+                  <div className="text-primary mb-2">
+                    <FaUsers size={24} />
+                  </div>
+                  <h5 className="mb-0">{[...new Set(shifts.map(s => s.employee_id))].length}</h5>
+                  <small className="text-muted">Empleados</small>
+                </Col>
+                <Col md={4}>
+                  <div className="text-success mb-2">
+                    <FaClock size={24} />
+                  </div>
+                  <h5 className="mb-0">{shifts.length}</h5>
+                  <small className="text-muted">Total Turnos</small>
+                </Col>
+                <Col md={4}>
+                  <div className="text-warning mb-2">
+                    <FaCalendarWeek size={24} />
+                  </div>
+                  <h5 className="mb-0">7</h5>
+                  <small className="text-muted">Días</small>
+                </Col>
+              </Row>
+
+              {/* Botones de acción */}
+              <div className="mt-4 d-print-none">
+                <Button 
+                  variant="outline-primary" 
+                  onClick={handlePrint}
+                  className="me-2"
+                >
+                  <FaPrint className="me-1" />
+                  Imprimir
+                </Button>
+                <Button 
+                  variant="outline-secondary" 
+                  onClick={downloadAsText}
+                  className="me-2"
+                >
+                  <FaDownload className="me-1" />
+                  Descargar
+                </Button>
                 {onBack && (
-                  <Button 
-                    variant="light" 
-                    size="sm" 
-                    onClick={onBack}
-                    className="me-3"
-                  >
-                    <FaArrowLeft />
+                  <Button variant="secondary" onClick={onBack}>
+                    <FaArrowLeft className="me-1" />
+                    Volver
                   </Button>
                 )}
-                <div>
-                  <h3 className="mb-0">
-                    <FaCalendarWeek className="me-2" />
-                    {schedule.title}
-                  </h3>
-                  <p className="mb-0 mt-1">
-                    {formatDate(schedule.week_start)} - {formatDate(schedule.week_end)}
-                  </p>
-                </div>
               </div>
-            </Col>
-            <Col xs="auto" className="d-print-none">
-              <Button variant="light" size="sm" onClick={handlePrint} className="me-2">
-                <FaPrint className="me-1" />
-                Imprimir
-              </Button>
-              <Button variant="light" size="sm" onClick={downloadAsText}>
-                <FaDownload className="me-1" />
-                Descargar
-              </Button>
-            </Col>
-          </Row>
-        </Card.Header>
-        
-        {schedule.message && (
-          <Card.Body>
-            <Alert variant="info" className="mb-0">
-              <strong>Mensaje del equipo:</strong> {schedule.message}
-            </Alert>
-          </Card.Body>
-        )}
-      </Card>
-
-      {/* Estadísticas */}
-      <Row className="mb-4">
-        <Col md={4}>
-          <Card className="text-center border-primary">
-            <Card.Body>
-              <div className="text-primary">
-                <FaUsers size={24} />
-              </div>
-              <h5 className="mt-2 mb-0">{[...new Set(shifts.map(s => s.employee_id))].length}</h5>
-              <small className="text-muted">Empleados</small>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={4}>
-          <Card className="text-center border-success">
-            <Card.Body>
-              <div className="text-success">
-                <FaClock size={24} />
-              </div>
-              <h5 className="mt-2 mb-0">{shifts.length}</h5>
-              <small className="text-muted">Total Turnos</small>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={4}>
-          <Card className="text-center border-warning">
-            <Card.Body>
-              <div className="text-warning">
-                <FaCalendarWeek size={24} />
-              </div>
-              <h5 className="mt-2 mb-0">7</h5>
-              <small className="text-muted">Días</small>
             </Card.Body>
           </Card>
         </Col>
       </Row>
 
-      {/* Tabla de horarios para desktop */}
-      <Card className="mb-4 d-none d-md-block">
-        <Card.Body className="p-0">
-          <div className="table-responsive">
-            <Table className="mb-0 schedule-table">
-              <thead className="table-dark">
-                <tr>
-                  {weekDates.map((date, index) => {
-                    const day = dayNames[index];
-                    const isToday = date.toDateString() === new Date().toDateString();
-                    return (
-                      <th 
-                        key={index} 
-                        className={`text-center p-3 ${isToday ? 'bg-primary text-white' : ''}`}
-                      >
-                        <div>{day}</div>
-                        <small>{date.getDate()}/{date.getMonth() + 1}</small>
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                <tr style={{ height: '200px' }}>
-                  {weekDates.map((date, index) => {
-                    const dayShifts = getShiftsByDate(date);
-                    return (
-                      <td key={index} className="align-top p-2">
-                        {dayShifts.length === 0 ? (
-                          <div className="text-center text-muted small py-3">
-                            Sin turnos
-                          </div>
-                        ) : (
-                          dayShifts.map(shift => (
-                            <div
-                              key={shift.id}
-                              className="shift-card p-2 mb-1 rounded"
-                              style={{ 
-                                backgroundColor: getPositionColorForPublic(shift.position || shift.employee_role || shift.role),
-                                color: 'white',
-                                fontSize: '0.75rem',
-                                border: '1px solid rgba(0,0,0,0.1)'
-                              }}
-                            >
-                              <div className="small">
-                                <strong>{getEmployeeName(shift.employee_id)}</strong>
-                              </div>
-                              <div className="small">
-                                {formatTime(shift.start_time)} - {formatTime(shift.end_time)}
-                              </div>
-                              <div className="small">
-                                <Badge bg="light" text="dark">
-                                  {shift.position || shift.employee_role || shift.role || 'Empleado'}
-                                </Badge>
-                              </div>
-                              {shift.notes && (
-                                <div className="small mt-1" title={shift.notes}>
-                                  📝 {shift.notes.substring(0, 20)}...
-                                </div>
-                              )}
-                            </div>
-                          ))
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              </tbody>
-            </Table>
-          </div>
-        </Card.Body>
-      </Card>
+      {/* Nueva tabla estilo servidor */}
+      {renderServerScheduleTable()}
 
-      {/* Lista detallada para vista móvil */}
-      <div className="d-md-none mt-4">
-        <h5>Vista Detallada</h5>
-        {weekDates.map((date, index) => {
-          const dayShifts = getShiftsByDate(date);
-          return (
-            <Card key={index} className="mb-3">
-              <Card.Header>
-                <strong>{dayNames[index]} {date.getDate()}/{date.getMonth() + 1}</strong>
-              </Card.Header>
-              <Card.Body>
-                {dayShifts.length === 0 ? (
-                  <p className="text-muted mb-0">Sin turnos programados</p>
-                ) : (
-                  <div className="row">
-                    {dayShifts.map(shift => (
-                      <div key={shift.id} className="col-12 mb-2">
-                        <div 
-                          className="card"
-                          style={{ 
-                            backgroundColor: getPositionColorForPublic(shift.position || shift.employee_role || shift.role),
-                            color: 'white',
-                            border: '1px solid rgba(0,0,0,0.1)'
-                          }}
-                        >
-                          <div className="card-body p-2">
-                            <div className="d-flex justify-content-between">
-                              <strong>{getEmployeeName(shift.employee_id)}</strong>
-                              <Badge bg="light" text="dark">
-                                {shift.position || shift.employee_role || shift.role || 'Empleado'}
-                              </Badge>
-                            </div>
-                            <div className="small">
-                              {formatTime(shift.start_time)} - {formatTime(shift.end_time)}
-                            </div>
-                            {shift.notes && (
-                              <div className="small mt-1">
-                                📝 {shift.notes}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card.Body>
-            </Card>
-          );
-        })}
-      </div>
-
-      {/* Información de contacto (si está disponible) */}
-      {schedule.created_by_name && (
-        <Card className="mt-4 d-print-none">
+      {/* Información adicional */}
+      {schedule.created_at && (
+        <Card className="border-0 shadow-sm d-print-none">
           <Card.Body className="text-center">
             <small className="text-muted">
-              Horario publicado por <strong>{schedule.created_by_name}</strong>
-              {schedule.created_at && (
-                <> el {new Date(schedule.created_at.toDate()).toLocaleDateString('es-ES')}</>
+              Horario publicado el {' '}
+              {schedule.created_at.toDate ? (
+                <>
+                  {(schedule.created_at.toDate()).toLocaleDateString('es-ES')} por {schedule.created_by_name || 'Administrador'}
+                </>
+              ) : (
+                <>{(schedule.created_at.toDate()).toLocaleDateString('es-ES')}</>
               )}
             </small>
           </Card.Body>
@@ -553,16 +558,10 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
             display: none !important;
           }
           
-          .schedule-table th,
-          .schedule-table td {
+          .server-schedule-table th,
+          .server-schedule-table td {
             border: 1px solid #000 !important;
             padding: 8px !important;
-          }
-          
-          .shift-card {
-            border: 1px solid #ccc !important;
-            background: #f8f9fa !important;
-            color: #000 !important;
           }
         }
         
@@ -571,14 +570,30 @@ const PublicScheduleViewer = ({ scheduleId: propScheduleId, onBack }) => {
           min-height: 100vh;
         }
         
-        .shift-card {
-          font-size: 0.75rem;
-          line-height: 1.2;
+        .server-schedule-table {
+          font-size: 0.9rem;
         }
         
-        .schedule-table td {
-          vertical-align: top !important;
-          min-height: 150px;
+        .server-schedule-table td {
+          padding: 8px;
+          vertical-align: middle;
+        }
+        
+        .server-schedule-table th {
+          padding: 12px 8px;
+          text-align: center;
+          vertical-align: middle;
+        }
+        
+        @media (max-width: 768px) {
+          .server-schedule-table {
+            font-size: 0.75rem;
+          }
+          
+          .server-schedule-table th,
+          .server-schedule-table td {
+            padding: 6px 4px;
+          }
         }
       `}</style>
     </Container>
