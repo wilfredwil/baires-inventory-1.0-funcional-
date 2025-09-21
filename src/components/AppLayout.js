@@ -378,7 +378,8 @@ const AppLayout = ({
                  currentView === 'users' ? 'Gestión de Personal' :
                  currentView === 'providers' ? 'Proveedores' :
                  currentView === 'employee-directory' ? 'Directorio' :
-                 currentView}
+                  currentView === 'personal' ? 'Mi Perfil' :
+currentView}
               </span>
             </div>
           </div>
@@ -488,11 +489,19 @@ const AppLayout = ({
                 </div>
               </Dropdown.Toggle>
 
-              <Dropdown.Menu>
-                <Dropdown.Item href="#" onClick={(e) => e.preventDefault()}>
-                  <FaUser className="me-2" />
-                  Mi Perfil
-                </Dropdown.Item>
+              
+                <Dropdown.Menu>
+  <Dropdown.Item 
+    href="#" 
+    onClick={(e) => {
+      e.preventDefault();
+      console.log('Click en Mi Perfil'); // Para debug
+      onNavigate('personal');
+    }}
+  >
+    <FaUser className="me-2" />
+    Mi Perfil
+  </Dropdown.Item>
                 <Dropdown.Item href="#" onClick={(e) => e.preventDefault()}>
                   <FaCog className="me-2" />
                   Configuración

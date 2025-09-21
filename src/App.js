@@ -346,13 +346,14 @@ function App() {
         );
       
       case 'employee-directory':
-        return (
-          <EmployeeDirectory
-            user={user}
-            userRole={userRole}
-            onBack={() => setCurrentView('dashboard')}
-          />
-        );
+  return (
+    <EmployeeDirectory
+      show={true}
+      onHide={() => setCurrentView('dashboard')}
+      user={user}
+      userRole={userRole}
+    />
+  );
       
       case 'public-schedule':
         return (
@@ -372,19 +373,24 @@ function App() {
         );
       
       case 'personal':
-        return (
-          <UserProfile
-            show={true}
-            onHide={() => setCurrentView('dashboard')}
-            user={user}
-            userRole={userRole}
-            currentUserData={user}
-            onProfileUpdate={(updatedUser) => {
-              setUser(updatedUser);
-              if (onProfileUpdate) onProfileUpdate(updatedUser);
-            }}
-          />
-        );
+  return (
+    <UserProfile
+      show={true}
+      onHide={() => setCurrentView('dashboard')}
+      user={user}
+      userRole={userRole}
+      currentUserData={{
+        id: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        ...user
+      }}
+      onProfileUpdate={(updatedUser) => {
+        setUser(updatedUser);
+        if (onProfileUpdate) onProfileUpdate(updatedUser);
+      }}
+    />
+  );
       
       default:
         return (
