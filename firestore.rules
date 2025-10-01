@@ -86,3 +86,27 @@ service cloud.firestore {
     }
   }
 }
+// En tu firestore.rules, agregar estas reglas:
+
+// Reglas para tareas asignadas
+match /assigned_tasks/{taskId} {
+  allow read: if isAuthenticated() && 
+    (request.auth.uid == resource.data.assigned_to || 
+     isAdminFromDB() || 
+     isManagerFromDB());
+  allow create, update: if isAuthenticated() && 
+    (isAdminFromDB() || isManagerFromDB());
+  allow delete: if isAuthenticated() && 
+    (isAdminFromDB() || isManagerFromDB());
+}
+
+// Reglas para actividades de tareas (logs opcionales)
+match /task_activities/{activityId} {
+  allow read, write: if isAuthenticated();
+}
+
+// Reglas para logs de limpieza (opcionales)
+match /cleanup_logs/{logId} {
+  allow read: if isAuthenticated() && (isAdminFromDB() || isManagerFromDB());
+  allow write: if false; // Solo Cloud Functions pueden escribir
+}

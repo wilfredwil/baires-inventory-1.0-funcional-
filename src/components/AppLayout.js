@@ -106,37 +106,44 @@ const AppLayout = ({
   // Configuración de navegación con IDs CORREGIDOS
   const navigationSections = [
     {
-      title: 'Principal',
-      items: [
-        {
-          id: 'dashboard',
-          label: 'Dashboard',
-          icon: FaHome,
-          active: currentView === 'dashboard'
-        },
-        {
-          id: 'messaging',  // ✅ CORREGIDO: era 'messages'
-          label: 'Mensajes',
-          icon: FaComments,
-          active: currentView === 'messaging',  // ✅ CORREGIDO: era 'messages'
-          badge: 3
-        },
-        {
-          id: 'shifts',
-          label: 'Turnos & Horarios',
-          icon: FaCalendarAlt,
-          active: currentView === 'shifts'
-        },
-        {
-          id: 'tasks',
-          label: 'Tareas del Día',
-          icon: FaTasks,
-          active: currentView === 'tasks',
-          badge: 5,
-          disabled: true
-        }
-      ]
+  title: 'Principal',
+  items: [
+    {
+      id: 'dashboard',
+      label: 'Dashboard',
+      icon: FaHome,
+      active: currentView === 'dashboard'
     },
+    {
+      id: 'messaging',
+      label: 'Mensajes',
+      icon: FaComments,
+      active: currentView === 'messaging',
+      badge: 3
+    },
+    {
+      id: 'shifts',
+      label: 'Turnos & Horarios',
+      icon: FaCalendarAlt,
+      active: currentView === 'shifts'
+    },
+    // 👇 REEMPLAZAR la línea de 'tasks' con estas dos:
+    {
+      id: 'my-tasks',
+      label: 'Mis Tareas',
+      icon: FaTasks,
+      active: currentView === 'my-tasks',
+      badge: 2  // número de tareas pendientes
+    },
+    // Solo para admins y managers:
+    ...(userRole === 'admin' || userRole === 'manager' ? [{
+      id: 'task-manager',
+      label: 'Gestión de Tareas',
+      icon: FaCog,
+      active: currentView === 'task-manager'
+    }] : [])
+  ]
+},
     {
       title: 'Inventarios',
       items: [

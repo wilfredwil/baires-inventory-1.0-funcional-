@@ -96,11 +96,44 @@ import PublicScheduleViewer from './components/PublicScheduleViewer';
 import CreateUserComponent from './components/CreateUserComponent';
 import BarInventory from './components/BarInventory';
 import LoginForm from './components/LoginForm';
+import TaskManager from './components/TaskManager';
+import EmployeeTasks from './components/EmployeeTasks';
 
 // Styles
 import './styles/improvements.css';
 import './styles/shifts.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
+
+// AGREGAR ESTAS FUNCIONES AL INICIO DEL COMPONENTE
+const generateUserAvatar = (user, size = 40) => {
+  const name = user?.displayName || user?.email?.split('@')[0] || 'Usuario';
+  const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  
+  const colors = [
+    '#e74c3c', '#3498db', '#2ecc71', '#f39c12', 
+    '#9b59b6', '#1abc9c', '#34495e', '#e67e22'
+  ];
+  
+  const colorIndex = name.length % colors.length;
+  const backgroundColor = colors[colorIndex];
+  
+  const svg = `
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="${size/2}" cy="${size/2}" r="${size/2}" fill="${backgroundColor}"/>
+      <text x="${size/2}" y="${size/2 + size/6}" text-anchor="middle" fill="white" 
+            font-family="Arial, sans-serif" font-size="${size/3}" font-weight="bold">${initials}</text>
+    </svg>
+  `;
+  
+  return `data:image/svg+xml;base64,${btoa(svg)}`;
+};
+
+const getUserImageSrc = () => {
+  if (user?.photoURL) {
+    return user.photoURL;
+  }
+  return generateUserAvatar(user, 40);
+};
 
 // Chart.js setup
 ChartJS.register(ArcElement, Tooltip, Legend);
@@ -391,7 +424,22 @@ function App() {
       }}
     />
   );
-      
+      case 'task-manager':
+  return (
+    <TaskManager 
+      onBack={() => setCurrentView('dashboard')}
+      user={user}
+      userRole={userRole}
+    />
+  );
+
+case 'my-tasks':
+  return (
+    <EmployeeTasks 
+      user={user}
+      onBack={() => setCurrentView('dashboard')}
+    />
+  );
       default:
         return (
           <DashboardWidgets
